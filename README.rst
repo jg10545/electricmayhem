@@ -20,8 +20,6 @@ can you picture that
 
 
 * Free software: MIT license
-* Documentation: https://electricmayhem.readthedocs.io.
-
 
 Features
 --------
