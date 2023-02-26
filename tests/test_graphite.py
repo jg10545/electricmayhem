@@ -2,9 +2,12 @@
 import numpy as np
 import torch
 import torch.utils.tensorboard
+import dask
 
 from electricmayhem import _augment, _mask
 from electricmayhem._graphite import *
+
+dask.config.set(scheduler='threads')
 
 """
 
