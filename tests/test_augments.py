@@ -16,7 +16,7 @@ def test_generate_aug_params():
         
         
 def test_augment_image():
-    shape = (3,7,11)
+    shape = (3,31,43)
     img = torch.Tensor(np.random.uniform(0, 1, shape))
     params = generate_aug_params()
     
@@ -26,7 +26,7 @@ def test_augment_image():
     
     
 def test_wiggle_mask_and_perturbations():
-    shape = (3,7,11)
+    shape = (3,31,43)
     pert = torch.Tensor(np.random.uniform(0, 1, shape))
     mask = torch.Tensor(np.random.choice([0,1], size=shape))
     
@@ -39,7 +39,7 @@ def test_wiggle_mask_and_perturbations():
     
 
 def test_compose():
-    shape = (3,7,11)
+    shape = (3,31,43)
     img = torch.Tensor(np.random.uniform(0, 1, shape))
     pert = torch.Tensor(np.random.uniform(0, 1, shape))
     mask = torch.Tensor(np.random.choice([0,1], size=shape))
