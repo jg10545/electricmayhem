@@ -15,6 +15,9 @@ requirements = [
     'torch',
     'kornia',
     'dask',
+    'tensorboard',
+    'matplotlib',
+    'tqdm',
     'tensorboard'
     ]
 

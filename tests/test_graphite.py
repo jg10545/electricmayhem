@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import torch
+import torch.utils.tensorboard
 
 from electricmayhem import _augment, _mask
 from electricmayhem._graphite import *
@@ -95,3 +96,50 @@ def test_estimate_gradient():
 
     assert isinstance(grad, torch.Tensor)
     assert grad.shape == img.shape
+    
+    
+def test_update_perturbation():
+    H = 101
+    W = 107
+    C = 3
+    tr_estimate = 0.5
+    img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
+    pert = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
+    grad = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
+    init_mask, final_mask = _mask.generate_rectangular_frame_mask(W, H, 20, 20, 30, 30,
+                                          frame_width=5, return_torch=True)
+    
+    newpert, lr = update_perturbation(img, final_mask, pert, augs,
+                                      detect_func, grad)
+    
+    assert isinstance(newpert, torch.Tensor)
+    assert newpert.shape == img.shape
+    assert newpert.numpy().max() <= 1
+    assert newpert.numpy().min() >= 0
+    assert isinstance(lr, dict)
+    assert 'lr' in lr
+    
+    
+    
+def test_BlackBoxPatchTrainer(tmp_path_factory):
+    # SAVE IT TO LOG DIR
+    logdir = str(tmp_path_factory.mktemp("logs"))
+    
+    H = 101
+    W = 107
+    C = 3
+    tr_estimate = 0.5
+    img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
+    init_mask, final_mask = _mask.generate_rectangular_frame_mask(W, H, 20,
+                                        20, 30, 30,
+                                        frame_width=5, 
+                                        return_torch=True)
+    
+    trainer = BlackBoxPatchTrainer(img, init_mask, 
+                                   final_mask, detect_func, logdir,
+                                   num_augments=2, 
+                                   q=5,
+                                   reduce_steps=2)
+    trainer.fit(epochs=1)
+    
+    
