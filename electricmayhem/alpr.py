@@ -1,4 +1,3 @@
-import cv2
 import numpy as np
 import torch
 import subprocess
@@ -13,6 +12,10 @@ import requests
 
 
 class OpenALPRBWrapper():
+    """
+    DEPRECATED. Storing code here in case I need to write something
+    similar in the future.
+    """
     def __init__(self, imdir, c="eu"):
         """
         :vic_lp:
