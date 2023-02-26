@@ -84,6 +84,7 @@ def quick_and_dirty_lpr(img, diameter=11, sigma=17, cannythreshold1=30, cannythr
     """
     Barebones ALPR pipeline using OpenCV and tesseract.
     """
+    """
     # if it's a torch tensor- assume it's in C,H,W format and 
     # a normalized float. convert to a uint8 H,W,C array
     if isinstance(img, torch.Tensor):
@@ -110,7 +111,7 @@ def quick_and_dirty_lpr(img, diameter=11, sigma=17, cannythreshold1=30, cannythr
         x,y,w,h = cv2.boundingRect(q)
         new_img = img[y:y+h,x:x+w]
         text += pytesseract.image_to_string(new_img)
-    return text
+    return text"""
 
 
 
