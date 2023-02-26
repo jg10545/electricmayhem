@@ -30,7 +30,7 @@ def augment_image(image, warp, scale, gamma, blur):
     if blur > 0:
         image = kornia.filters.gaussian_blur2d(
             image,
-            [2*int(blur)+1, 2*int(blur)+1], [blur, blur])
+            (2*int(blur)+1, 2*int(blur)+1), (blur, blur))
     
     return image.squeeze()
 
