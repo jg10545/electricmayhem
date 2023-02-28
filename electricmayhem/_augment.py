@@ -81,7 +81,8 @@ def wiggle_mask_and_perturbation(mask, perturbation, angle_scale=1, translate_sc
     return shifted_mask, shifted_pert
 
 
-def compose(img, mask, perturbation, angle_scale=1, translate_scale=2):
+def compose(img, mask, perturbation, angle_scale=1, translate_scale=2,
+            augment=None):
     """
     Paste a perturbation on top of an image using a mask. If necessary, resizes
     the perturbation and randomly jitters the perturbation/mask with respect to the image.
@@ -104,5 +105,9 @@ def compose(img, mask, perturbation, angle_scale=1, translate_scale=2):
                                                             angle_scale, translate_scale)
     # glue it all together
     img_w_pert = torch.clamp(img*(1-mask) + perturbation*mask, 0, 1)
+    
+    # want to augment the image too? do that now.
+    if augment is not None:
+        img_w_pert = augment_image(img_w_pert, **augment)
     
     return img_w_pert

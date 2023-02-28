@@ -1,22 +1,29 @@
 import numpy as np
 import dask
 import torch
-from electricmayhem import _augment
 import kornia.geometry
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 from electricmayhem import _mask
+from electricmayhem import _augment
 
 
-def estimate_transform_robustness(detect_func, img, augments, return_outcomes=False):
+def estimate_transform_robustness(detect_func, img, mask, pert, 
+                                  augments, angle_scale=1, 
+                                  translate_scale=2, 
+                                  return_outcomes=False):
     """
     Estimate transform robustness as an expectation over transformations. 
     
     :detect_func: detection function to wrap; should input a (C,H,W) torch Tensor and
         output a string
     :img: (C,H,W) torch Tensor 
+    :mask:
+    :pert:
     :augments: list of dictionaries giving augmentation parameters
+    :angle_scale:
+    :translate_scale:
     
     Returns a dictionary containing:
         :crash_frac: fraction of augments where function returned an empty string
@@ -25,10 +32,15 @@ def estimate_transform_robustness(detect_func, img, augments, return_outcomes=Fa
         :tr: transform robustness estimate; fraction of non-crash cases where the plate was 
             not detected
     """
-    def _augment_and_detect(i,a):
-        return detect_func(_augment.augment_image(i,**a))
+    def _augment_and_detect(i,m,p,a):
+        #return detect_func(_augment.augment_image(i,**a))
+        return detect_func(_augment.compose(i,m,p,
+                                            angle_scale=angle_scale,
+                                            translate_scale=translate_scale,
+                                            augment=a))
     
-    tasks = [dask.delayed(_augment_and_detect)(img, a) for a in augments]
+    tasks = [dask.delayed(_augment_and_detect)(img, mask, pert, a) 
+             for a in augments]
     outcomes = dask.compute(*tasks)
     # how often did openALPR crap out?
     #crash_frac = np.mean([len(o)==0 for o in outcomes])
@@ -86,9 +98,13 @@ def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10, tr_th
         # compute the mask
         M = (priority_mask > a).float()
         # combine image and perturbation using the current mask
-        img_w_pert = _augment.compose(img, M, perturbation, angle_scale, translate_scale)
+        #img_w_pert = _augment.compose(img, M, perturbation, angle_scale, translate_scale)
         # estimate transform robustness
-        estimate = estimate_transform_robustness(detect_func, img_w_pert, augs)
+        #estimate = estimate_transform_robustness(detect_func, img_w_pert, augs)
+        estimate = estimate_transform_robustness(detect_func, img, M,
+                                                 perturbation, augs,
+                                                 angle_scale=angle_scale,
+                                                 translate_scale=translate_scale)
         estimate["a"] = a
         results.append(estimate)
 
@@ -137,8 +153,11 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, bet
         u = torch.randn(pert.shape).type(torch.FloatTensor)*mask_resized
         u = u/torch.norm(u)
 
-        img_w_u = _augment.compose(img, mask, pert + beta*u, angle_scale=angle_scale, translate_scale=translate_scale)
-        u_est = estimate_transform_robustness(detect_func, img_w_u, augs)
+        #img_w_u = _augment.compose(img, mask, pert + beta*u, angle_scale=angle_scale, translate_scale=translate_scale)
+        u_est = estimate_transform_robustness(detect_func, img, mask, 
+                                              pert+beta*u, augs,
+                                              angle_scale=angle_scale,
+                                              translate_scale=translate_scale)
         us.append(u)
         u_trs.append(u_est["tr"])
         
@@ -178,8 +197,11 @@ def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None, 
     # measure transform robustness at each 
     updated_trs = []
     for l in lrs:
-        img_updated = _augment.compose(img, mask, pert + l*gradient, angle_scale=angle_scale, translate_scale=translate_scale)
-        est = estimate_transform_robustness(detect_func, img_updated, augs)
+        #img_updated = _augment.compose(img, mask, pert + l*gradient, angle_scale=angle_scale, translate_scale=translate_scale)
+        est = estimate_transform_robustness(detect_func, img, mask,
+                                            pert+l*gradient, augs,
+                                            angle_scale=angle_scale,
+                                            translate_scale=translate_scale)
         updated_trs.append(est["tr"])
         
     # now just pick whatever value worked best.
