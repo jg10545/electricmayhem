@@ -371,10 +371,15 @@ class BlackBoxPatchTrainer():
         """
         Run a suite of evaluation tests on the test augmentations.
         """
-        img = _augment.compose(self.img, self._get_mask(), self.perturbation, angle_scale=self.params["angle_scale"],
-                                     translate_scale=self.params["translate_scale"])
-        tr_dict, outcomes = estimate_transform_robustness(self.detect_func, img, self.eval_augments, 
-                                                                    return_outcomes=True)
+        #img = _augment.compose(self.img, self._get_mask(), self.perturbation, angle_scale=self.params["angle_scale"],
+        #                             translate_scale=self.params["translate_scale"])
+        tr_dict, outcomes = estimate_transform_robustness(self.detect_func, self.img,
+                                                          self._get_mask(),
+                                                          self.perturbation,
+                                                          self.eval_augments, 
+                                                          self.params["angle_scale"],
+                                                          self.params["translate_scale"],
+                                                          return_outcomes=True)
         self.writer.add_scalar("eval_transform_robustness", tr_dict["tr"], global_step=self.query_counter)
         # visual check for correlations in transform robustness across augmentation params
         coldict = {-1:'k', 1:'b', 0:'r'}
