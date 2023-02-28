@@ -72,13 +72,15 @@ def wiggle_mask_and_perturbation(mask, perturbation, angle_scale=1, translate_sc
         
     Returns modified mask and perturbation
     """
-    angle = torch.Tensor(np.random.normal(0, angle_scale, size=(1,)))
-    translate = torch.Tensor(np.random.normal(0, translate_scale, size=(1,2)))
-    rotated_mask = kornia.geometry.transform.rotate(mask.unsqueeze(0), angle).squeeze()
-    rotated_pert = kornia.geometry.transform.rotate(perturbation.unsqueeze(0), angle).squeeze()
-    shifted_mask = kornia.geometry.transform.translate(rotated_mask.unsqueeze(0), translate).squeeze()
-    shifted_pert = kornia.geometry.transform.translate(rotated_pert.unsqueeze(0), translate).squeeze()
-    return shifted_mask, shifted_pert
+    if angle_scale > 0:
+        angle = torch.Tensor(np.random.normal(0, angle_scale, size=(1,)))
+        mask = kornia.geometry.transform.rotate(mask.unsqueeze(0), angle).squeeze()
+        pert = kornia.geometry.transform.rotate(perturbation.unsqueeze(0), angle).squeeze()
+    if translate_scale > 0:
+        translate = torch.Tensor(np.random.normal(0, translate_scale, size=(1,2)))
+        mask = kornia.geometry.transform.translate(mask.unsqueeze(0), translate).squeeze()
+        pert = kornia.geometry.transform.translate(pert.unsqueeze(0), translate).squeeze()
+    return mask, pert
 
 
 def compose(img, mask, perturbation, angle_scale=1, translate_scale=2,
