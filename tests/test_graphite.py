@@ -38,7 +38,7 @@ def test_estimate_transform_robustness():
     C = 3
     img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
     
-    results = estimate_transform_robustness(detect_func, img, augs)
+    results = estimate_transform_robustness(detect_func, augs, img)
     assert isinstance(results, dict)
     for c in ["crash_frac", "detect_frac", "tr"]:
         assert c in results
@@ -52,7 +52,7 @@ def test_estimate_transform_robustness_return_outcomes():
     C = 3
     img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
     
-    results, outcomes = estimate_transform_robustness(detect_func, img, augs,
+    results, outcomes = estimate_transform_robustness(detect_func, augs, img, 
                                             return_outcomes=True)
     assert isinstance(results, dict)
     for c in ["crash_frac", "detect_frac", "tr"]:

@@ -9,8 +9,9 @@ from electricmayhem import _mask
 from electricmayhem import _augment
 
 
-def estimate_transform_robustness(detect_func, img, mask, pert, 
-                                  augments, angle_scale=1, 
+def estimate_transform_robustness(detect_func, augments, img, 
+                                  mask=None, pert=None, 
+                                  angle_scale=1, 
                                   translate_scale=2, 
                                   return_outcomes=False):
     """
@@ -101,8 +102,8 @@ def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10, tr_th
         #img_w_pert = _augment.compose(img, M, perturbation, angle_scale, translate_scale)
         # estimate transform robustness
         #estimate = estimate_transform_robustness(detect_func, img_w_pert, augs)
-        estimate = estimate_transform_robustness(detect_func, img, M,
-                                                 perturbation, augs,
+        estimate = estimate_transform_robustness(detect_func, augs, img, M,
+                                                 perturbation, 
                                                  angle_scale=angle_scale,
                                                  translate_scale=translate_scale)
         estimate["a"] = a
@@ -154,8 +155,9 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, bet
         u = u/torch.norm(u)
 
         #img_w_u = _augment.compose(img, mask, pert + beta*u, angle_scale=angle_scale, translate_scale=translate_scale)
-        u_est = estimate_transform_robustness(detect_func, img, mask, 
-                                              pert+beta*u, augs,
+        u_est = estimate_transform_robustness(detect_func, augs, img, 
+                                              mask=mask, 
+                                              pert=pert+beta*u, 
                                               angle_scale=angle_scale,
                                               translate_scale=translate_scale)
         us.append(u)
@@ -198,8 +200,9 @@ def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None, 
     updated_trs = []
     for l in lrs:
         #img_updated = _augment.compose(img, mask, pert + l*gradient, angle_scale=angle_scale, translate_scale=translate_scale)
-        est = estimate_transform_robustness(detect_func, img, mask,
-                                            pert+l*gradient, augs,
+        est = estimate_transform_robustness(detect_func, augs, img, 
+                                            mask=mask,
+                                            pert=pert+l*gradient,
                                             angle_scale=angle_scale,
                                             translate_scale=translate_scale)
         updated_trs.append(est["tr"])
@@ -373,10 +376,11 @@ class BlackBoxPatchTrainer():
         """
         #img = _augment.compose(self.img, self._get_mask(), self.perturbation, angle_scale=self.params["angle_scale"],
         #                             translate_scale=self.params["translate_scale"])
-        tr_dict, outcomes = estimate_transform_robustness(self.detect_func, self.img,
+        tr_dict, outcomes = estimate_transform_robustness(self.detect_func, 
+                                                          self.eval_augments,
+                                                          self.img,
                                                           self._get_mask(),
                                                           self.perturbation,
-                                                          self.eval_augments, 
                                                           self.params["angle_scale"],
                                                           self.params["translate_scale"],
                                                           return_outcomes=True)
