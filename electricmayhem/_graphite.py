@@ -5,7 +5,7 @@ import kornia.geometry
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from electricmayhem import _mask
+from electricmayhem import mask
 from electricmayhem import _augment
 
 
@@ -263,7 +263,7 @@ class BlackBoxPatchTrainer():
         self.img = img
         self.initial_mask = initial_mask
         self.final_mask = final_mask
-        self.priority_mask = _mask.generate_priority_mask(initial_mask, final_mask)
+        self.priority_mask = mask.generate_priority_mask(initial_mask, final_mask)
         self.detect_func = detect_func
         
         #self.augments = [_augment.generate_aug_params(**aug_params) for _ in range(num_augments)]

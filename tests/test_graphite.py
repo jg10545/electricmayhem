@@ -4,7 +4,7 @@ import torch
 import torch.utils.tensorboard
 import dask
 
-from electricmayhem import _augment, _mask
+from electricmayhem import _augment, mask
 from electricmayhem._graphite import *
 
 dask.config.set(scheduler='threads')
@@ -70,9 +70,9 @@ def test_reduce_mask():
     C = 3
     img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
     pert = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
-    init_mask, final_mask = _mask.generate_rectangular_frame_mask(W, H, 20, 20, 30, 30,
+    init_mask, final_mask = mask.generate_rectangular_frame_mask(W, H, 20, 20, 30, 30,
                                           frame_width=5, return_torch=True)
-    priority_mask = _mask.generate_priority_mask(init_mask, final_mask)
+    priority_mask = mask.generate_priority_mask(init_mask, final_mask)
     
     n = 5
     a, results = reduce_mask(img, priority_mask, pert, detect_func, augs,
@@ -91,7 +91,7 @@ def test_estimate_gradient():
     tr_estimate = 0.5
     img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
     pert = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
-    init_mask, final_mask = _mask.generate_rectangular_frame_mask(W, H, 20, 20, 30, 30,
+    init_mask, final_mask = mask.generate_rectangular_frame_mask(W, H, 20, 20, 30, 30,
                                           frame_width=5, return_torch=True)
     grad = estimate_gradient(img, final_mask, pert, augs, 
                              detect_func, tr_estimate)
@@ -109,7 +109,7 @@ def test_update_perturbation():
     img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
     pert = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
     grad = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
-    init_mask, final_mask = _mask.generate_rectangular_frame_mask(W, H, 20, 20, 30, 30,
+    init_mask, final_mask = mask.generate_rectangular_frame_mask(W, H, 20, 20, 30, 30,
                                           frame_width=5, return_torch=True)
     
     newpert, lr = update_perturbation(img, final_mask, pert, augs,
@@ -133,7 +133,7 @@ def test_BlackBoxPatchTrainer(tmp_path_factory):
     C = 3
     tr_estimate = 0.5
     img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
-    init_mask, final_mask = _mask.generate_rectangular_frame_mask(W, H, 20,
+    init_mask, final_mask = mask.generate_rectangular_frame_mask(W, H, 20,
                                         20, 30, 30,
                                         frame_width=5, 
                                         return_torch=True)

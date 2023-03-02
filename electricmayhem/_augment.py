@@ -83,33 +83,36 @@ def wiggle_mask_and_perturbation(mask, perturbation, angle_scale=1, translate_sc
     return mask, pert
 
 
-def compose(img, mask, perturbation, angle_scale=1, translate_scale=2,
+def compose(img, mask=None, perturbation=None, angle_scale=1, translate_scale=2,
             augment=None):
     """
     Paste a perturbation on top of an image using a mask. If necessary, resizes
-    the perturbation and randomly jitters the perturbation/mask with respect to the image.
+    the perturbation and randomly jitters the perturbation/mask with respect to the image. Optionally apply augmentations as well.
     
     :img: torch.Tensor in (C,H,W) format; victim image
     :mask: torch.Tensor in (1,H,W) format
     :perturbation: torch.Tensor in (C',H,W) format
     :angle_scale: standard deviation (in degrees) of normal distribution to sample from for jitter angle
     :translate_scale: standard deviation (in pixels) of normal distribution to sample from for jitter distance
+    :augment: dictionary of augmentation parameters
     
     Returns image with perturbation as a 
     """
-    C,H,W = img.shape
-    # resize the perturbation if we need to
-    if (perturbation.shape[1] != H)|(perturbation.shape[2] != W):
-        perturbation = kornia.geometry.transform.resize(perturbation, (H,W))
-    # if we're jittering the mask, do that now 
-    if (angle_scale > 0)|(translate_scale > 0):
-        mask, perturbation = wiggle_mask_and_perturbation(mask, perturbation, 
-                                                            angle_scale, translate_scale)
-    # glue it all together
-    img_w_pert = torch.clamp(img*(1-mask) + perturbation*mask, 0, 1)
+    if (mask is not None) & (perturbation is not None):
+        C,H,W = img.shape
+        # resize the perturbation if we need to
+        if (perturbation.shape[1] != H)|(perturbation.shape[2] != W):
+            perturbation = kornia.geometry.transform.resize(perturbation, (H,W))
+        # if we're jittering the mask, do that now 
+        if (angle_scale > 0)|(translate_scale > 0):
+            mask, perturbation = wiggle_mask_and_perturbation(mask, perturbation, 
+                                                            angle_scale,
+                                                            translate_scale)
+        # glue it all together
+        img = torch.clamp(img*(1-mask) + perturbation*mask, 0, 1)
     
     # want to augment the image too? do that now.
     if augment is not None:
-        img_w_pert = augment_image(img_w_pert, **augment)
+        img = augment_image(img, **augment)
     
-    return img_w_pert
+    return img
