@@ -128,7 +128,7 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, bet
     us = []
     u_trs = []
     for _ in range(q):
-        u = torch.randn(pert.shape).type(torch.FloatTensor)*mask_resized
+        u = torch.randn(pert.shape).type(torch.FloatTensor)*mask_resized[:C,:,:]
         u = u/torch.norm(u)
 
         u_est = estimate_transform_robustness(detect_func, augs, img, 
