@@ -4,6 +4,7 @@ import torch
 import kornia.geometry
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import mlflow
 
 from electricmayhem import mask
 from electricmayhem import _augment
@@ -200,7 +201,8 @@ class BlackBoxPatchTrainer():
                  num_augments=100, q=10, beta=1, aug_params={}, tr_thresh=0.75,
                  reduce_steps=10, angle_scale=1, translate_scale=2, 
                  eval_augments=1000, perturbation=None, mask_thresh=0.99,
-                 num_boost_iters=1, run_name=None):
+                 num_boost_iters=1, extra_params={}, 
+                 mlflow_uri=None, experiment_name=None, run_name=None):
         """
         :img: torch.Tensor in (C,H,W) format representing the image being modified
         :initial_mask: torch.Tensor in (C,H,W) starting mask as an image with 0,1 values
@@ -225,6 +227,9 @@ class BlackBoxPatchTrainer():
             over to the final_mask
         :num_boost_iters: int; number of boosts (RGF/line search) steps to
             run per epoch. GRAPHITE used 5.
+        :extra_params: dictionary of other parameters you'd like recorded
+        :mlflow_uri: string; URI for MLFlow server or directory
+        :experiment_name: string; name of MLFlow experiment to log
         :run_name: string; name for the run
         
         """
@@ -254,8 +259,34 @@ class BlackBoxPatchTrainer():
                        "tr_thresh":tr_thresh,
                       "reduce_steps":reduce_steps, "angle_scale":angle_scale, "translate_scale":translate_scale,
                       "num_boost_iters":num_boost_iters}
+        for k in extra_params:
+            self.params[k] = extra_params[k]
         #self.writer.add_hparams(self.params, {"eval_transform_robustness":0}, 
         #                        run_name=run_name)
+        self._configure_mlflow(mlflow_uri, experiment_name, run_name)
+        
+    def _configure_mlflow(self, uri, expt, run):
+        # set up connection to server, experiment, and start run
+        if (uri is not None)&(expt is not None):
+            mlflow.set_tracking_uri(uri)
+            mlflow.set_experiment(expt)
+            mlflow.start_run(run_id=run)
+            self._logging_to_mlflow = True
+            
+            # now log parameters
+            mlflow.log_params(self.aug_params)
+            mlflow.log_params(self.params)
+        else:
+            self._logging_to_mlflow = False
+            
+    def log_metrics_to_mlflow(self, metdict):
+        if self._logging_to_mlflow:
+            mlflow.log_metrics(metdict, step=self.query_counter)
+        
+            
+            
+    def __del__(self):
+        mlflow.end_run()
         
     def _sample_augmentations(self, num_augments=None):
         """
