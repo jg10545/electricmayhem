@@ -11,20 +11,16 @@ from electricmayhem import _augment
 
 def estimate_transform_robustness(detect_func, augments, img, 
                                   mask=None, pert=None, 
-                                  angle_scale=1, 
-                                  translate_scale=2, 
                                   return_outcomes=False):
     """
     Estimate transform robustness as an expectation over transformations. 
     
     :detect_func: detection function to wrap; should input a (C,H,W) torch Tensor and
         output a string
-    :img: (C,H,W) torch Tensor 
-    :mask:
-    :pert:
+    :img: (C,H,W) torch Tensor containing the original image
+    :mask: (C,H,W) torch Tensor containing the mask as 0/1 values
+    :pert: (C,H',W') torch Tensor containing the adversarial perturbation
     :augments: list of dictionaries giving augmentation parameters
-    :angle_scale:
-    :translate_scale:
     
     Returns a dictionary containing:
         :crash_frac: fraction of augments where function returned an empty string
@@ -34,24 +30,16 @@ def estimate_transform_robustness(detect_func, augments, img,
             not detected
     """
     def _augment_and_detect(i,m,p,a):
-        #return detect_func(_augment.augment_image(i,**a))
-        return detect_func(_augment.compose(i,m,p,
-                                            angle_scale=angle_scale,
-                                            translate_scale=translate_scale,
-                                            augment=a))
+        return detect_func(_augment.augment_image(i,mask=m, perturbation=p, **a))
     
     tasks = [dask.delayed(_augment_and_detect)(img, mask, pert, a) 
              for a in augments]
     outcomes = dask.compute(*tasks)
     # how often did openALPR crap out?
-    #crash_frac = np.mean([len(o)==0 for o in outcomes])
     crash_frac = np.mean([o == -1 for o in outcomes])
     # how often did it detect the plate?
-    #detect_frac = np.mean([p in o for o in outcomes])
     detect_frac = np.mean([o == 1 for o in outcomes])
-    # how often did it return an answer, but not find the correct answer?
-    #nondetect_frac = np.mean([o == 0 for o in outcomes])
-    #no_plates_frac = np.mean(['No license plates' in o for o in outcomes])
+    
     outdict = {
         "crash_frac":crash_frac,
         "detect_frac":detect_frac,
@@ -63,8 +51,8 @@ def estimate_transform_robustness(detect_func, augments, img,
         return outdict
 
 
-def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10, tr_threshold=0.75, 
-                maxval=0.9999, minval=0, angle_scale=1, translate_scale=2):
+def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10,
+                tr_threshold=0.75, maxval=0.9999, minval=0):
     """
     Method for interpolating between the initial and final masks- DIFFERENT FROM THE GRAPHITE PAPER
     
@@ -84,10 +72,6 @@ def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10, tr_th
     :tr_threshold: transform robustness threshold to aim for
     :maxval: float; max value to search over
     :minval: float; min value to search over
-    :angle_scale: float; standard deviation, in degrees, of normal
-        distribution angle will be chosen from
-    :translate_scale: float; standard deviation, in pixels, of normal
-        distribution x and y translations
         
     Returns final threshold a and a list of dictionaries containing the TR
         results at each search step.
@@ -98,14 +82,10 @@ def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10, tr_th
         a = 0.5*(maxval+minval)
         # compute the mask
         M = (priority_mask > a).float()
-        # combine image and perturbation using the current mask
-        #img_w_pert = _augment.compose(img, M, perturbation, angle_scale, translate_scale)
         # estimate transform robustness
-        #estimate = estimate_transform_robustness(detect_func, img_w_pert, augs)
-        estimate = estimate_transform_robustness(detect_func, augs, img, M,
-                                                 perturbation, 
-                                                 angle_scale=angle_scale,
-                                                 translate_scale=translate_scale)
+        estimate = estimate_transform_robustness(detect_func, augs, img, 
+                                                 mask=M,
+                                                 pert=perturbation)
         estimate["a"] = a
         results.append(estimate)
 
@@ -118,7 +98,7 @@ def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10, tr_th
     return a, results
 
 
-def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, beta=1, angle_scale=1, translate_scale=2):
+def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, beta=1):
     """
     Use Randomized Gradient-Free estimation to compute a gradient.
     
@@ -135,10 +115,6 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, bet
         image/mask/perturbation
     :q: int; number of random vectors to sample
     :beta: float; smoothing parameter setting size of random shifts to perturbation
-    :angle_scale: float; standard deviation, in degrees, of normal
-        distribution angle will be chosen from
-    :translate_scale: float; standard deviation, in pixels, of normal
-        distribution x and y translations
         
     Returns gradient as a (C,H,W) torch Tensor
     """
@@ -154,12 +130,9 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, bet
         u = torch.randn(pert.shape).type(torch.FloatTensor)*mask_resized
         u = u/torch.norm(u)
 
-        #img_w_u = _augment.compose(img, mask, pert + beta*u, angle_scale=angle_scale, translate_scale=translate_scale)
         u_est = estimate_transform_robustness(detect_func, augs, img, 
                                               mask=mask, 
-                                              pert=pert+beta*u, 
-                                              angle_scale=angle_scale,
-                                              translate_scale=translate_scale)
+                                              pert=pert+beta*u)
         us.append(u)
         u_trs.append(u_est["tr"])
         
@@ -170,7 +143,7 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, bet
     return gradient
 
 
-def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None, angle_scale=1, translate_scale=2):
+def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None):
     """
     TO DO replace this with backtracking line search
     
@@ -202,9 +175,7 @@ def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None, 
         #img_updated = _augment.compose(img, mask, pert + l*gradient, angle_scale=angle_scale, translate_scale=translate_scale)
         est = estimate_transform_robustness(detect_func, augs, img, 
                                             mask=mask,
-                                            pert=pert+l*gradient,
-                                            angle_scale=angle_scale,
-                                            translate_scale=translate_scale)
+                                            pert=pert+l*gradient)
         updated_trs.append(est["tr"])
         
     # now just pick whatever value worked best.
@@ -225,9 +196,11 @@ class BlackBoxPatchTrainer():
     the GRAPHITE paper.
     """
     
-    def __init__(self, img, initial_mask, final_mask, detect_func, logdir, num_augments=100, q=10, beta=1, 
-                 aug_params={}, tr_thresh=0.75, reduce_steps=10, angle_scale=1, translate_scale=2, 
-                 eval_augments=1000, perturbation=None, mask_thresh=0.99, num_boost_iters=1, run_name=None):
+    def __init__(self, img, initial_mask, final_mask, detect_func, logdir,
+                 num_augments=100, q=10, beta=1, aug_params={}, tr_thresh=0.75,
+                 reduce_steps=10, angle_scale=1, translate_scale=2, 
+                 eval_augments=1000, perturbation=None, mask_thresh=0.99,
+                 num_boost_iters=1, run_name=None):
         """
         :img: torch.Tensor in (C,H,W) format representing the image being modified
         :initial_mask: torch.Tensor in (C,H,W) starting mask as an image with 0,1 values
@@ -266,7 +239,6 @@ class BlackBoxPatchTrainer():
         self.priority_mask = mask.generate_priority_mask(initial_mask, final_mask)
         self.detect_func = detect_func
         
-        #self.augments = [_augment.generate_aug_params(**aug_params) for _ in range(num_augments)]
         if isinstance(eval_augments, int):
             eval_augments = [_augment.generate_aug_params(**aug_params) for _ in range(eval_augments)]
         self.eval_augments = eval_augments
@@ -278,7 +250,8 @@ class BlackBoxPatchTrainer():
         self.writer = torch.utils.tensorboard.SummaryWriter(logdir)
         
         self.aug_params = aug_params
-        self.params = {"num_augments":num_augments, "q":q, "beta":beta, "tr_thresh":tr_thresh,
+        self.params = {"num_augments":num_augments, "q":q, "beta":beta,
+                       "tr_thresh":tr_thresh,
                       "reduce_steps":reduce_steps, "angle_scale":angle_scale, "translate_scale":translate_scale,
                       "num_boost_iters":num_boost_iters}
         #self.writer.add_hparams(self.params, {"eval_transform_robustness":0}, 
@@ -321,9 +294,7 @@ class BlackBoxPatchTrainer():
                                            augments,
                                            n=self.params["reduce_steps"],
                                            tr_threshold=self.params["tr_thresh"],
-                                           minval=self.a,
-                                           angle_scale=self.params["angle_scale"],
-                                           translate_scale=self.params["translate_scale"])
+                                           minval=self.a)
         self.a = a
         self.tr = results[-1]["tr"]
         # for every mask threshold step record stats in tensorboard
@@ -345,9 +316,7 @@ class BlackBoxPatchTrainer():
                                      self.detect_func, 
                                      self.tr, 
                                      self.params["q"], 
-                                     self.params["beta"],
-                                     angle_scale=self.params["angle_scale"],
-                                     translate_scale=self.params["translate_scale"])
+                                     self.params["beta"])
         self.query_counter += self.params["num_augments"]*self.params["q"]
         self.writer.add_scalar("gradient_l2_norm", np.sqrt(np.sum(gradient.numpy()**2)), global_step=self.query_counter)
         return gradient
@@ -363,9 +332,7 @@ class BlackBoxPatchTrainer():
                                                         augments, 
                                                         self.detect_func, 
                                                         gradient, 
-                                                        lrs=lrs, 
-                                                        angle_scale=self.params["angle_scale"], 
-                                                        translate_scale=self.params["translate_scale"])
+                                                        lrs=lrs)
         self.query_counter += 8*self.params["num_augments"]
         self.writer.add_scalar("learning_rate", resultdict["lr"], global_step=self.query_counter)
         
@@ -381,10 +348,9 @@ class BlackBoxPatchTrainer():
                                                           self.img,
                                                           self._get_mask(),
                                                           self.perturbation,
-                                                          self.params["angle_scale"],
-                                                          self.params["translate_scale"],
                                                           return_outcomes=True)
-        self.writer.add_scalar("eval_transform_robustness", tr_dict["tr"], global_step=self.query_counter)
+        self.writer.add_scalar("eval_transform_robustness", tr_dict["tr"],
+                               global_step=self.query_counter)
         # visual check for correlations in transform robustness across augmentation params
         coldict = {-1:'k', 1:'b', 0:'r'}
         fig, ax = plt.subplots(nrows=1, ncols=1)
