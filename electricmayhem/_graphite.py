@@ -203,7 +203,7 @@ class BlackBoxPatchTrainer():
                  reduce_steps=10, angle_scale=1, translate_scale=2, 
                  eval_augments=1000, perturbation=None, mask_thresh=0.99,
                  num_boost_iters=1, extra_params={}, 
-                 mlflow_uri=None, experiment_name=None, run_name=None):
+                 mlflow_uri=None, experiment_name=None):
         """
         :img: torch.Tensor in (C,H,W) format representing the image being modified
         :initial_mask: torch.Tensor in (C,H,W) starting mask as an image with 0,1 values
@@ -231,7 +231,6 @@ class BlackBoxPatchTrainer():
         :extra_params: dictionary of other parameters you'd like recorded
         :mlflow_uri: string; URI for MLFlow server or directory
         :experiment_name: string; name of MLFlow experiment to log
-        :run_name: string; name for the run
         
         """
         self.query_counter = 0
@@ -261,18 +260,18 @@ class BlackBoxPatchTrainer():
                       "reduce_steps":reduce_steps, "angle_scale":angle_scale, "translate_scale":translate_scale,
                       "num_boost_iters":num_boost_iters}
         self.extra_params = extra_params
-        self._configure_mlflow(mlflow_uri, experiment_name, run_name)
+        self._configure_mlflow(mlflow_uri, experiment_name)
         # record hyperparams for all posterity
         yaml.dump({"params":self.params, "aug_params":self.aug_params,
                    "extra_params":self.extra_params},
                   open(os.path.join(logdir, "config.yml"), "w"))
         
-    def _configure_mlflow(self, uri, expt, run):
+    def _configure_mlflow(self, uri, expt):
         # set up connection to server, experiment, and start run
         if (uri is not None)&(expt is not None):
             mlflow.set_tracking_uri(uri)
             mlflow.set_experiment(expt)
-            mlflow.start_run(run_id=run)
+            mlflow.start_run()
             self._logging_to_mlflow = True
             
             # now log parameters
