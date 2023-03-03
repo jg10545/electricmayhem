@@ -19,7 +19,9 @@ requirements = [
     'tensorboard',
     'matplotlib',
     'tqdm',
-    'tensorboard'
+    'tensorboard',
+    'mlflow',
+    'pyaml'
     ]
 
 test_requirements = ['pytest>=3', ]

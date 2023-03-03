@@ -23,20 +23,6 @@ def test_augment_image():
     augmented = augment_image(img, **params)
     assert isinstance(augmented, torch.Tensor)
     
-    
-    
-def test_wiggle_mask_and_perturbations():
-    shape = (3,31,43)
-    pert = torch.Tensor(np.random.uniform(0, 1, shape))
-    mask = torch.Tensor(np.random.choice([0,1], size=shape))
-    
-    shifted_mask, shifted_pert = wiggle_mask_and_perturbation(mask, pert, 1, 5)
-    assert isinstance(shifted_mask, torch.Tensor)
-    assert isinstance(shifted_pert, torch.Tensor)
-    assert pert.shape == shifted_pert.shape
-    assert mask.shape == shifted_mask.shape
-    
-    
 
 def test_compose():
     shape = (3,31,43)
