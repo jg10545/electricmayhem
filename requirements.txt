@@ -6,3 +6,5 @@ tensorboard
 matplotlib
 tqdm
 tensorboard
+mlflow
+pyaml
