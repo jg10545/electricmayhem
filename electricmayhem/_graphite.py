@@ -382,6 +382,7 @@ class BlackBoxPatchTrainer():
                                                           return_outcomes=True)
         self.writer.add_scalar("eval_transform_robustness", tr_dict["tr"],
                                global_step=self.query_counter)
+        self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
         # visual check for correlations in transform robustness across augmentation params
         coldict = {-1:'k', 1:'b', 0:'r'}
         fig, ax = plt.subplots(nrows=1, ncols=1)
