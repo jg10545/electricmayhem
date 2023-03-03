@@ -11,16 +11,6 @@ with open('HISTORY.rst') as history_file:
 with open('requirements.txt') as req_file:
     requirements = req_file.read()
 
-requirements = [
-    'numpy',
-    'torch',
-    'kornia',
-    'dask',
-    'tensorboard',
-    'matplotlib',
-    'tqdm',
-    'tensorboard'
-    ]
 
 test_requirements = ['pytest>=3', ]
 

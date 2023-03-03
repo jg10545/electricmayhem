@@ -1,21 +1,28 @@
 import numpy as np
 import dask
 import torch
-from electricmayhem import _augment
 import kornia.geometry
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import mlflow
+import os
+import yaml
 
-from electricmayhem import _mask
+from electricmayhem import mask
+from electricmayhem import _augment
 
 
-def estimate_transform_robustness(detect_func, img, augments, return_outcomes=False):
+def estimate_transform_robustness(detect_func, augments, img, 
+                                  mask=None, pert=None, 
+                                  return_outcomes=False):
     """
     Estimate transform robustness as an expectation over transformations. 
     
     :detect_func: detection function to wrap; should input a (C,H,W) torch Tensor and
         output a string
-    :img: (C,H,W) torch Tensor 
+    :img: (C,H,W) torch Tensor containing the original image
+    :mask: (C,H,W) torch Tensor containing the mask as 0/1 values
+    :pert: (C,H',W') torch Tensor containing the adversarial perturbation
     :augments: list of dictionaries giving augmentation parameters
     
     Returns a dictionary containing:
@@ -25,20 +32,17 @@ def estimate_transform_robustness(detect_func, img, augments, return_outcomes=Fa
         :tr: transform robustness estimate; fraction of non-crash cases where the plate was 
             not detected
     """
-    def _augment_and_detect(i,a):
-        return detect_func(_augment.augment_image(i,**a))
+    def _augment_and_detect(i,m,p,a):
+        return detect_func(_augment.augment_image(i,mask=m, perturbation=p, **a))
     
-    tasks = [dask.delayed(_augment_and_detect)(img, a) for a in augments]
+    tasks = [dask.delayed(_augment_and_detect)(img, mask, pert, a) 
+             for a in augments]
     outcomes = dask.compute(*tasks)
     # how often did openALPR crap out?
-    #crash_frac = np.mean([len(o)==0 for o in outcomes])
     crash_frac = np.mean([o == -1 for o in outcomes])
     # how often did it detect the plate?
-    #detect_frac = np.mean([p in o for o in outcomes])
     detect_frac = np.mean([o == 1 for o in outcomes])
-    # how often did it return an answer, but not find the correct answer?
-    #nondetect_frac = np.mean([o == 0 for o in outcomes])
-    #no_plates_frac = np.mean(['No license plates' in o for o in outcomes])
+    
     outdict = {
         "crash_frac":crash_frac,
         "detect_frac":detect_frac,
@@ -50,8 +54,8 @@ def estimate_transform_robustness(detect_func, img, augments, return_outcomes=Fa
         return outdict
 
 
-def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10, tr_threshold=0.75, 
-                maxval=0.9999, minval=0, angle_scale=1, translate_scale=2):
+def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10,
+                tr_threshold=0.75, maxval=0.9999, minval=0):
     """
     Method for interpolating between the initial and final masks- DIFFERENT FROM THE GRAPHITE PAPER
     
@@ -71,10 +75,6 @@ def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10, tr_th
     :tr_threshold: transform robustness threshold to aim for
     :maxval: float; max value to search over
     :minval: float; min value to search over
-    :angle_scale: float; standard deviation, in degrees, of normal
-        distribution angle will be chosen from
-    :translate_scale: float; standard deviation, in pixels, of normal
-        distribution x and y translations
         
     Returns final threshold a and a list of dictionaries containing the TR
         results at each search step.
@@ -85,10 +85,10 @@ def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10, tr_th
         a = 0.5*(maxval+minval)
         # compute the mask
         M = (priority_mask > a).float()
-        # combine image and perturbation using the current mask
-        img_w_pert = _augment.compose(img, M, perturbation, angle_scale, translate_scale)
         # estimate transform robustness
-        estimate = estimate_transform_robustness(detect_func, img_w_pert, augs)
+        estimate = estimate_transform_robustness(detect_func, augs, img, 
+                                                 mask=M,
+                                                 pert=perturbation)
         estimate["a"] = a
         results.append(estimate)
 
@@ -101,7 +101,7 @@ def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10, tr_th
     return a, results
 
 
-def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, beta=1, angle_scale=1, translate_scale=2):
+def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, beta=1):
     """
     Use Randomized Gradient-Free estimation to compute a gradient.
     
@@ -118,10 +118,6 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, bet
         image/mask/perturbation
     :q: int; number of random vectors to sample
     :beta: float; smoothing parameter setting size of random shifts to perturbation
-    :angle_scale: float; standard deviation, in degrees, of normal
-        distribution angle will be chosen from
-    :translate_scale: float; standard deviation, in pixels, of normal
-        distribution x and y translations
         
     Returns gradient as a (C,H,W) torch Tensor
     """
@@ -134,22 +130,23 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, bet
     us = []
     u_trs = []
     for _ in range(q):
-        u = torch.randn(pert.shape).type(torch.FloatTensor)*mask_resized
+        u = torch.randn(pert.shape).type(torch.FloatTensor)*mask_resized[:C,:,:]
         u = u/torch.norm(u)
 
-        img_w_u = _augment.compose(img, mask, pert + beta*u, angle_scale=angle_scale, translate_scale=translate_scale)
-        u_est = estimate_transform_robustness(detect_func, img_w_u, augs)
+        u_est = estimate_transform_robustness(detect_func, augs, img, 
+                                              mask=mask, 
+                                              pert=pert+beta*u)
         us.append(u)
         u_trs.append(u_est["tr"])
         
     gradient = torch.zeros_like(pert)
     for u,tr in zip(us, u_trs):
-        gradient += (tr - tr_estimate)*u/beta
+        gradient += (tr - tr_estimate)*u/(beta*q)
         
     return gradient
 
 
-def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None, angle_scale=1, translate_scale=2):
+def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None):
     """
     TO DO replace this with backtracking line search
     
@@ -178,8 +175,9 @@ def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None, 
     # measure transform robustness at each 
     updated_trs = []
     for l in lrs:
-        img_updated = _augment.compose(img, mask, pert + l*gradient, angle_scale=angle_scale, translate_scale=translate_scale)
-        est = estimate_transform_robustness(detect_func, img_updated, augs)
+        est = estimate_transform_robustness(detect_func, augs, img, 
+                                            mask=mask,
+                                            pert=pert+l*gradient)
         updated_trs.append(est["tr"])
         
     # now just pick whatever value worked best.
@@ -200,9 +198,12 @@ class BlackBoxPatchTrainer():
     the GRAPHITE paper.
     """
     
-    def __init__(self, img, initial_mask, final_mask, detect_func, logdir, num_augments=100, q=10, beta=1, 
-                 aug_params={}, tr_thresh=0.75, reduce_steps=10, angle_scale=1, translate_scale=2, 
-                 eval_augments=1000, perturbation=None, mask_thresh=0.99, num_boost_iters=1, run_name=None):
+    def __init__(self, img, initial_mask, final_mask, detect_func, logdir,
+                 num_augments=100, q=10, beta=1, aug_params={}, tr_thresh=0.75,
+                 reduce_steps=10, angle_scale=1, translate_scale=2, 
+                 eval_augments=1000, perturbation=None, mask_thresh=0.99,
+                 num_boost_iters=1, extra_params={}, 
+                 mlflow_uri=None, experiment_name=None):
         """
         :img: torch.Tensor in (C,H,W) format representing the image being modified
         :initial_mask: torch.Tensor in (C,H,W) starting mask as an image with 0,1 values
@@ -227,7 +228,9 @@ class BlackBoxPatchTrainer():
             over to the final_mask
         :num_boost_iters: int; number of boosts (RGF/line search) steps to
             run per epoch. GRAPHITE used 5.
-        :run_name: string; name for the run
+        :extra_params: dictionary of other parameters you'd like recorded
+        :mlflow_uri: string; URI for MLFlow server or directory
+        :experiment_name: string; name of MLFlow experiment to log
         
         """
         self.query_counter = 0
@@ -238,10 +241,9 @@ class BlackBoxPatchTrainer():
         self.img = img
         self.initial_mask = initial_mask
         self.final_mask = final_mask
-        self.priority_mask = _mask.generate_priority_mask(initial_mask, final_mask)
+        self.priority_mask = mask.generate_priority_mask(initial_mask, final_mask)
         self.detect_func = detect_func
         
-        #self.augments = [_augment.generate_aug_params(**aug_params) for _ in range(num_augments)]
         if isinstance(eval_augments, int):
             eval_augments = [_augment.generate_aug_params(**aug_params) for _ in range(eval_augments)]
         self.eval_augments = eval_augments
@@ -253,11 +255,40 @@ class BlackBoxPatchTrainer():
         self.writer = torch.utils.tensorboard.SummaryWriter(logdir)
         
         self.aug_params = aug_params
-        self.params = {"num_augments":num_augments, "q":q, "beta":beta, "tr_thresh":tr_thresh,
+        self.params = {"num_augments":num_augments, "q":q, "beta":beta,
+                       "tr_thresh":tr_thresh,
                       "reduce_steps":reduce_steps, "angle_scale":angle_scale, "translate_scale":translate_scale,
                       "num_boost_iters":num_boost_iters}
-        #self.writer.add_hparams(self.params, {"eval_transform_robustness":0}, 
-        #                        run_name=run_name)
+        self.extra_params = extra_params
+        self._configure_mlflow(mlflow_uri, experiment_name)
+        # record hyperparams for all posterity
+        yaml.dump({"params":self.params, "aug_params":self.aug_params,
+                   "extra_params":self.extra_params},
+                  open(os.path.join(logdir, "config.yml"), "w"))
+        
+    def _configure_mlflow(self, uri, expt):
+        # set up connection to server, experiment, and start run
+        if (uri is not None)&(expt is not None):
+            mlflow.set_tracking_uri(uri)
+            mlflow.set_experiment(expt)
+            mlflow.start_run()
+            self._logging_to_mlflow = True
+            
+            # now log parameters
+            mlflow.log_params(self.aug_params)
+            mlflow.log_params(self.params)
+            mlflow.log_params(self.extra_params)
+        else:
+            self._logging_to_mlflow = False
+            
+    def log_metrics_to_mlflow(self, metdict):
+        if self._logging_to_mlflow:
+            mlflow.log_metrics(metdict, step=self.query_counter)
+        
+            
+            
+    def __del__(self):
+        mlflow.end_run()
         
     def _sample_augmentations(self, num_augments=None):
         """
@@ -296,9 +327,7 @@ class BlackBoxPatchTrainer():
                                            augments,
                                            n=self.params["reduce_steps"],
                                            tr_threshold=self.params["tr_thresh"],
-                                           minval=self.a,
-                                           angle_scale=self.params["angle_scale"],
-                                           translate_scale=self.params["translate_scale"])
+                                           minval=self.a)
         self.a = a
         self.tr = results[-1]["tr"]
         # for every mask threshold step record stats in tensorboard
@@ -320,9 +349,7 @@ class BlackBoxPatchTrainer():
                                      self.detect_func, 
                                      self.tr, 
                                      self.params["q"], 
-                                     self.params["beta"],
-                                     angle_scale=self.params["angle_scale"],
-                                     translate_scale=self.params["translate_scale"])
+                                     self.params["beta"])
         self.query_counter += self.params["num_augments"]*self.params["q"]
         self.writer.add_scalar("gradient_l2_norm", np.sqrt(np.sum(gradient.numpy()**2)), global_step=self.query_counter)
         return gradient
@@ -338,9 +365,7 @@ class BlackBoxPatchTrainer():
                                                         augments, 
                                                         self.detect_func, 
                                                         gradient, 
-                                                        lrs=lrs, 
-                                                        angle_scale=self.params["angle_scale"], 
-                                                        translate_scale=self.params["translate_scale"])
+                                                        lrs=lrs)
         self.query_counter += 8*self.params["num_augments"]
         self.writer.add_scalar("learning_rate", resultdict["lr"], global_step=self.query_counter)
         
@@ -349,11 +374,14 @@ class BlackBoxPatchTrainer():
         """
         Run a suite of evaluation tests on the test augmentations.
         """
-        img = _augment.compose(self.img, self._get_mask(), self.perturbation, angle_scale=self.params["angle_scale"],
-                                     translate_scale=self.params["translate_scale"])
-        tr_dict, outcomes = estimate_transform_robustness(self.detect_func, img, self.eval_augments, 
-                                                                    return_outcomes=True)
-        self.writer.add_scalar("eval_transform_robustness", tr_dict["tr"], global_step=self.query_counter)
+        tr_dict, outcomes = estimate_transform_robustness(self.detect_func, 
+                                                          self.eval_augments,
+                                                          self.img,
+                                                          self._get_mask(),
+                                                          self.perturbation,
+                                                          return_outcomes=True)
+        self.writer.add_scalar("eval_transform_robustness", tr_dict["tr"],
+                               global_step=self.query_counter)
         # visual check for correlations in transform robustness across augmentation params
         coldict = {-1:'k', 1:'b', 0:'r'}
         fig, ax = plt.subplots(nrows=1, ncols=1)
@@ -366,14 +394,16 @@ class BlackBoxPatchTrainer():
         ax.set_ylabel("gamma", fontsize=14)
         
         self.writer.add_figure("evaluation_augmentations", fig, global_step=self.query_counter)
-        #self.writer.add_hparams(self.params, {"eval_transform_robustness":tr_dict["tr"]}, 
-        #                        run_name=self.run_name)
         
     def _log_image(self):
         """
         log image to tensorboard
         """
         self.writer.add_image("img_with_mask_and_perturbation", self._get_img_with_perturbation(), global_step=self.query_counter)
+        
+    def _save_perturbation(self):
+        filepath = os.path.join(self.logdir, f"perturbation_{self.query_counter}.npy")
+        np.save(filepath, self.perturbation.numpy())
         
     def _run_one_epoch(self, lrs=None):
         if self.a < self.mask_thresh:
@@ -383,6 +413,7 @@ class BlackBoxPatchTrainer():
             self._update_perturbation(gradient, lrs=lrs)
         self._log_image()
         self.evaluate()
+        self._save_perturbation()
                 
     def fit(self, epochs=None, budget=None, lrs=None):
         self._log_image()
@@ -392,8 +423,12 @@ class BlackBoxPatchTrainer():
                 self._run_one_epoch(lrs=lrs)
                 
         elif budget is not None:
+            progress = tqdm(total=budget)
             while self.query_counter < budget:
                 self._run_one_epoch(lrs=lrs)
+                progress.update(n=self.query_counter)
+                
+            progress.close()
         else:
             print("WHAT DO YOU WANT FROM ME?")       
         
