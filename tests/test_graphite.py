@@ -146,6 +146,30 @@ def test_BlackBoxPatchTrainer(tmp_path_factory):
     trainer.fit(epochs=1)
     
     
+    
+def test_BlackBoxPatchTrainer_with_different_pert_size(tmp_path_factory):
+    # SAVE IT TO LOG DIR
+    logdir = str(tmp_path_factory.mktemp("logs"))
+    
+    H = 101
+    W = 107
+    C = 3
+    img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
+    pert = torch.Tensor(np.random.uniform(0, 1, size=(C,int(H/2),int(W/3))))
+    init_mask, final_mask = mask.generate_rectangular_frame_mask(W, H, 20,
+                                        20, 30, 30,
+                                        frame_width=5, 
+                                        return_torch=True)
+    
+    trainer = BlackBoxPatchTrainer(img, init_mask, 
+                                   final_mask, detect_func, logdir,
+                                   perturbation=pert,
+                                   num_augments=2, 
+                                   q=5,
+                                   reduce_steps=2)
+    trainer.fit(epochs=1)
+    
+    
 
     
 def test_BlackBoxPatchTrainer_with_gray_perturbation(tmp_path_factory):
@@ -155,7 +179,6 @@ def test_BlackBoxPatchTrainer_with_gray_perturbation(tmp_path_factory):
     H = 101
     W = 107
     C = 3
-    tr_estimate = 0.5
     img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
     pert = torch.Tensor(np.random.uniform(0, 1, size=(1,H,W)))
     init_mask, final_mask = mask.generate_rectangular_frame_mask(W, H, 20,

@@ -5,6 +5,8 @@ import kornia.geometry
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import mlflow
+import os
+import yaml
 
 from electricmayhem import mask
 from electricmayhem import _augment
@@ -139,7 +141,7 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, bet
         
     gradient = torch.zeros_like(pert)
     for u,tr in zip(us, u_trs):
-        gradient += (tr - tr_estimate)*u/beta
+        gradient += (tr - tr_estimate)*u/(beta*q)
         
     return gradient
 
@@ -173,7 +175,6 @@ def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None):
     # measure transform robustness at each 
     updated_trs = []
     for l in lrs:
-        #img_updated = _augment.compose(img, mask, pert + l*gradient, angle_scale=angle_scale, translate_scale=translate_scale)
         est = estimate_transform_robustness(detect_func, augs, img, 
                                             mask=mask,
                                             pert=pert+l*gradient)
@@ -259,11 +260,12 @@ class BlackBoxPatchTrainer():
                        "tr_thresh":tr_thresh,
                       "reduce_steps":reduce_steps, "angle_scale":angle_scale, "translate_scale":translate_scale,
                       "num_boost_iters":num_boost_iters}
-        for k in extra_params:
-            self.params[k] = extra_params[k]
-        #self.writer.add_hparams(self.params, {"eval_transform_robustness":0}, 
-        #                        run_name=run_name)
+        self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name, run_name)
+        # record hyperparams for all posterity
+        yaml.dump({"params":self.params, "aug_params":self.aug_params,
+                   "extra_params":self.extra_params},
+                  open(os.path.join(logdir, "config.yml")))
         
     def _configure_mlflow(self, uri, expt, run):
         # set up connection to server, experiment, and start run
@@ -276,6 +278,7 @@ class BlackBoxPatchTrainer():
             # now log parameters
             mlflow.log_params(self.aug_params)
             mlflow.log_params(self.params)
+            mlflow.log_params(self.extra_params)
         else:
             self._logging_to_mlflow = False
             
@@ -372,8 +375,6 @@ class BlackBoxPatchTrainer():
         """
         Run a suite of evaluation tests on the test augmentations.
         """
-        #img = _augment.compose(self.img, self._get_mask(), self.perturbation, angle_scale=self.params["angle_scale"],
-        #                             translate_scale=self.params["translate_scale"])
         tr_dict, outcomes = estimate_transform_robustness(self.detect_func, 
                                                           self.eval_augments,
                                                           self.img,
@@ -394,14 +395,16 @@ class BlackBoxPatchTrainer():
         ax.set_ylabel("gamma", fontsize=14)
         
         self.writer.add_figure("evaluation_augmentations", fig, global_step=self.query_counter)
-        #self.writer.add_hparams(self.params, {"eval_transform_robustness":tr_dict["tr"]}, 
-        #                        run_name=self.run_name)
         
     def _log_image(self):
         """
         log image to tensorboard
         """
         self.writer.add_image("img_with_mask_and_perturbation", self._get_img_with_perturbation(), global_step=self.query_counter)
+        
+    def _save_perturbation(self):
+        filepath = os.path.join(self.logdir, f"perturbation_{self.query_counter}.npy")
+        np.save(filepath, self.perturbation.numpy())
         
     def _run_one_epoch(self, lrs=None):
         if self.a < self.mask_thresh:
@@ -411,6 +414,7 @@ class BlackBoxPatchTrainer():
             self._update_perturbation(gradient, lrs=lrs)
         self._log_image()
         self.evaluate()
+        self._save_perturbation()
                 
     def fit(self, epochs=None, budget=None, lrs=None):
         self._log_image()
@@ -420,8 +424,12 @@ class BlackBoxPatchTrainer():
                 self._run_one_epoch(lrs=lrs)
                 
         elif budget is not None:
+            progress = tqdm(total=budget)
             while self.query_counter < budget:
                 self._run_one_epoch(lrs=lrs)
+                progress.update(n=self.query_counter)
+                
+            progress.close()
         else:
             print("WHAT DO YOU WANT FROM ME?")       
         
