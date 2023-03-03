@@ -200,7 +200,7 @@ class BlackBoxPatchTrainer():
     
     def __init__(self, img, initial_mask, final_mask, detect_func, logdir,
                  num_augments=100, q=10, beta=1, aug_params={}, tr_thresh=0.75,
-                 reduce_steps=10, angle_scale=1, translate_scale=2, 
+                 reduce_steps=10,
                  eval_augments=1000, perturbation=None, mask_thresh=0.99,
                  num_boost_iters=1, extra_params={}, 
                  mlflow_uri=None, experiment_name=None):
@@ -218,10 +218,6 @@ class BlackBoxPatchTrainer():
         :tr_thresh:  float; transform robustness threshold to aim for 
             during mask reudction step
         :reduce_steps: int; number of steps to take during mask reduction
-        :angle_scale: float; standard deviation, in degrees, of normal
-            distribution angle will be chosen from
-        :translate_scale: float; standard deviation, in pixels, of normal
-            distribution x and y translations
         :eval_augments: int or list of aug params. Augmentations to use at the end of every epoch to evaluate performance
         :perturbation: torch.Tensor in (C,H,W) format. Optional initial perturbation
         :mask_thresh: float; when mask reduction hits this threshold swap
@@ -257,7 +253,7 @@ class BlackBoxPatchTrainer():
         self.aug_params = aug_params
         self.params = {"num_augments":num_augments, "q":q, "beta":beta,
                        "tr_thresh":tr_thresh,
-                      "reduce_steps":reduce_steps, "angle_scale":angle_scale, "translate_scale":translate_scale,
+                      "reduce_steps":reduce_steps, 
                       "num_boost_iters":num_boost_iters}
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
