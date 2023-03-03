@@ -6,3 +6,5 @@ __version__ = '0.1.0'
 
 
 from electricmayhem._graphite import BlackBoxPatchTrainer
+from electricmayhem._graphite import estimate_transform_robustness
+from electricmayhem._augment import generate_aug_params, compose, augment_image

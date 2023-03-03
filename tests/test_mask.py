@@ -2,7 +2,7 @@
 import numpy as np
 import torch
 
-from electricmayhem._mask import *
+from electricmayhem.mask import *
 
 
 def test_generate_rectangular_frame_mask():
