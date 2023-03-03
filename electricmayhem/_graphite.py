@@ -265,7 +265,7 @@ class BlackBoxPatchTrainer():
         # record hyperparams for all posterity
         yaml.dump({"params":self.params, "aug_params":self.aug_params,
                    "extra_params":self.extra_params},
-                  open(os.path.join(logdir, "config.yml")))
+                  open(os.path.join(logdir, "config.yml", "w")))
         
     def _configure_mlflow(self, uri, expt, run):
         # set up connection to server, experiment, and start run
