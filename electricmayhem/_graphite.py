@@ -202,7 +202,7 @@ class BlackBoxPatchTrainer():
                  num_augments=100, q=10, beta=1, aug_params={}, tr_thresh=0.75,
                  reduce_steps=10,
                  eval_augments=1000, perturbation=None, mask_thresh=0.99,
-                 num_boost_iters=1, extra_params={}, 
+                 num_boost_iters=1, extra_params={}, fixed_augs=None,
                  mlflow_uri=None, experiment_name=None):
         """
         :img: torch.Tensor in (C,H,W) format representing the image being modified
@@ -225,6 +225,7 @@ class BlackBoxPatchTrainer():
         :num_boost_iters: int; number of boosts (RGF/line search) steps to
             run per epoch. GRAPHITE used 5.
         :extra_params: dictionary of other parameters you'd like recorded
+        :fixed_augs:
         :mlflow_uri: string; URI for MLFlow server or directory
         :experiment_name: string; name of MLFlow experiment to log
         
@@ -233,6 +234,7 @@ class BlackBoxPatchTrainer():
         self.a = 0
         self.tr = 0
         self.mask_thresh = 0.99
+        self.fixed_augs = fixed_augs
         
         self.img = img
         self.initial_mask = initial_mask
@@ -292,7 +294,15 @@ class BlackBoxPatchTrainer():
         """
         if num_augments is None:
             num_augments = self.params["num_augments"]
-        return [_augment.generate_aug_params(**self.aug_params) for _ in range(num_augments)]
+            
+        # if fixed augmentations were passed, sample from them
+        # with replacement
+        if self.fixed_augs is not None:
+            return list(np.random.choice(self.fixed_augs, size=num_augments))
+        # otherwise generate new ones
+        else:
+            return [_augment.generate_aug_params(**self.aug_params) 
+                    for _ in range(num_augments)]
         
     def _get_mask(self):
         """
@@ -402,12 +412,22 @@ class BlackBoxPatchTrainer():
         filepath = os.path.join(self.logdir, f"perturbation_{self.query_counter}.npy")
         np.save(filepath, self.perturbation.numpy())
         
-    def _run_one_epoch(self, lrs=None):
+    def _run_one_epoch(self, lrs=None, budget=None):
         if self.a < self.mask_thresh:
             self._reduce_mask()
+        if budget is not None:
+            if self.query_counter >= budget:
+                return
         for _ in range(self.params["num_boost_iters"]):
             gradient = self._estimate_gradient()
+            if budget is not None:
+                if self.query_counter >= budget:
+                    return
+                
             self._update_perturbation(gradient, lrs=lrs)
+            if budget is not None:
+                if self.query_counter >= budget:
+                    return
         self._log_image()
         self.evaluate()
         self._save_perturbation()
@@ -422,8 +442,9 @@ class BlackBoxPatchTrainer():
         elif budget is not None:
             progress = tqdm(total=budget)
             while self.query_counter < budget:
+                old_qc = self.query_counter
                 self._run_one_epoch(lrs=lrs)
-                progress.update(n=self.query_counter)
+                progress.update(n=self.query_counter-old_qc)
                 
             progress.close()
         else:
