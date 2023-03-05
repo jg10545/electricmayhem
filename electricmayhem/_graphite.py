@@ -442,8 +442,9 @@ class BlackBoxPatchTrainer():
         elif budget is not None:
             progress = tqdm(total=budget)
             while self.query_counter < budget:
+                old_qc = self.query_counter
                 self._run_one_epoch(lrs=lrs)
-                progress.update(n=self.query_counter)
+                progress.update(n=self.query_counter-old_qc)
                 
             progress.close()
         else:
