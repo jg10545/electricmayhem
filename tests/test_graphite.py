@@ -169,6 +169,30 @@ def test_BlackBoxPatchTrainer_using_query_budget(tmp_path_factory):
     trainer.fit(budget=10)
     
     
+def test_BlackBoxPatchTrainer_with_fixed_augs(tmp_path_factory):
+    # SAVE IT TO LOG DIR
+    logdir = str(tmp_path_factory.mktemp("logs"))
+    augs = [_augment.generate_aug_params() for _ in range(100)]
+    
+    H = 101
+    W = 107
+    C = 3
+    tr_estimate = 0.5
+    img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
+    init_mask, final_mask = mask.generate_rectangular_frame_mask(W, H, 20,
+                                        20, 30, 30,
+                                        frame_width=5, 
+                                        return_torch=True)
+    
+    trainer = BlackBoxPatchTrainer(img, init_mask, 
+                                   final_mask, detect_func, logdir,
+                                   num_augments=2, 
+                                   q=5,
+                                   reduce_steps=2,
+                                   fixed_augs=augs)
+    trainer.fit(budget=10)
+    
+    
     
 def test_BlackBoxPatchTrainer_with_different_pert_size(tmp_path_factory):
     # SAVE IT TO LOG DIR
