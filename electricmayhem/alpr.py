@@ -4,10 +4,10 @@ import subprocess
 import os
 from PIL import Image
 import json
-import pytesseract
+#import pytesseract
 from io import BytesIO
 import requests
-
+import tempfile
 
 
 
@@ -118,7 +118,10 @@ def quick_and_dirty_lpr(img, diameter=11, sigma=17, cannythreshold1=30, cannythr
 
 def build_api_detect_function(plate, url='http://localhost:8088/api'):
     """
+    Build a detection function that queries an OpenALPR REST API.
     
+    :plate: string; plate number
+    :url: string; URL of API
     """
     def detect_function(img):
         memfile = BytesIO()
@@ -134,4 +137,29 @@ def build_api_detect_function(plate, url='http://localhost:8088/api'):
                 return 0
         else:
             return 0
+    return detect_function
+
+
+def build_alpr_cli_detect_function(plate, country_code='us'):
+    """
+    Build a detection function that queries an standard OpenALPR install
+    
+    :plate: string; plate number
+    :countr_code: string; country code to pass to OpenALPR
+    """
+    def detect_function(img):
+        # write the image to a temporary file. it should
+        # disappear when this variable goes out of scope
+        img_np = img.permute(1,2,0).numpy()
+        f = tempfile.NamedTemporaryFile(suffix=".jpg")
+        Image.fromarray((img_np*255).astype(np.uint8)).safe(f, "JPEG")
+        # call OpenALPR and decode output
+        a = subprocess.run(["alpr", f"-c {country_code}", f.name],
+                           stdout=subprocess.PIPE)
+        output = a.stdout.decode('utf-8')
+        if plate in output:
+            return 1
+        else:
+            return 0
+        
     return detect_function
