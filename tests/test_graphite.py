@@ -45,6 +45,8 @@ def test_estimate_transform_robustness():
         assert results[c] <= 1
         assert results[c] >= 0
         
+    assert "sem" in results
+        
         
 def test_estimate_transform_robustness_return_outcomes():
     H = 101
