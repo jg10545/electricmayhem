@@ -21,20 +21,41 @@ class BlackBoxOptimizer():
     
     def __init__(self, img, initial_mask, final_mask, detect_func, logdir,
                  budget=20000,
-                 num_augments=(10,200), q=(5,50), 
-                 beta=(0.01, 5), downsample=(1,10),
-                 aug_params={}, eval_augments=1000, mlflow_uri=None,
+                 num_augments=[10,200], q=[5,50], 
+                 beta=[0.01, 5], downsample=[1,10],
+                 aug_params={}, eval_augments=1000, 
+                 num_channels=3, mlflow_uri=None,
                  experiment_name="graphite_optimization", 
-                 json_path=None,
                  load_from_json_file=None):
         """
-        
+        :img: torch.Tensor in channel-first format; victim image
+        :initial_mask: torch.Tensor in channel-first format; initial mask
+        :final_mask: torch.Tensor in channel-first format; final mask
+        :detect_func: function; inputs an image and returns 1, 0, or -1 depending on whether the black-box algorithm correctly detected, missed, or threw an error
+        :logdir: string; location to save tensorboard logs in. this directory needs to
+            already exist. individual runs will be saved in subdirectories
+        :budget: int; query budget for each run
+        :num_augments: list of two integers; range of values for num_augments
+        :q: list of two integers; range of values for q
+        :beta: list of two floats; range of values for beta
+        :downsample: list of two integers; range of values for factors to downsample
+            perturbation by. So a downsample of 1 will create a perturbation of the
+            same size as the victim; 2 will have each dimension cut in half
+        :aug_params: dictionary of augmentation paramaters
+        :eval_augments: int or list of dictionaries; number of augmentations to
+            evaluate on
+        :num_channels: 1 or 3; number of channels for the perturbation
+        :mflow_uri: string; URI of MLflow server
+        :experiment_name: string; name of experiment. Will be used both for AX
+            and MLFlow
+        :load_from_json_file: string; pass the location of a previous experiments'
+            JSON file to start from.
         """
         self.C, self.H, self.W = img.shape
+        self.num_channels = 3,
         self.logdir = logdir
         self.mlflow_uri = mlflow_uri
         self.experiment_name = experiment_name
-        self.json_path = json_path
         self.aug_params = aug_params
         self.eval_augments = eval_augments
         self.inputs = [img, initial_mask, final_mask, detect_func]
@@ -96,7 +117,7 @@ class BlackBoxOptimizer():
         # build a trainer for this step of the experiment
         logdir = os.path.join(self.logdir, str(len(list(os.listdir(self.logdir)))))
         # initialize a new perturbation
-        perturbation = 0.5*np.ones((self.C, int(self.H/p["downsample"]),
+        perturbation = 0.5*np.ones((self.num_channels, int(self.H/p["downsample"]),
                                     int(self.W/p["downsample"])))
         perturbation = torch.Tensor(perturbation)
         
@@ -133,6 +154,9 @@ class BlackBoxOptimizer():
     
     def fit(self, n=100):
         """
+        Run optimization experiments
+        
+        :n: int; number of runs
         """
         for i in tqdm(range(n)):
             parameters, trial_index = self.client.get_next_trial()
