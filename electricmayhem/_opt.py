@@ -52,7 +52,7 @@ class BlackBoxOptimizer():
             JSON file to start from.
         """
         self.C, self.H, self.W = img.shape
-        self.num_channels = 3,
+        self.num_channels = num_channels
         self.logdir = logdir
         self.mlflow_uri = mlflow_uri
         self.experiment_name = experiment_name
