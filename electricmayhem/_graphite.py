@@ -390,6 +390,8 @@ class BlackBoxPatchTrainer():
                                                           self._get_mask(),
                                                           self.perturbation,
                                                           return_outcomes=True)
+        # store results in memory too
+        self.tr_dict = tr_dict
         self.writer.add_scalar("eval_transform_robustness", tr_dict["tr"],
                                global_step=self.query_counter)
         self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
