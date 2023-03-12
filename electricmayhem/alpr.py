@@ -140,12 +140,13 @@ def build_api_detect_function(plate, url='http://localhost:8088/api'):
     return detect_function
 
 
-def build_alpr_cli_detect_function(plate, country_code='us'):
+def build_alpr_cli_detect_function(plate, country_code='us', config=None):
     """
     Build a detection function that queries an standard OpenALPR install
     
     :plate: string; plate number
     :countr_code: string; country code to pass to OpenALPR
+    :config: optional; path to OpenALPR config file
     """
     def detect_function(img):
         # write the image to a temporary file. it should
@@ -154,8 +155,11 @@ def build_alpr_cli_detect_function(plate, country_code='us'):
         f = tempfile.NamedTemporaryFile(suffix=".jpg")
         Image.fromarray((img_np*255).astype(np.uint8)).safe(f, "JPEG")
         # call OpenALPR and decode output
-        a = subprocess.run(["alpr", f"-c {country_code}", f.name],
-                           stdout=subprocess.PIPE)
+        args = ["alpr", f"-c {country_code}"]
+        if config is not None:
+            args.append(f"--config {config}")
+        args.append(f.name)
+        a = subprocess.run(args, stdout=subprocess.PIPE)
         output = a.stdout.decode('utf-8')
         if plate in output:
             return 1
