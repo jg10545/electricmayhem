@@ -22,7 +22,7 @@ class BlackBoxOptimizer():
     def __init__(self, img, initial_mask, final_mask, detect_func, logdir,
                  budget=20000,
                  num_augments=[10,200], q=[5,50], 
-                 beta=[0.01, 5], downsample=[1,10],
+                 beta=[0.01, 5], downsample=[1,2,4,8,16],
                  aug_params={}, eval_augments=1000, 
                  num_channels=3, mlflow_uri=None,
                  experiment_name="graphite_optimization", 
@@ -65,18 +65,17 @@ class BlackBoxOptimizer():
         if load_from_json_file is not None:
             self.client = AxClient.load_from_json_file(load_from_json_file)
         else:
-            self.client = AxClient()
-            
-        # set up the experiment!
-        self.params = self._build_params(num_augments, q, beta, downsample)
-        self.client.create_experiment(
-            name=experiment_name,
-            parameters=self.params,
-            objectives={"eval_transform_robustness":ObjectiveProperties(minimize=False)},
+            self.client = AxClient()    
+            # set up the experiment!
+            self.params = self._build_params(num_augments, q, beta, downsample)
+            self.client.create_experiment(
+                name=experiment_name,
+                parameters=self.params,
+                objectives={"eval_transform_robustness":ObjectiveProperties(minimize=False)},
             )
         
 
-        pass
+        
     
     def _build_params(self, num_augments, q, beta, downsample):
         """
@@ -87,25 +86,27 @@ class BlackBoxOptimizer():
              "type":"range",
              "bounds":num_augments,
              "value_type":"int",
-             "log_scale":False},
+             "log_scale":True},
             
             {"name":"q",
              "type":"range",
              "bounds":q,
              "value_type":"int",
-             "log_scale":False},
+             "log_scale":True},
             
             {"name":"beta",
              "type":"range",
              "bounds":beta,
              "value_type":"float",
-             "log_scale":False},
+             "log_scale":True},
             
             {"name":"downsample",
-             "type":"range",
-             "bounds":downsample,
+             "type":"choice", #"range",
+             #"bounds":downsample,
              "value_type":"int",
-             "log_scale":False},
+             "values":downsample,
+             "is_ordered":True},
+             #"log_scale":False},
          ]
     
 
