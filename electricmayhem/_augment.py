@@ -27,6 +27,9 @@ def augment_image(image, warp=None, scale=0, gamma=0, blur=0,
     
     # if we need to compose an image with a perturbation, do that first
     if (mask is not None)&(perturbation is not None):
+        if scale > 0:
+            translate_x *= scale
+            translate_y *= scale
         image = compose(image, mask, perturbation, angle=angle,
                         translate_x=translate_x, translate_y=translate_y)
     

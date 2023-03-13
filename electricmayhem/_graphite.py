@@ -42,11 +42,15 @@ def estimate_transform_robustness(detect_func, augments, img,
     crash_frac = np.mean([o == -1 for o in outcomes])
     # how often did it detect the plate?
     detect_frac = np.mean([o == 1 for o in outcomes])
+    # estimate standard error of the mean
+    noncrash = np.array([o for o in outcomes if o >= 0])
+    sem = noncrash.mean()/np.sqrt(noncrash.std())
     
     outdict = {
         "crash_frac":crash_frac,
         "detect_frac":detect_frac,
-        "tr":1-detect_frac/(1-crash_frac)
+        "tr":1-detect_frac/(1-crash_frac),
+        "sem":sem
     }
     if return_outcomes:
         return outdict, outcomes
@@ -199,7 +203,7 @@ class BlackBoxPatchTrainer():
     """
     
     def __init__(self, img, initial_mask, final_mask, detect_func, logdir,
-                 num_augments=100, q=10, beta=1, aug_params={}, tr_thresh=0.75,
+                 num_augments=100, q=10, beta=1, aug_params={}, tr_thresh=0.5,
                  reduce_steps=10,
                  eval_augments=1000, perturbation=None, mask_thresh=0.99,
                  num_boost_iters=1, extra_params={}, fixed_augs=None,
@@ -386,6 +390,8 @@ class BlackBoxPatchTrainer():
                                                           self._get_mask(),
                                                           self.perturbation,
                                                           return_outcomes=True)
+        # store results in memory too
+        self.tr_dict = tr_dict
         self.writer.add_scalar("eval_transform_robustness", tr_dict["tr"],
                                global_step=self.query_counter)
         self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
