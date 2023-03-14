@@ -4,6 +4,7 @@ from tqdm import tqdm
 import json
 import os
 import time
+import kornia.geometry.transform
 
 from ax.service.ax_client import AxClient, ObjectiveProperties
 
@@ -22,9 +23,10 @@ class BlackBoxOptimizer():
     def __init__(self, img, initial_mask, final_mask, detect_func, logdir,
                  budget=20000,
                  num_augments=[10,200], q=[5,50], 
-                 beta=[0.01, 5], downsample=[1,10],
+                 beta=[0.01, 5], downsample=[1,2,4,8,16],
                  aug_params={}, eval_augments=1000, 
-                 num_channels=3, mlflow_uri=None,
+                 num_channels=3, perturbation=None, 
+                 mlflow_uri=None,
                  experiment_name="graphite_optimization", 
                  load_from_json_file=None):
         """
@@ -45,6 +47,8 @@ class BlackBoxOptimizer():
         :eval_augments: int or list of dictionaries; number of augmentations to
             evaluate on
         :num_channels: 1 or 3; number of channels for the perturbation
+        :perturbation: torch.Tensor in channel-first format; perturbation to start
+            from. if None, initialize a gray tensor for each run.
         :mflow_uri: string; URI of MLflow server
         :experiment_name: string; name of experiment. Will be used both for AX
             and MLFlow
@@ -60,23 +64,23 @@ class BlackBoxOptimizer():
         self.eval_augments = eval_augments
         self.inputs = [img, initial_mask, final_mask, detect_func]
         self.budget = budget
+        self.perturbation = None
         
         # if we're resuming from a previous experiment, load it here.
         if load_from_json_file is not None:
             self.client = AxClient.load_from_json_file(load_from_json_file)
         else:
-            self.client = AxClient()
-            
-        # set up the experiment!
-        self.params = self._build_params(num_augments, q, beta, downsample)
-        self.client.create_experiment(
-            name=experiment_name,
-            parameters=self.params,
-            objectives={"eval_transform_robustness":ObjectiveProperties(minimize=False)},
+            self.client = AxClient()    
+            # set up the experiment!
+            self.params = self._build_params(num_augments, q, beta, downsample)
+            self.client.create_experiment(
+                name=experiment_name,
+                parameters=self.params,
+                objectives={"eval_transform_robustness":ObjectiveProperties(minimize=False)},
             )
         
 
-        pass
+        
     
     def _build_params(self, num_augments, q, beta, downsample):
         """
@@ -87,25 +91,27 @@ class BlackBoxOptimizer():
              "type":"range",
              "bounds":num_augments,
              "value_type":"int",
-             "log_scale":False},
+             "log_scale":True},
             
             {"name":"q",
              "type":"range",
              "bounds":q,
              "value_type":"int",
-             "log_scale":False},
+             "log_scale":True},
             
             {"name":"beta",
              "type":"range",
              "bounds":beta,
              "value_type":"float",
-             "log_scale":False},
+             "log_scale":True},
             
             {"name":"downsample",
-             "type":"range",
-             "bounds":downsample,
+             "type":"choice", #"range",
+             #"bounds":downsample,
              "value_type":"int",
-             "log_scale":False},
+             "values":downsample,
+             "is_ordered":True},
+             #"log_scale":False},
          ]
     
 
@@ -116,10 +122,17 @@ class BlackBoxOptimizer():
         """
         # build a trainer for this step of the experiment
         logdir = os.path.join(self.logdir, str(len(list(os.listdir(self.logdir)))))
+        
         # initialize a new perturbation
-        perturbation = 0.5*np.ones((self.num_channels, int(self.H/p["downsample"]),
-                                    int(self.W/p["downsample"])))
-        perturbation = torch.Tensor(perturbation)
+        H = int(self.H/p["downsample"])
+        W = int(self.W/p["downsample"])
+        if self.perturbation is None:
+            perturbation = 0.5*np.ones((self.num_channels, H, W))
+            perturbation = torch.Tensor(perturbation)
+        else:
+            perturbation = self.perturbation.clone().unsqueeze(0)
+            perturbation = kornia.geometry.transform.resize(perturbation, (H,W))
+            perturbation = perturbation.squeeze(0)
         
         trainer = BlackBoxPatchTrainer(*self.inputs, logdir,
                                        num_augments=p["num_augments"],

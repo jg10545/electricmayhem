@@ -52,7 +52,7 @@ def augment_image(image, warp=None, scale=0, gamma=0, blur=0,
             image,
             (2*int(blur)+1, 2*int(blur)+1), (blur, blur))
     
-    return image.squeeze()
+    return image.squeeze(0)
 
 
 def generate_aug_params(perspective_scale=1e-4, scale=(0.5, 1.5), 
