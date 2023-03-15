@@ -4,7 +4,7 @@ import kornia.geometry, kornia.enhance, kornia.filters
 
 
 
-def augment_image(image, warp=None, scale=0, gamma=0, blur=0, 
+def augment_image(image, warp=None, scale=0, gamma=0, blur=0,  rotate=0,
                   angle=0, translate_x=0, translate_y=0,
                   mask=None, perturbation=None):
     """
@@ -15,6 +15,7 @@ def augment_image(image, warp=None, scale=0, gamma=0, blur=0,
     :scale: float; resize by this factor
     :gamma: float; adjust gamma using this parameter
     :blur: float; Gaussian blur kernel size. 0 to disable
+    :rotate: float; angle to rotate image
     :angle: angle to rotate mask and perturbation by
     :translate_x: pixels to shift mask/perturbation by in x dimension
     :translate_y: pixels to shift mask/perturbation by in y dimension
@@ -51,12 +52,16 @@ def augment_image(image, warp=None, scale=0, gamma=0, blur=0,
         image = kornia.filters.gaussian_blur2d(
             image,
             (2*int(blur)+1, 2*int(blur)+1), (blur, blur))
+    if rotate != 0:
+        image = kornia.geometry.transform.rotate(image, 
+            torch.Tensor([rotate]), center=None, mode='bilinear',
+            padding_mode='zeros', align_corners=True)
     
     return image.squeeze(0)
 
 
 def generate_aug_params(perspective_scale=1e-4, scale=(0.5, 1.5), 
-                        gamma=(1,3.5), blur=[0, 3, 5],
+                        gamma=(1,3.5), blur=[0, 3, 5], rotate=0,
                         angle=1, translate=1):
     """
     Randomly sample a set of augmentation parameters
@@ -65,6 +70,11 @@ def generate_aug_params(perspective_scale=1e-4, scale=(0.5, 1.5),
     :scale: tuple of floats; min and max scaling factor for resizing image
     :gamma: tuple of floats; min and max gamma adjust factor
     :blur: list of ints; kernel sizes for gaussian blur
+    :rotate: float; standard deviation for rotation angle for image
+    :angle: float; standard deviation for rotation angle of patch and mask relative
+        to image
+    :translate: float; standard deviation for x and y distplacement of patch and
+        mask relative to image
     
     Returns a dictionary of augmentation parameters
     """
@@ -84,6 +94,8 @@ def generate_aug_params(perspective_scale=1e-4, scale=(0.5, 1.5),
     if translate > 0:
         outdict["translate_x"] = float(np.random.normal(0, translate))
         outdict["translate_y"] = float(np.random.normal(0, translate))
+    if rotate > 0:
+        outdict["rotate"] = float(np.random.normal(0, rotate))
     return outdict
 
 
