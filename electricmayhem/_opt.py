@@ -26,6 +26,7 @@ class BlackBoxOptimizer():
                  beta=[0.01, 5], downsample=[1,2,4,8,16],
                  aug_params={}, eval_augments=1000, 
                  num_channels=3, perturbation=None, 
+                 fixed_augs=None,
                  mlflow_uri=None,
                  experiment_name="graphite_optimization", 
                  load_from_json_file=None):
@@ -49,6 +50,7 @@ class BlackBoxOptimizer():
         :num_channels: 1 or 3; number of channels for the perturbation
         :perturbation: torch.Tensor in channel-first format; perturbation to start
             from. if None, initialize a gray tensor for each run.
+        :fixed_augs:
         :mflow_uri: string; URI of MLflow server
         :experiment_name: string; name of experiment. Will be used both for AX
             and MLFlow
@@ -65,6 +67,7 @@ class BlackBoxOptimizer():
         self.inputs = [img, initial_mask, final_mask, detect_func]
         self.budget = budget
         self.perturbation = None
+        self.fixed_augs = fixed_augs
         
         # if we're resuming from a previous experiment, load it here.
         if load_from_json_file is not None:
@@ -142,6 +145,7 @@ class BlackBoxOptimizer():
                                        eval_augments=self.eval_augments,
                                        perturbation=perturbation,
                                        extra_params={"downsample":p["downsample"]},
+                                       fixed_augs=self.fixed_augs,
                                        mlflow_uri=self.mlflow_uri,
                                        experiment_name=self.experiment_name)
         # fit the patch
