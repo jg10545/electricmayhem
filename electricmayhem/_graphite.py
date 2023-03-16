@@ -11,6 +11,8 @@ import yaml
 from electricmayhem import mask
 from electricmayhem import _augment
 
+EPSILON = 1e-8
+
 
 def estimate_transform_robustness(detect_func, augments, img, 
                                   mask=None, pert=None, 
@@ -44,7 +46,7 @@ def estimate_transform_robustness(detect_func, augments, img,
     detect_frac = np.mean([o == 1 for o in outcomes])
     # estimate standard error of the mean
     noncrash = np.array([o for o in outcomes if o >= 0])
-    sem = noncrash.mean()/np.sqrt(noncrash.std())
+    sem = noncrash.mean()/np.sqrt(noncrash.std()+EPSILON)
     
     outdict = {
         "crash_frac":crash_frac,
