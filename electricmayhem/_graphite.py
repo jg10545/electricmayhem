@@ -1,6 +1,7 @@
 import numpy as np
 import dask
 import torch
+import torch.utils.tensorboard
 import kornia.geometry
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -45,14 +46,21 @@ def estimate_transform_robustness(detect_func, augments, img,
     # how often did it detect the plate?
     detect_frac = np.mean([o == 1 for o in outcomes])
     # estimate standard error of the mean
+<<<<<<< HEAD
     noncrash = np.array([o for o in outcomes if o >= 0])
     sem = noncrash.mean()/np.sqrt(noncrash.std()+EPSILON)
+=======
+    #noncrash = np.array([o for o in outcomes if o >= 0])
+    #sem = noncrash.mean()/np.sqrt(noncrash.std())
+    tr = 1-detect_frac/(1-crash_frac)
+    n = len([o for o in outcomes if o >= 0])
+>>>>>>> ce554eb7d15fb88d8d7c347aafccc13751fce042
     
     outdict = {
         "crash_frac":crash_frac,
         "detect_frac":detect_frac,
-        "tr":1-detect_frac/(1-crash_frac),
-        "sem":sem
+        "tr":tr,
+        "sem":np.sqrt((tr*(1-tr))/n) # <--- Wald interval
     }
     if return_outcomes:
         return outdict, outcomes
@@ -392,11 +400,16 @@ class BlackBoxPatchTrainer():
                                                           self._get_mask(),
                                                           self.perturbation,
                                                           return_outcomes=True)
-        # store results in memory too
-        self.tr_dict = tr_dict
+        
         self.writer.add_scalar("eval_transform_robustness", tr_dict["tr"],
                                global_step=self.query_counter)
-        self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
+        # only log TR to mlflow if we got rid of the mask, otherwise you
+        # could trivially get TR=1
+        if self.a >= self.mask_thresh:
+            self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
+            # store results in memory too
+            self.tr_dict = tr_dict
+            
         # visual check for correlations in transform robustness across augmentation params
         coldict = {-1:'k', 1:'b', 0:'r'}
         fig, ax = plt.subplots(nrows=1, ncols=1)

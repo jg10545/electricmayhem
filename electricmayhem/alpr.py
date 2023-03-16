@@ -153,7 +153,7 @@ def build_alpr_cli_detect_function(plate, country_code='us', config=None):
         # disappear when this variable goes out of scope
         img_np = img.permute(1,2,0).numpy()
         f = tempfile.NamedTemporaryFile(suffix=".jpg")
-        Image.fromarray((img_np*255).astype(np.uint8)).safe(f, "JPEG")
+        Image.fromarray((img_np*255).astype(np.uint8)).save(f, "JPEG")
         # call OpenALPR and decode output
         args = ["alpr", f"-c {country_code}"]
         if config is not None:
