@@ -12,7 +12,6 @@ import yaml
 from electricmayhem import mask
 from electricmayhem import _augment
 
-
 def estimate_transform_robustness(detect_func, augments, img, 
                                   mask=None, pert=None, 
                                   return_outcomes=False):
@@ -43,9 +42,6 @@ def estimate_transform_robustness(detect_func, augments, img,
     crash_frac = np.mean([o == -1 for o in outcomes])
     # how often did it detect the plate?
     detect_frac = np.mean([o == 1 for o in outcomes])
-    # estimate standard error of the mean
-    #noncrash = np.array([o for o in outcomes if o >= 0])
-    #sem = noncrash.mean()/np.sqrt(noncrash.std())
     tr = 1-detect_frac/(1-crash_frac)
     n = len([o for o in outcomes if o >= 0])
     
