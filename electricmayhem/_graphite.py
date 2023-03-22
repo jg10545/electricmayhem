@@ -392,6 +392,8 @@ class BlackBoxPatchTrainer():
         
         self.writer.add_scalar("eval_transform_robustness", tr_dict["tr"],
                                global_step=self.query_counter)
+        self.writer.add_scalar("eval_crash_frac", tr_dict["crash_frac"],
+                               global_step=self.query_counter)
         # only log TR to mlflow if we got rid of the mask, otherwise you
         # could trivially get TR=1
         if self.a >= self.mask_thresh:
