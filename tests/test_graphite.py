@@ -46,6 +46,22 @@ def test_estimate_transform_robustness():
         
     assert "sem" in results
         
+    
+def test_estimate_transform_robustness_with_error_as_positive():
+    H = 101
+    W = 107
+    C = 3
+    img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
+    
+    results = estimate_transform_robustness(detect_func, augs, img,
+                                            include_error_as_positive=True)
+    assert isinstance(results, dict)
+    for c in ["crash_frac", "detect_frac", "tr"]:
+        assert c in results
+        assert results[c] <= 1
+        assert results[c] >= 0
+        
+    assert "sem" in results
         
 def test_estimate_transform_robustness_return_outcomes():
     H = 101
