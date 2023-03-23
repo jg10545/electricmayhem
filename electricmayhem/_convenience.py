@@ -47,3 +47,17 @@ def plot(i, augs=None, detect_func=None, mask=None, perturbation=None):
         plt.axis(False)
         if detect_func is not None:
             plt.title(detect_func(i))
+
+
+def save(i, filepath, mask=None, perturbation=None):
+    """
+    Matplotlib/PIL macro for saving a channel-first image tensor
+    
+    :i: torch.Tensor containing normalized image in channel-first format
+    :mask:
+    """
+    if (perturbation is not None)&(mask is not None):
+        i = compose(i, mask, perturbation)
+        
+    img = Image.fromarray((i.permute(1,2,0).numpy()*255).astype(np.uint8))
+    img.save(filepath)
