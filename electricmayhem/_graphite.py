@@ -59,7 +59,7 @@ def estimate_transform_robustness(detect_func, augments, img,
     else:
         # how often did it detect the plate?
         detect_frac = np.mean([o == 1 for o in outcomes])
-        tr = 1-detect_frac/(1-crash_frac)
+        tr = 1-detect_frac/max((1-crash_frac), 1e-5)
         n = len([o for o in outcomes if o >= 0])
     
     outdict = {
@@ -447,10 +447,12 @@ class BlackBoxPatchTrainer():
         self.writer.add_figure("evaluation_augmentations", fig, global_step=self.query_counter)
         
         if self.eval_func is not None:
-            self.eval_func(self.writer, img=self.img, mask=self._get_mask(),
+            self.eval_func(self.writer, self.query_counter, 
+                           img=self.img, mask=self._get_mask(),
                            perturbation=self.perturbation,
                            augs=self.eval_augments,
-                           tr_dict=tr_dict, outcomes=outcomes, raw=raw)
+                           tr_dict=tr_dict, outcomes=outcomes, raw=raw,
+                           include_error_as_positive=self.params["include_error_as_positive"])
         
     def _log_image(self):
         """

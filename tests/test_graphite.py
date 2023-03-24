@@ -30,7 +30,9 @@ def detect_func(x, return_raw=False):
         return output
     
     
-def eval_func(writer, img, **kwargs):
+def eval_func(writer, step, img, **kwargs):
+    assert isinstance(writer, torch.utils.tensorboard.SummaryWriter)
+    assert isinstance(step, int)
     assert isinstance(img, torch.Tensor)
     
     
