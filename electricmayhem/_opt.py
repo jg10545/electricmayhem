@@ -26,6 +26,8 @@ class BlackBoxOptimizer():
                  beta=[0.01, 5], downsample=[1,2,4,8,16],
                  aug_params={}, eval_augments=1000, 
                  num_channels=3, perturbation=None, 
+                 include_error_as_positive=False,
+                 eval_func=None,
                  fixed_augs=None,
                  mlflow_uri=None,
                  experiment_name="graphite_optimization", 
@@ -68,6 +70,8 @@ class BlackBoxOptimizer():
         self.budget = budget
         self.perturbation = None
         self.fixed_augs = fixed_augs
+        self.include_error_as_positive = include_error_as_positive
+        self.eval_func = eval_func
         
         # if we're resuming from a previous experiment, load it here.
         if load_from_json_file is not None:
@@ -147,7 +151,9 @@ class BlackBoxOptimizer():
                                        extra_params={"downsample":p["downsample"]},
                                        fixed_augs=self.fixed_augs,
                                        mlflow_uri=self.mlflow_uri,
-                                       experiment_name=self.experiment_name)
+                                       experiment_name=self.experiment_name,
+                                       include_error_as_positive=self.include_error_as_positive,
+                                       eval_func=self.eval_func)
         # fit the patch
         trainer.fit(budget=self.budget)
         

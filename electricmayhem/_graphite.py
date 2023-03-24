@@ -38,11 +38,18 @@ def estimate_transform_robustness(detect_func, augments, img,
             not detected
     """
     def _augment_and_detect(i,m,p,a):
-        return detect_func(_augment.augment_image(i,mask=m, perturbation=p, **a))
+        return detect_func(_augment.augment_image(i,mask=m, perturbation=p, **a),
+                           return_raw=return_outcomes)
     
     tasks = [dask.delayed(_augment_and_detect)(img, mask, pert, a) 
              for a in augments]
-    outcomes = dask.compute(*tasks)
+    if return_outcomes:
+        result = dask.compute(*tasks)
+        outcomes = [r[0] for r in result]
+        raw = [r[1] for r in result]
+    else:
+        outcomes = dask.compute(*tasks)
+        
     # how often did openALPR crap out?
     crash_frac = np.mean([o == -1 for o in outcomes])
     if include_error_as_positive:
@@ -62,7 +69,7 @@ def estimate_transform_robustness(detect_func, augments, img,
         "sem":np.sqrt((tr*(1-tr))/n) # <--- Wald interval
     }
     if return_outcomes:
-        return outdict, outcomes
+        return outdict, outcomes, raw
     else:
         return outdict
 
@@ -407,7 +414,7 @@ class BlackBoxPatchTrainer():
         """
         Run a suite of evaluation tests on the test augmentations.
         """
-        tr_dict, outcomes = estimate_transform_robustness(self.detect_func, 
+        tr_dict, outcomes, raw = estimate_transform_robustness(self.detect_func, 
                                                           self.eval_augments,
                                                           self.img,
                                                           self._get_mask(),
@@ -440,8 +447,10 @@ class BlackBoxPatchTrainer():
         self.writer.add_figure("evaluation_augmentations", fig, global_step=self.query_counter)
         
         if self.eval_func is not None:
-            self.eval_func(self.img, self._get_mask(), self.perturbation,
-                           self.eval_augments, self.writer)
+            self.eval_func(self.writer, img=self.img, mask=self._get_mask(),
+                           perturbation=self.perturbation,
+                           augs=self.eval_augments,
+                           tr_dict=tr_dict, outcomes=outcomes, raw=raw)
         
     def _log_image(self):
         """

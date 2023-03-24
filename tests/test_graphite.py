@@ -22,8 +22,12 @@ Some utilities:
 
 
 
-def detect_func(x):
-    return np.random.choice([-1,0,1])
+def detect_func(x, return_raw=False):
+    output = np.random.choice([-1,0,1])
+    if return_raw:
+        return output, "foobar"
+    else:
+        return output
 
 num_augs = 10
 augs = [_augment.generate_aug_params() 
@@ -69,7 +73,7 @@ def test_estimate_transform_robustness_return_outcomes():
     C = 3
     img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
     
-    results, outcomes = estimate_transform_robustness(detect_func, augs, img, 
+    results, outcomes, raw = estimate_transform_robustness(detect_func, augs, img, 
                                             return_outcomes=True)
     assert isinstance(results, dict)
     for c in ["crash_frac", "detect_frac", "tr"]:
@@ -77,7 +81,7 @@ def test_estimate_transform_robustness_return_outcomes():
         assert results[c] <= 1
         assert results[c] >= 0
         
-    assert isinstance(outcomes, tuple)
+    assert isinstance(outcomes, list)#isinstance(outcomes, tuple)
     assert len(outcomes) == len(augs)
     
     

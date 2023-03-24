@@ -24,8 +24,12 @@ Some utilities:
 
 
 
-def detect_func(x):
-    return np.random.choice([-1,0,1])
+def detect_func(x, return_raw=False):
+    output = np.random.choice([-1,0,1])
+    if return_raw:
+        return output, "foobar"
+    else:
+        return output
 
 num_augs = 10
 augs = [_augment.generate_aug_params() 

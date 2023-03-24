@@ -123,7 +123,7 @@ def build_api_detect_function(plate, url='http://localhost:8088/api'):
     :plate: string; plate number
     :url: string; URL of API
     """
-    def detect_function(img):
+    def detect_function(img, return_raw=False):
         memfile = BytesIO()
         img = Image.fromarray((img.permute(1,2,0).numpy()*255).astype(np.uint8))
         img.save(memfile, "JPEG", quality=100)
@@ -132,23 +132,29 @@ def build_api_detect_function(plate, url='http://localhost:8088/api'):
         results = json.loads(r.content.decode('utf8'))
         if len(results["results"]) > 0:
             if plate in [x["plate"] for x in results["results"][0]["candidates"]]:
-                return 1
+                output = 1
             else:
-                return 0
+                output = 0
         else:
-            return 0
+            output = 0
+        if return_raw:
+            return output, results
+        else:
+            return output
     return detect_function
 
 
-def build_alpr_cli_detect_function(plate, country_code='us', config=None):
+def build_alpr_cli_detect_function(plate, country_code='us', config=None,
+                                   empty_is_error=False):
     """
     Build a detection function that queries an standard OpenALPR install
     
     :plate: string; plate number
     :countr_code: string; country code to pass to OpenALPR
     :config: optional; path to OpenALPR config file
+    :empty_is_error: if True, count no plate detected as an error
     """
-    def detect_function(img):
+    def detect_function(img, return_raw=False):
         # write the image to a temporary file. it should
         # disappear when this variable goes out of scope
         img_np = img.permute(1,2,0).numpy()
@@ -160,10 +166,17 @@ def build_alpr_cli_detect_function(plate, country_code='us', config=None):
             args.append(f"--config {config}")
         args.append(f.name)
         a = subprocess.run(args, stdout=subprocess.PIPE)
-        output = a.stdout.decode('utf-8')
-        if plate in output:
-            return 1
+        result = a.stdout.decode('utf-8')
+        if plate in result:
+            output = 1
+        elif empty_is_error&("no license" in result.lower()):
+            output = -1
         else:
-            return 0
+            output = 0
+        
+        if return_raw:
+            return output, result
+        else:
+            return output
         
     return detect_function
