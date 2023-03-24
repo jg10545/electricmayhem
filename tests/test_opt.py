@@ -24,8 +24,15 @@ Some utilities:
 
 
 
-def detect_func(x):
-    return np.random.choice([-1,0,1])
+def detect_func(x, return_raw=False):
+    output = np.random.choice([-1,0,1])
+    if return_raw:
+        return output, "foobar"
+    else:
+        return output
+
+def eval_func(writer, img, **kwargs):
+    assert isinstance(img, torch.Tensor)
 
 num_augs = 10
 augs = [_augment.generate_aug_params() 
@@ -33,7 +40,7 @@ augs = [_augment.generate_aug_params()
 
 
 
-def test_BlackBoxPatchTrainer_with_gray_perturbation(tmp_path_factory):
+def test_BlackBoxPatchOptimizer_with_gray_perturbation(tmp_path_factory):
     # SAVE IT TO LOG DIR
     logdir = str(tmp_path_factory.mktemp("logs"))
     
@@ -55,5 +62,6 @@ def test_BlackBoxPatchTrainer_with_gray_perturbation(tmp_path_factory):
                             beta=[0.5,1.5],
                             downsample=[5,10],
                             eval_augments=5,
-                            num_channels=1)
+                            num_channels=1,
+                            eval_func=eval_func)
     opt.fit(2)

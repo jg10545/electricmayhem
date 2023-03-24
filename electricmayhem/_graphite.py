@@ -14,16 +14,21 @@ from electricmayhem import _augment
 
 def estimate_transform_robustness(detect_func, augments, img, 
                                   mask=None, pert=None, 
-                                  return_outcomes=False):
+                                  return_outcomes=False,
+                                  include_error_as_positive=False):
     """
     Estimate transform robustness as an expectation over transformations. 
     
     :detect_func: detection function to wrap; should input a (C,H,W) torch Tensor and
         output a string
+    :augments: list of dictionaries giving augmentation parameters
     :img: (C,H,W) torch Tensor containing the original image
     :mask: (C,H,W) torch Tensor containing the mask as 0/1 values
     :pert: (C,H',W') torch Tensor containing the adversarial perturbation
-    :augments: list of dictionaries giving augmentation parameters
+    :return_outcomes: bool; whether to return a list of results for every
+        augmentation
+    :include_error_as_positive: bool; whether to count -1s from the detect function
+        as a positive detection
     
     Returns a dictionary containing:
         :crash_frac: fraction of augments where function returned an empty string
@@ -33,17 +38,29 @@ def estimate_transform_robustness(detect_func, augments, img,
             not detected
     """
     def _augment_and_detect(i,m,p,a):
-        return detect_func(_augment.augment_image(i,mask=m, perturbation=p, **a))
+        return detect_func(_augment.augment_image(i,mask=m, perturbation=p, **a),
+                           return_raw=return_outcomes)
     
     tasks = [dask.delayed(_augment_and_detect)(img, mask, pert, a) 
              for a in augments]
-    outcomes = dask.compute(*tasks)
+    if return_outcomes:
+        result = dask.compute(*tasks)
+        outcomes = [r[0] for r in result]
+        raw = [r[1] for r in result]
+    else:
+        outcomes = dask.compute(*tasks)
+        
     # how often did openALPR crap out?
     crash_frac = np.mean([o == -1 for o in outcomes])
-    # how often did it detect the plate?
-    detect_frac = np.mean([o == 1 for o in outcomes])
-    tr = 1-detect_frac/(1-crash_frac)
-    n = len([o for o in outcomes if o >= 0])
+    if include_error_as_positive:
+        detect_frac = np.mean([o in (1,-1) for o in outcomes])
+        tr = 1-detect_frac
+        n = len(outcomes)
+    else:
+        # how often did it detect the plate?
+        detect_frac = np.mean([o == 1 for o in outcomes])
+        tr = 1-detect_frac/(1-crash_frac)
+        n = len([o for o in outcomes if o >= 0])
     
     outdict = {
         "crash_frac":crash_frac,
@@ -52,7 +69,7 @@ def estimate_transform_robustness(detect_func, augments, img,
         "sem":np.sqrt((tr*(1-tr))/n) # <--- Wald interval
     }
     if return_outcomes:
-        return outdict, outcomes
+        return outdict, outcomes, raw
     else:
         return outdict
 
@@ -104,7 +121,8 @@ def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10,
     return a, results
 
 
-def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, beta=1):
+def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, 
+                      beta=1, include_error_as_positive=False):
     """
     Use Randomized Gradient-Free estimation to compute a gradient.
     
@@ -121,6 +139,8 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, bet
         image/mask/perturbation
     :q: int; number of random vectors to sample
     :beta: float; smoothing parameter setting size of random shifts to perturbation
+    :include_error_as_positive: bool; whether to count -1s from the detect function
+        as a positive detection
         
     Returns gradient as a (C,H,W) torch Tensor
     """
@@ -138,7 +158,8 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, bet
 
         u_est = estimate_transform_robustness(detect_func, augs, img, 
                                               mask=mask, 
-                                              pert=pert+beta*u)
+                                              pert=pert+beta*u,
+                                              include_error_as_positive=include_error_as_positive)
         us.append(u)
         u_trs.append(u_est["tr"])
         
@@ -149,7 +170,8 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, bet
     return gradient
 
 
-def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None):
+def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None,
+                        include_error_as_positive=False):
     """
     TO DO replace this with backtracking line search
     
@@ -168,6 +190,8 @@ def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None):
         distribution angle will be chosen from
     :translate_scale: float; standard deviation, in pixels, of normal
         distribution x and y translations
+    :include_error_as_positive: bool; hether to count -1s from the detect function
+        as a positive detection
         
     Returns updated perturbation as a (C,H,W) torch Tensor, and a dictionary
         containing the chosen learning rate
@@ -205,8 +229,9 @@ class BlackBoxPatchTrainer():
                  num_augments=100, q=10, beta=1, aug_params={}, tr_thresh=0.5,
                  reduce_steps=10,
                  eval_augments=1000, perturbation=None, mask_thresh=0.99,
-                 num_boost_iters=1, extra_params={}, fixed_augs=None,
-                 mlflow_uri=None, experiment_name=None):
+                 num_boost_iters=1, include_error_as_positive=False,
+                 extra_params={}, fixed_augs=None,
+                 mlflow_uri=None, experiment_name=None, eval_func=None):
         """
         :img: torch.Tensor in (C,H,W) format representing the image being modified
         :initial_mask: torch.Tensor in (C,H,W) starting mask as an image with 0,1 values
@@ -227,10 +252,12 @@ class BlackBoxPatchTrainer():
             over to the final_mask
         :num_boost_iters: int; number of boosts (RGF/line search) steps to
             run per epoch. GRAPHITE used 5.
+        :include_error_as_positive: bool; whether to count -1s from the detect function as a positive detection ONLY for boosting, not for mask reduction
         :extra_params: dictionary of other parameters you'd like recorded
         :fixed_augs:
         :mlflow_uri: string; URI for MLFlow server or directory
         :experiment_name: string; name of MLFlow experiment to log
+        :eval_func:
         
         """
         self.query_counter = 0
@@ -238,6 +265,7 @@ class BlackBoxPatchTrainer():
         self.tr = 0
         self.mask_thresh = 0.99
         self.fixed_augs = fixed_augs
+        self.eval_func = eval_func
         
         self.img = img
         self.initial_mask = initial_mask
@@ -259,7 +287,8 @@ class BlackBoxPatchTrainer():
         self.params = {"num_augments":num_augments, "q":q, "beta":beta,
                        "tr_thresh":tr_thresh,
                       "reduce_steps":reduce_steps, 
-                      "num_boost_iters":num_boost_iters}
+                      "num_boost_iters":num_boost_iters,
+                      "include_error_as_positive":include_error_as_positive}
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
         # record hyperparams for all posterity
@@ -357,8 +386,9 @@ class BlackBoxPatchTrainer():
                                      augments, 
                                      self.detect_func, 
                                      self.tr, 
-                                     self.params["q"], 
-                                     self.params["beta"])
+                                     q=self.params["q"], 
+                                     beta=self.params["beta"],
+                                     include_error_as_positive=self.params["include_error_as_positive"])
         self.query_counter += self.params["num_augments"]*self.params["q"]
         self.writer.add_scalar("gradient_l2_norm", np.sqrt(np.sum(gradient.numpy()**2)), global_step=self.query_counter)
         return gradient
@@ -374,7 +404,8 @@ class BlackBoxPatchTrainer():
                                                         augments, 
                                                         self.detect_func, 
                                                         gradient, 
-                                                        lrs=lrs)
+                                                        lrs=lrs,
+                                                        include_error_as_positive=self.params["include_error_as_positive"])
         self.query_counter += 8*self.params["num_augments"]
         self.writer.add_scalar("learning_rate", resultdict["lr"], global_step=self.query_counter)
         
@@ -383,14 +414,17 @@ class BlackBoxPatchTrainer():
         """
         Run a suite of evaluation tests on the test augmentations.
         """
-        tr_dict, outcomes = estimate_transform_robustness(self.detect_func, 
+        tr_dict, outcomes, raw = estimate_transform_robustness(self.detect_func, 
                                                           self.eval_augments,
                                                           self.img,
                                                           self._get_mask(),
                                                           self.perturbation,
-                                                          return_outcomes=True)
+                                                          return_outcomes=True,
+                                                          include_error_as_positive=self.params["include_error_as_positive"])
         
         self.writer.add_scalar("eval_transform_robustness", tr_dict["tr"],
+                               global_step=self.query_counter)
+        self.writer.add_scalar("eval_crash_frac", tr_dict["crash_frac"],
                                global_step=self.query_counter)
         # only log TR to mlflow if we got rid of the mask, otherwise you
         # could trivially get TR=1
@@ -411,6 +445,12 @@ class BlackBoxPatchTrainer():
         ax.set_ylabel("gamma", fontsize=14)
         
         self.writer.add_figure("evaluation_augmentations", fig, global_step=self.query_counter)
+        
+        if self.eval_func is not None:
+            self.eval_func(self.writer, img=self.img, mask=self._get_mask(),
+                           perturbation=self.perturbation,
+                           augs=self.eval_augments,
+                           tr_dict=tr_dict, outcomes=outcomes, raw=raw)
         
     def _log_image(self):
         """
