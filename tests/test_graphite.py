@@ -28,6 +28,12 @@ def detect_func(x, return_raw=False):
         return output, "foobar"
     else:
         return output
+    
+    
+def eval_func(writer, img, **kwargs):
+    assert isinstance(img, torch.Tensor)
+    
+    
 
 num_augs = 10
 augs = [_augment.generate_aug_params() 
@@ -261,5 +267,48 @@ def test_BlackBoxPatchTrainer_with_gray_perturbation(tmp_path_factory):
                                    q=5,
                                    reduce_steps=2)
     trainer.fit(epochs=1)
+ 
     
+def test_BlackBoxPatchTrainer_include_error_as_positive(tmp_path_factory):
+    # SAVE IT TO LOG DIR
+    logdir = str(tmp_path_factory.mktemp("logs"))
     
+    H = 101
+    W = 107
+    C = 3
+    tr_estimate = 0.5
+    img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
+    init_mask, final_mask = mask.generate_rectangular_frame_mask(W, H, 20,
+                                        20, 30, 30,
+                                        frame_width=5, 
+                                        return_torch=True)
+    
+    trainer = BlackBoxPatchTrainer(img, init_mask, 
+                                   final_mask, detect_func, logdir,
+                                   num_augments=2, 
+                                   q=5,
+                                   reduce_steps=2,
+                                   include_error_as_positive=True)
+    trainer.fit(epochs=1)
+    
+def test_BlackBoxPatchTrainer_eval_func(tmp_path_factory):
+    # SAVE IT TO LOG DIR
+    logdir = str(tmp_path_factory.mktemp("logs"))
+    
+    H = 101
+    W = 107
+    C = 3
+    tr_estimate = 0.5
+    img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
+    init_mask, final_mask = mask.generate_rectangular_frame_mask(W, H, 20,
+                                        20, 30, 30,
+                                        frame_width=5, 
+                                        return_torch=True)
+    
+    trainer = BlackBoxPatchTrainer(img, init_mask, 
+                                   final_mask, detect_func, logdir,
+                                   num_augments=2, 
+                                   q=5,
+                                   reduce_steps=2,
+                                   eval_func=eval_func)
+    trainer.fit(epochs=1)
