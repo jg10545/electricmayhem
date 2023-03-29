@@ -9,8 +9,8 @@ from ax.service.ax_client import AxClient, ObjectiveProperties
 
 from noise import pnoise2
 from ._graphite import BlackBoxPatchTrainer, estimate_transform_robustness
-import mask
-import _augment
+#import mask
+from electricmayhem import _augment
 
 def normalize(vec):
     vmax = np.amax(vec)
@@ -113,7 +113,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         self.img = img
         self.initial_mask = initial_mask
         self.final_mask = final_mask
-        self.priority_mask = mask.generate_priority_mask(initial_mask, final_mask)
+        #self.priority_mask = mask.generate_priority_mask(initial_mask, final_mask)
         self.detect_func = detect_func
         self.pert_box = _get_patch_outer_box_from_mask(initial_mask)
         self._perlin_params = {"H":self.pert_box["x"],
@@ -300,22 +300,5 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         self._log_image()
         self.evaluate()
         self._save_perturbation()
-                
-    def fit(self, epochs=None, budget=None, lrs=None):
-        self._log_image()
-        
-        if epochs is not None:
-            for e in tqdm(range(epochs)):
-                self._run_one_epoch(lrs=lrs)
-                
-        elif budget is not None:
-            progress = tqdm(total=budget)
-            while self.query_counter < budget:
-                old_qc = self.query_counter
-                self._run_one_epoch(lrs=lrs)
-                progress.update(n=self.query_counter-old_qc)
-                
-            progress.close()
-        else:
-            print("WHAT DO YOU WANT FROM ME?")       
+                   
         
