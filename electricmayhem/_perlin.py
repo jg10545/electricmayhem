@@ -5,6 +5,7 @@ import mlflow
 import yaml
 import json
 import os 
+from tqdm import tqdm
 from ax.service.ax_client import AxClient, ObjectiveProperties
 
 from noise import pnoise2
@@ -36,10 +37,10 @@ def perlin(H,W, period_y, period_x, octave, freq_sine, lacunarity = 2):
     period_y = period_y*H
     period_x = period_x*W
     # Perlin noise
-    noise = np.empty((H,W,1), dtype = np.float32)
+    noise = np.empty((1,H,W), dtype = np.float32)
     for x in range(W):
         for y in range(H):
-            noise[y,x,0] = pnoise2(x/period_x, y/period_y, octaves = octave, lacunarity = lacunarity)
+            noise[0,y,x] = pnoise2(x/period_x, y/period_y, octaves = octave, lacunarity = lacunarity)
             
     # Sine function color map
     noise = normalize(noise)
@@ -116,13 +117,14 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         #self.priority_mask = mask.generate_priority_mask(initial_mask, final_mask)
         self.detect_func = detect_func
         self.pert_box = _get_patch_outer_box_from_mask(initial_mask)
-        self._perlin_params = {"H":self.pert_box["x"],
-                               "W":self.pert_box["y"], 
+        self._perlin_params = {"H":self.pert_box["height"],
+                               "W":self.pert_box["width"], 
                                "period_y":1, 
                                "period_x":1, 
                                "octave":2, 
                                "freq_sine":1, 
                                "lacunarity":2}
+        self.last_p_val = self._perlin_params
         
         if isinstance(eval_augments, int):
             eval_augments = [_augment.generate_aug_params(**aug_params) for _ in range(eval_augments)]
@@ -191,15 +193,19 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         kwargs overwrite defaults in self._perlin_params
         """
         b = self.pert_box
+        if len(kwargs) > 0:
+            p = kwargs
+        else:
+            p = self.last_p_val
         perl_dict = {}
         for k in self._perlin_params:
-            if k in kwargs:
-                perl_dict[k] = kwargs[k]
+            if k in p:
+                perl_dict[k] = p[k]
             else:
                 perl_dict[k] = self._perlin_params[k]
-        noise = perlin(**perl_dict)        
+        noise = perlin(**perl_dict)  
         perturbation = np.zeros((1, self.img.shape[1], self.img.shape[2]))
-        perturbation[:,b["top"]:b["top"]+b["y"],b["left"]:b["left"]+b["x"]] += noise
+        perturbation[:,b["top"]:b["top"]+b["height"],b["left"]:b["left"]+b["width"]] += noise
         return torch.Tensor(perturbation)
         
         
@@ -212,7 +218,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         return super()._get_img_with_perturbation()
     
     
-    def _evaluate_trial(self, p):
+    def _run_trial(self, p):
         """
         
         """
@@ -236,9 +242,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         self.writer.add_scalar("crash_frac", tr_dict["crash_frac"],
                                global_step=self.query_counter)
         
-        #if tr_dict["tr"] > self.best_tr_so_far:
-        #    self.best_tr_so_far = tr_dict["tr"]
-        #    self.best_params_so_far = p
+
         d = {"transform_robustness":(tr_dict["tr"], tr_dict["sem"])}
         j = self.client.to_json_snapshot()
         json.dump(j, open(os.path.join(self.logdir, "log.json"), "w"))
@@ -296,9 +300,18 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
     def _run_one_epoch(self, lrs=None, budget=None):
         parameters, trial_index = self.client.get_next_trial()
         self.client.complete_trial(trial_index=trial_index, 
-                                   raw_data=self._evaluate_trial(parameters))
+                                   raw_data=self._run_trial(parameters))
         self._log_image()
-        self.evaluate()
-        self._save_perturbation()
+        #print("NOT RUNNING EVALUATE")
+        #self.evaluate()
+        #self._save_perturbation()
                    
+            
+    def fit(self, epochs=1, eval_every=5):
+        if epochs is not None:
+            for e in tqdm(range(epochs)):
+                self._run_one_epoch()
+                if e%eval_every == 0:
+                    self._save_perturbation()
+                    self.evaluate()
         
