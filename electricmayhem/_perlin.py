@@ -8,6 +8,10 @@ import os
 from tqdm import tqdm
 from ax.service.ax_client import AxClient, ObjectiveProperties
 
+import ax.plot.diagnostic, ax.plot.scatter,  ax.plot.contour
+import ax.utils.notebook.plotting
+import ax.modelbridge.cross_validation
+
 from noise import pnoise2
 from ._graphite import BlackBoxPatchTrainer, estimate_transform_robustness
 #import mask
@@ -225,6 +229,8 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         """
         
         """
+        for k in p:
+            self.writer.add_scalar(k, p[k], step=self.query_counter)
         self.last_p_val = p
         # get the new perturbation
         self.perturbation = self._generate_perturbation(**p)
@@ -305,4 +311,31 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         self.client.complete_trial(trial_index=trial_index, 
                                    raw_data=self._run_trial(parameters))
 
+
+    def contour_plot(self):
+        """
+        
+        """
+        ax.utils.notebook.plotting.init_notebook_plotting(offline=True)
+        ax.utils.notebook.plotting.render(
+            ax.plot.contour.interact_contour(
+                model=self.client.generation_strategy.model,
+                metric_name="transform_robustness")
+            )
+        
+        
+    def crossvalidation_plot(self):
+        """
+        
+        """
+        ax.utils.notebook.plotting.init_notebook_plotting(offline=True)
+        cv_results = ax.modelbridge.cross_validation.cross_validate(
+            model=self.client.generation_strategy.model)
+        ax.utils.notebook.plotting.render(
+            ax.plot.diagnostic.interact_cross_validation(
+                cv_results
+            )
+        )
+        
+    
                    
