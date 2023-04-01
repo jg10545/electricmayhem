@@ -254,10 +254,12 @@ class BlackBoxPatchTrainer():
             run per epoch. GRAPHITE used 5.
         :include_error_as_positive: bool; whether to count -1s from the detect function as a positive detection ONLY for boosting, not for mask reduction
         :extra_params: dictionary of other parameters you'd like recorded
-        :fixed_augs:
+        :fixed_augs: fixed augmentation parameters to sample from instead of 
+            generating new ones each step.
         :mlflow_uri: string; URI for MLFlow server or directory
         :experiment_name: string; name of MLFlow experiment to log
-        :eval_func:
+        :eval_func: function containing any additional evalution metrics. run 
+            inside self.evaluate()
         
         """
         self.query_counter = 0
@@ -480,23 +482,39 @@ class BlackBoxPatchTrainer():
             if budget is not None:
                 if self.query_counter >= budget:
                     return
-        self._log_image()
-        self.evaluate()
-        self._save_perturbation()
+
                 
-    def fit(self, epochs=None, budget=None, lrs=None):
+    def fit(self, epochs=None, budget=None, lrs=None, eval_every=1):
+        """
+        Fit the model.
+        
+        :epochs: int; train for this many perturbation update steps
+        :budget: int; train for this many queries to the black-box model
+        :lrs: list; learning rates to test for GRAPHITE
+        :eval_every: int; wait this many epochs between evaluations
+        """
         self._log_image()
         
         if epochs is not None:
             for e in tqdm(range(epochs)):
                 self._run_one_epoch(lrs=lrs)
+                if (eval_every > 0)&((e+1)%eval_every == 0):
+                    self.evaluate()
+                    self._save_perturbation()
+                    self._log_image()
                 
         elif budget is not None:
+            i = 1
             progress = tqdm(total=budget)
             while self.query_counter < budget:
                 old_qc = self.query_counter
                 self._run_one_epoch(lrs=lrs)
                 progress.update(n=self.query_counter-old_qc)
+                if (eval_every > 0)&(i%eval_every == 0):
+                    self.evaluate()
+                    self._save_perturbation()
+                    self._log_image()
+                    i += 1
                 
             progress.close()
         else:

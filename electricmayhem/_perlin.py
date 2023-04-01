@@ -67,10 +67,11 @@ def _get_patch_outer_box_from_mask(mask):
 
 class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
     """
-    Modification of GRAPHITE approach
+    Black box patch trainer that attempts to generate an adversarial pattern
+    using Perlin noise. Noise parameters are optimized using a Gaussian Process.
     """
     
-    def __init__(self, img, initial_mask, final_mask, detect_func, logdir,
+    def __init__(self, img, final_mask, detect_func, logdir,
                  num_augments=100, aug_params={}, tr_thresh=0.5,
                  reduce_steps=10, eval_augments=1000, 
                  mask_thresh=0.99,
@@ -80,7 +81,6 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                  load_from_json_file=None):
         """
         :img: torch.Tensor in (C,H,W) format representing the image being modified
-        :initial_mask: torch.Tensor in (C,H,W) starting mask as an image with 0,1 values
         :final mask: torch.Tensor in (C,H,W) starting mask as an image with 0,1 values
         :detect_func: function; inputs an image and returns 1, 0, or -1 depending on whether the black-box algorithm correctly detected, missed, or threw an error
         :logdir: string; location to save tensorboard logs in
@@ -96,12 +96,15 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
             over to the final_mask
         :include_error_as_positive: bool; whether to count -1s from the detect function as a positive detection ONLY for boosting, not for mask reduction
         :extra_params: dictionary of other parameters you'd like recorded
-        :fixed_augs:
+        :fixed_augs: fixed augmentation parameters to sample from instead of 
+            generating new ones each step.
         :mlflow_uri: string; URI for MLFlow server or directory
         :experiment_name: string; name of MLFlow experiment to log
-        :eval_func:
-        :load_from_json_file:
-        
+        :eval_func: function containing any additional evalution metrics. run 
+            inside self.evaluate()
+        :load_from_json_file: load a pretrained Gaussian Process from a saved file.
+            DOES NOT CHECK to make sure the parameters are consistent with this
+            trainer object.
         """
         self.best_tr_so_far = 0
         self.query_counter = 0
@@ -112,11 +115,11 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         self.eval_func = eval_func
         
         self.img = img
-        self.initial_mask = initial_mask
+        #self.initial_mask = initial_mask
         self.final_mask = final_mask
         #self.priority_mask = mask.generate_priority_mask(initial_mask, final_mask)
         self.detect_func = detect_func
-        self.pert_box = _get_patch_outer_box_from_mask(initial_mask)
+        self.pert_box = _get_patch_outer_box_from_mask(final_mask)
         self._perlin_params = {"H":self.pert_box["height"],
                                "W":self.pert_box["width"], 
                                "period_y":1, 
@@ -137,7 +140,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         if load_from_json_file is not None:
             self.client = AxClient.load_from_json_file(load_from_json_file)
         else:
-            self.client = AxClient()
+            self.client = AxClient(verbose_logging=False)
             self.params = self._build_params()
             self.client.create_experiment(
                 name=experiment_name,
@@ -184,7 +187,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
             {"name":"lacunarity",
              "type":"range",
              "value_type":"float",
-             "bounds":[0.01,10.]
+             "bounds":[1.,3.]
                 }
             ]
         
@@ -301,17 +304,5 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         parameters, trial_index = self.client.get_next_trial()
         self.client.complete_trial(trial_index=trial_index, 
                                    raw_data=self._run_trial(parameters))
-        self._log_image()
-        #print("NOT RUNNING EVALUATE")
-        #self.evaluate()
-        #self._save_perturbation()
+
                    
-            
-    def fit(self, epochs=1, eval_every=5):
-        if epochs is not None:
-            for e in tqdm(range(epochs)):
-                self._run_one_epoch()
-                if e%eval_every == 0:
-                    self._save_perturbation()
-                    self.evaluate()
-        

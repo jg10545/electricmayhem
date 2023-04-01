@@ -9,7 +9,7 @@ def test_perlin():
     W = 119
     noise = perlin(H, W, 0.5, 0.5, 2, 0.5, 2)
     assert isinstance(noise, np.ndarray)
-    assert noise.shape == (H,W,1)
+    assert noise.shape == (1,H,W)
     
     
     
