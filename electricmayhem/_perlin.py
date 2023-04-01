@@ -230,7 +230,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         
         """
         for k in p:
-            self.writer.add_scalar(k, p[k], step=self.query_counter)
+            self.writer.add_scalar(k, p[k], global_step=self.query_counter)
         self.last_p_val = p
         # get the new perturbation
         self.perturbation = self._generate_perturbation(**p)
