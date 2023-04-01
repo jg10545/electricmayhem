@@ -23,7 +23,7 @@ def normalize(vec):
     return (vec - vmin) / (vmax - vmin)
 
 
-def perlin(H,W, period_y, period_x, octave, freq_sine, lacunarity = 2):
+def perlin(H,W, period_y, period_x, octave, freq_sine, lacunarity=2, phase=0):
     """
     Wrapper for the noise.pnoise2() perlin noise generator.
     
@@ -44,11 +44,11 @@ def perlin(H,W, period_y, period_x, octave, freq_sine, lacunarity = 2):
     noise = np.empty((1,H,W), dtype = np.float32)
     for x in range(W):
         for y in range(H):
-            noise[0,y,x] = pnoise2(x/period_x, y/period_y, octaves = octave, lacunarity = lacunarity)
+            noise[0,y,x] = pnoise2(x/period_x, y/period_y, octaves=octave, lacunarity=lacunarity)
             
     # Sine function color map
     noise = normalize(noise)
-    noise = np.sin(noise * freq_sine * np.pi)
+    noise = np.sin(noise * freq_sine * np.pi + phase)
     return normalize(noise)
 
 def _get_patch_outer_box_from_mask(mask):
@@ -164,9 +164,9 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                    "extra_params":self.extra_params},
                   open(os.path.join(logdir, "config.yml"), "w"))
         
-    def _build_params(self):
+    def _build_params(self, tune_lacunarity=True, tune_phase=True):
         # period_y, period_x, octave, freq_sine
-        return [
+        params = [
             {"name":"period_x",
              "type":"range",
              "value_type":"float",
@@ -187,13 +187,22 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
              "type":"range",
              "value_type":"float",
              "bounds":[0.01,10.]
-                },
+                }]
+        if tune_lacunarity:
+            params.append(
             {"name":"lacunarity",
              "type":"range",
              "value_type":"float",
              "bounds":[1.,3.]
-                }
-            ]
+                })
+        if tune_phase:
+            params.append(
+            {"name":"phase",
+             "type":"range",
+             "value_type":"float",
+             "bounds":[-3.14, 3.14]
+                })
+        return params
         
     def _generate_perturbation(self, **kwargs):
         """
