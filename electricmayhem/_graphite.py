@@ -15,7 +15,8 @@ from electricmayhem import _augment
 def estimate_transform_robustness(detect_func, augments, img, 
                                   mask=None, pert=None, 
                                   return_outcomes=False,
-                                  include_error_as_positive=False):
+                                  include_error_as_positive=False,
+                                  use_agresti_coull=True):
     """
     Estimate transform robustness as an expectation over transformations. 
     
@@ -53,20 +54,32 @@ def estimate_transform_robustness(detect_func, augments, img,
     # how often did openALPR crap out?
     crash_frac = np.mean([o == -1 for o in outcomes])
     if include_error_as_positive:
-        detect_frac = np.mean([o in (1,-1) for o in outcomes])
-        tr = 1-detect_frac
+        num_positives = np.sum([o in (1,-1) for o in outcomes])
         n = len(outcomes)
     else:
         # how often did it detect the plate?
-        detect_frac = np.mean([o == 1 for o in outcomes])
-        tr = 1-detect_frac/max((1-crash_frac), 1e-5)
+        num_positives = np.sum([o == 1 for o in outcomes])
         n = len([o for o in outcomes if o >= 0])
+        #detect_frac = np.mean([o == 1 for o in outcomes])
+        #tr = 1-detect_frac/max((1-crash_frac), 1e-5)
+    detect_frac = num_positives/n
+    tr = 1-detect_frac
+        
+    # Agresti-Coull interval for z=1
+    if use_agresti_coull:
+        n_tilde = n+1
+        p_tilde = (num_positives + 0.5)/n_tilde
+        sem = np.sqrt((p_tilde*(1-p_tilde))/n_tilde)
+        
+    # Wald interval for z=1
+    else:
+        sem = np.sqrt((tr*(1-tr))/n) 
     
     outdict = {
         "crash_frac":crash_frac,
         "detect_frac":detect_frac,
         "tr":tr,
-        "sem":np.sqrt((tr*(1-tr))/n) # <--- Wald interval
+        "sem":sem
     }
     if return_outcomes:
         return outdict, outcomes, raw
