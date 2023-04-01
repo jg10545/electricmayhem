@@ -1,4 +1,4 @@
-import numpy as np
+ import numpy as np
 import torch
 import subprocess
 import os
@@ -123,7 +123,7 @@ def build_api_detect_function(plate, url='http://localhost:8088/api'):
     :plate: string; plate number
     :url: string; URL of API
     """
-    def detect_function(img, return_raw=False):
+    def detect_function(img, return_raw=False, empty_is_error=False):
         memfile = BytesIO()
         img = Image.fromarray((img.permute(1,2,0).numpy()*255).astype(np.uint8))
         img.save(memfile, "JPEG", quality=100)
@@ -135,8 +135,12 @@ def build_api_detect_function(plate, url='http://localhost:8088/api'):
                 output = 1
             else:
                 output = 0
+        # no plates found
         else:
-            output = 0
+            if empty_is_error:
+                return -1
+            else:
+                output = 0
         if return_raw:
             return output, results
         else:
