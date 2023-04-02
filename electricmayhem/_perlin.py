@@ -79,6 +79,8 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                  num_augments=100, aug_params={}, tr_thresh=0.5,
                  reduce_steps=10, eval_augments=1000, 
                  mask_thresh=0.99,
+                 tune_lacunarity=True, 
+                 tune_phase=False,
                  include_error_as_positive=False,
                  extra_params={}, fixed_augs=None,
                  mlflow_uri=None, experiment_name="perlin_noise", eval_func=None,
@@ -145,7 +147,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
             self.client = AxClient.load_from_json_file(load_from_json_file)
         else:
             self.client = AxClient(verbose_logging=False)
-            self.params = self._build_params()
+            self.params = self._build_params(tune_lacunarity, tune_phase)
             self.client.create_experiment(
                 name=experiment_name,
                 parameters=self.params,
@@ -156,7 +158,9 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         self.params = {"num_augments":num_augments,
                        "tr_thresh":tr_thresh,
                       "reduce_steps":reduce_steps, 
-                      "include_error_as_positive":include_error_as_positive}
+                      "include_error_as_positive":include_error_as_positive,
+                      "tune_lacunarity":tune_lacunarity,
+                      "tune_phase":tune_phase}
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
         # record hyperparams for all posterity
