@@ -38,8 +38,9 @@ def perlin(H,W, period_y, period_x, octave, freq_sine, lacunarity=2, phase=0):
     Returns a 2D array
     """
     # convert period from relative pixel coords to absolute.
-    period_y = period_y*H
-    period_x = period_x*W
+    period_y *= H
+    period_x *= W
+    freq_sine *= (H+W/2)
     # Perlin noise
     noise = np.empty((1,H,W), dtype = np.float32)
     for x in range(W):
@@ -185,12 +186,12 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
             {"name":"octave",
              "type":"range",
              "value_type":"int",
-             "bounds":[1,8]
+             "bounds":[1,4]#[1,8]
              },
             {"name":"freq_sine",
              "type":"range",
              "value_type":"float",
-             "bounds":[0.01,10.]
+             "bounds":[0.01,1]#[0.01,50.]#[0.01,10.]
                 }]
         if tune_lacunarity:
             params.append(
