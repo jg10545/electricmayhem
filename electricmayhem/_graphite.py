@@ -527,7 +527,7 @@ class BlackBoxPatchTrainer():
                     self.evaluate()
                     self._save_perturbation()
                     self._log_image()
-                    i += 1
+                i += 1
                 
             progress.close()
         else:
