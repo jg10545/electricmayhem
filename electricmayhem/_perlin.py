@@ -11,6 +11,8 @@ from ax.service.ax_client import AxClient, ObjectiveProperties
 import ax.plot.diagnostic, ax.plot.scatter,  ax.plot.contour
 import ax.utils.notebook.plotting
 import ax.modelbridge.cross_validation
+import ax.modelbridge.generation_strategy 
+import ax.modelbridge.registry 
 
 from noise import pnoise2
 from ._graphite import BlackBoxPatchTrainer, estimate_transform_robustness
@@ -81,7 +83,8 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                  reduce_steps=10, eval_augments=1000, 
                  mask_thresh=0.99,
                  tune_lacunarity=True, 
-                 tune_phase=False,
+                 num_sobol=5,
+                 gpkg=False,
                  include_error_as_positive=False,
                  extra_params={}, fixed_augs=None,
                  mlflow_uri=None, experiment_name="perlin_noise", eval_func=None,
@@ -147,8 +150,29 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         if load_from_json_file is not None:
             self.client = AxClient.load_from_json_file(load_from_json_file)
         else:
-            self.client = AxClient(verbose_logging=False)
-            self.params = self._build_params(tune_lacunarity, tune_phase)
+            if gpkg:
+                model = ax.modelbridge.registry.Models.GPKG
+            else:
+                model = ax.modelbridge.registry.Models.GPEI
+            gs = ax.modelbridge.generation_strategy.GenerationStrategy(
+                steps=[
+                    # Quasi-random initialization step
+                    ax.modelbridge.generation_strategy.GenerationStep(
+                        model=ax.modelbridge.registry.Models.SOBOL,
+                        num_trials=num_sobol,  
+                        ),
+                    # Bayesian optimization step using the custom acquisition function
+                    ax.modelbridge.generation_strategy.GenerationStep(
+                        model=model,
+                        num_trials=-1, 
+                        #model_kwargs={"surrogate": Surrogate(SimpleCustomGP)},
+                        ),
+                    ]
+                )
+            
+            self.client = AxClient(generation_strategy=gs,
+                                   verbose_logging=False)
+            self.params = self._build_params(tune_lacunarity)
             self.client.create_experiment(
                 name=experiment_name,
                 parameters=self.params,
@@ -161,7 +185,8 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                       "reduce_steps":reduce_steps, 
                       "include_error_as_positive":include_error_as_positive,
                       "tune_lacunarity":tune_lacunarity,
-                      "tune_phase":tune_phase}
+                      "num_sobol":num_sobol,
+                      "gpkg":gpkg}
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
         # record hyperparams for all posterity
@@ -169,7 +194,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                    "extra_params":self.extra_params},
                   open(os.path.join(logdir, "config.yml"), "w"))
         
-    def _build_params(self, tune_lacunarity=True, tune_phase=True):
+    def _build_params(self, tune_lacunarity=True, tune_phase=False):
         # period_y, period_x, octave, freq_sine
         params = [
             {"name":"period_x",
