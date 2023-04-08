@@ -75,14 +75,13 @@ def _get_patch_outer_box_from_mask(mask):
 class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
     """
     Black box patch trainer that attempts to generate an adversarial pattern
-    using Perlin noise. Noise parameters are optimized using a Gaussian Process.
+    using Perlin noise. Noise parameters are optimized using a Gaussian process.
     """
     
     def __init__(self, img, final_mask, detect_func, logdir,
                  num_augments=100, aug_params={}, tr_thresh=0.5,
                  reduce_steps=10, eval_augments=1000, 
-                 mask_thresh=0.99,
-                 tune_lacunarity=True, 
+                 tune_lacunarity=False, 
                  num_sobol=5,
                  gpkg=False,
                  include_error_as_positive=False,
@@ -95,15 +94,18 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         :detect_func: function; inputs an image and returns 1, 0, or -1 depending on whether the black-box algorithm correctly detected, missed, or threw an error
         :logdir: string; location to save tensorboard logs in
         :num_augments: int; number of augmentations to sample for each mask reduction, RGF, and line search step
-        
         :aug_params: dict; any non-default options to pass to
             _augment.generate_aug_params()
         :tr_thresh:  float; transform robustness threshold to aim for 
             during mask reudction step
         :reduce_steps: int; number of steps to take during mask reduction
         :eval_augments: int or list of aug params. Augmentations to use at the end of every epoch to evaluate performance
-        :mask_thresh: float; when mask reduction hits this threshold swap
-            over to the final_mask
+        :tune_lacunarity: bool; whether to include the Perlin lacunarity parameter
+            as part of the Gaussian process
+        :num_sobol: int; number of Sobol sampling steps for the GP before switching 
+            to a GPEI or GPKG acquisition function
+        :gpkg: bool; if True use Knowledge Gradient acquisition function instead of
+            the default Expected Improvement
         :include_error_as_positive: bool; whether to count -1s from the detect function as a positive detection ONLY for boosting, not for mask reduction
         :extra_params: dictionary of other parameters you'd like recorded
         :fixed_augs: fixed augmentation parameters to sample from instead of 
@@ -353,7 +355,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
 
     def contour_plot(self):
         """
-        
+        Wraps ax.plot.contour.interact_contour()
         """
         ax.utils.notebook.plotting.init_notebook_plotting(offline=True)
         ax.utils.notebook.plotting.render(
@@ -365,7 +367,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         
     def crossvalidation_plot(self):
         """
-        
+        wraps ax.plot.diagnostic.interact_cross_validation()
         """
         ax.utils.notebook.plotting.init_notebook_plotting(offline=True)
         cv_results = ax.modelbridge.cross_validation.cross_validate(
