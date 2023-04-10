@@ -79,8 +79,10 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
     """
     
     def __init__(self, img, final_mask, detect_func, logdir,
-                 num_augments=100, aug_params={}, tr_thresh=0.5,
-                 reduce_steps=10, eval_augments=1000, 
+                 num_augments=100, aug_params={}, 
+                 #tr_thresh=0.5,
+                 #reduce_steps=10, 
+                 eval_augments=1000, 
                  tune_lacunarity=False, 
                  num_sobol=5,
                  gpkg=False,
@@ -183,8 +185,8 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         
         self.aug_params = aug_params
         self.params = {"num_augments":num_augments,
-                       "tr_thresh":tr_thresh,
-                      "reduce_steps":reduce_steps, 
+                       #"tr_thresh":tr_thresh,
+                      #"reduce_steps":reduce_steps, 
                       "include_error_as_positive":include_error_as_positive,
                       "tune_lacunarity":tune_lacunarity,
                       "num_sobol":num_sobol,
@@ -316,12 +318,10 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                                global_step=self.query_counter)
         self.writer.add_scalar("eval_crash_frac", tr_dict["crash_frac"],
                                global_step=self.query_counter)
-        # only log TR to mlflow if we got rid of the mask, otherwise you
-        # could trivially get TR=1
-        if self.a >= self.mask_thresh:
-            self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
-            # store results in memory too
-            self.tr_dict = tr_dict
+
+        self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
+        # store results in memory too
+        self.tr_dict = tr_dict
             
         # visual check for correlations in transform robustness across augmentation params
         coldict = {-1:'k', 1:'b', 0:'r'}
