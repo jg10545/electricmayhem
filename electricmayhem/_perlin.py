@@ -11,6 +11,8 @@ from ax.service.ax_client import AxClient, ObjectiveProperties
 import ax.plot.diagnostic, ax.plot.scatter,  ax.plot.contour
 import ax.utils.notebook.plotting
 import ax.modelbridge.cross_validation
+import ax.modelbridge.generation_strategy 
+import ax.modelbridge.registry 
 
 from noise import pnoise2
 from ._graphite import BlackBoxPatchTrainer, estimate_transform_robustness
@@ -73,15 +75,17 @@ def _get_patch_outer_box_from_mask(mask):
 class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
     """
     Black box patch trainer that attempts to generate an adversarial pattern
-    using Perlin noise. Noise parameters are optimized using a Gaussian Process.
+    using Perlin noise. Noise parameters are optimized using a Gaussian process.
     """
     
     def __init__(self, img, final_mask, detect_func, logdir,
-                 num_augments=100, aug_params={}, tr_thresh=0.5,
-                 reduce_steps=10, eval_augments=1000, 
-                 mask_thresh=0.99,
-                 tune_lacunarity=True, 
-                 tune_phase=False,
+                 num_augments=100, aug_params={}, 
+                 #tr_thresh=0.5,
+                 #reduce_steps=10, 
+                 eval_augments=1000, 
+                 tune_lacunarity=False, 
+                 num_sobol=5,
+                 gpkg=False,
                  include_error_as_positive=False,
                  extra_params={}, fixed_augs=None,
                  mlflow_uri=None, experiment_name="perlin_noise", eval_func=None,
@@ -92,15 +96,18 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         :detect_func: function; inputs an image and returns 1, 0, or -1 depending on whether the black-box algorithm correctly detected, missed, or threw an error
         :logdir: string; location to save tensorboard logs in
         :num_augments: int; number of augmentations to sample for each mask reduction, RGF, and line search step
-        
         :aug_params: dict; any non-default options to pass to
             _augment.generate_aug_params()
         :tr_thresh:  float; transform robustness threshold to aim for 
             during mask reudction step
         :reduce_steps: int; number of steps to take during mask reduction
         :eval_augments: int or list of aug params. Augmentations to use at the end of every epoch to evaluate performance
-        :mask_thresh: float; when mask reduction hits this threshold swap
-            over to the final_mask
+        :tune_lacunarity: bool; whether to include the Perlin lacunarity parameter
+            as part of the Gaussian process
+        :num_sobol: int; number of Sobol sampling steps for the GP before switching 
+            to a GPEI or GPKG acquisition function
+        :gpkg: bool; if True use Knowledge Gradient acquisition function instead of
+            the default Expected Improvement
         :include_error_as_positive: bool; whether to count -1s from the detect function as a positive detection ONLY for boosting, not for mask reduction
         :extra_params: dictionary of other parameters you'd like recorded
         :fixed_augs: fixed augmentation parameters to sample from instead of 
@@ -147,8 +154,29 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         if load_from_json_file is not None:
             self.client = AxClient.load_from_json_file(load_from_json_file)
         else:
-            self.client = AxClient(verbose_logging=False)
-            self.params = self._build_params(tune_lacunarity, tune_phase)
+            if gpkg:
+                model = ax.modelbridge.registry.Models.GPKG
+            else:
+                model = ax.modelbridge.registry.Models.GPEI
+            gs = ax.modelbridge.generation_strategy.GenerationStrategy(
+                steps=[
+                    # Quasi-random initialization step
+                    ax.modelbridge.generation_strategy.GenerationStep(
+                        model=ax.modelbridge.registry.Models.SOBOL,
+                        num_trials=num_sobol,  
+                        ),
+                    # Bayesian optimization step using the custom acquisition function
+                    ax.modelbridge.generation_strategy.GenerationStep(
+                        model=model,
+                        num_trials=-1, 
+                        #model_kwargs={"surrogate": Surrogate(SimpleCustomGP)},
+                        ),
+                    ]
+                )
+            
+            self.client = AxClient(generation_strategy=gs,
+                                   verbose_logging=False)
+            self.params = self._build_params(tune_lacunarity)
             self.client.create_experiment(
                 name=experiment_name,
                 parameters=self.params,
@@ -157,11 +185,12 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         
         self.aug_params = aug_params
         self.params = {"num_augments":num_augments,
-                       "tr_thresh":tr_thresh,
-                      "reduce_steps":reduce_steps, 
+                       #"tr_thresh":tr_thresh,
+                      #"reduce_steps":reduce_steps, 
                       "include_error_as_positive":include_error_as_positive,
                       "tune_lacunarity":tune_lacunarity,
-                      "tune_phase":tune_phase}
+                      "num_sobol":num_sobol,
+                      "gpkg":gpkg}
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
         # record hyperparams for all posterity
@@ -169,7 +198,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                    "extra_params":self.extra_params},
                   open(os.path.join(logdir, "config.yml"), "w"))
         
-    def _build_params(self, tune_lacunarity=True, tune_phase=True):
+    def _build_params(self, tune_lacunarity=True, tune_phase=False):
         # period_y, period_x, octave, freq_sine
         params = [
             {"name":"period_x",
@@ -289,12 +318,10 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                                global_step=self.query_counter)
         self.writer.add_scalar("eval_crash_frac", tr_dict["crash_frac"],
                                global_step=self.query_counter)
-        # only log TR to mlflow if we got rid of the mask, otherwise you
-        # could trivially get TR=1
-        if self.a >= self.mask_thresh:
-            self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
-            # store results in memory too
-            self.tr_dict = tr_dict
+
+        self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
+        # store results in memory too
+        self.tr_dict = tr_dict
             
         # visual check for correlations in transform robustness across augmentation params
         coldict = {-1:'k', 1:'b', 0:'r'}
@@ -328,7 +355,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
 
     def contour_plot(self):
         """
-        
+        Wraps ax.plot.contour.interact_contour()
         """
         ax.utils.notebook.plotting.init_notebook_plotting(offline=True)
         ax.utils.notebook.plotting.render(
@@ -340,7 +367,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         
     def crossvalidation_plot(self):
         """
-        
+        wraps ax.plot.diagnostic.interact_cross_validation()
         """
         ax.utils.notebook.plotting.init_notebook_plotting(offline=True)
         cv_results = ax.modelbridge.cross_validation.cross_validate(
