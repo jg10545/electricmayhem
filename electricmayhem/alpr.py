@@ -114,7 +114,9 @@ def quick_and_dirty_lpr(img, diameter=11, sigma=17, cannythreshold1=30, cannythr
     return text"""
 
 
-def build_api_detect_function(plate, url='http://localhost:8088/api', empty_is_error=False):
+
+
+def build_api_detect_function(plate, url='http://localhost:8088/api'):
     """
     Build a detection function that queries an OpenALPR REST API.
     
@@ -133,17 +135,14 @@ def build_api_detect_function(plate, url='http://localhost:8088/api', empty_is_e
                 output = 1
             else:
                 output = 0
-        # no plates returned
         else:
-            if empty_is_error:
-                output = -1
-            else:
-                output = 0
+            output = 0
         if return_raw:
             return output, results
         else:
             return output
     return detect_function
+
 
 def build_alpr_cli_detect_function(plate, country_code='us', config=None,
                                    empty_is_error=False):

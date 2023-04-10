@@ -31,12 +31,9 @@ def detect_func(x, return_raw=False):
     else:
         return output
 
-    
-def eval_func(writer, step, img, **kwargs):
-    assert isinstance(writer, torch.utils.tensorboard.SummaryWriter)
-    assert isinstance(step, int)
+def eval_func(writer, img, **kwargs):
     assert isinstance(img, torch.Tensor)
-    
+
 num_augs = 10
 augs = [_augment.generate_aug_params() 
         for _ in range(num_augs)]
