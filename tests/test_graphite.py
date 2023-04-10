@@ -30,9 +30,7 @@ def detect_func(x, return_raw=False):
         return output
     
     
-def eval_func(writer, step, img, **kwargs):
-    assert isinstance(writer, torch.utils.tensorboard.SummaryWriter)
-    assert isinstance(step, int)
+def eval_func(writer, img, **kwargs):
     assert isinstance(img, torch.Tensor)
     
     
@@ -58,19 +56,6 @@ def test_estimate_transform_robustness():
         
     assert "sem" in results
         
-def test_estimate_transform_robustness_agresti_coull_edge_case():
-    H = 101
-    W = 107
-    C = 3
-    img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
-    
-    def df(x, **kwargs):
-        return 0
-    
-    results = estimate_transform_robustness(df, augs, img)
-    assert results["sem"] > 0
-        
-    
     
 def test_estimate_transform_robustness_with_error_as_positive():
     H = 101

@@ -10,4 +10,3 @@ from electricmayhem._graphite import estimate_transform_robustness
 from electricmayhem._augment import generate_aug_params, compose, augment_image
 from electricmayhem._convenience import load_to_tensor, plot, save
 from electricmayhem._opt import BlackBoxOptimizer
-from electricmayhem._perlin import BayesianPerlinNoisePatchTrainer
