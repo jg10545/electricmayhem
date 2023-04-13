@@ -200,12 +200,12 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
             {"name":"period_x",
              "type":"range",
              "value_type":"float",
-             "bounds":[0.1,2.]
+             "bounds":[0.01,1.] #[0.1,2.]
                 },
             {"name":"period_y",
              "type":"range",
              "value_type":"float",
-             "bounds":[0.1,2.]
+             "bounds":[0.01,1.] #[0.1,2.]
                },
             
             {"name":"octave",
@@ -216,8 +216,9 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
             {"name":"freq_sine",
              "type":"range",
              "value_type":"float",
-             "bounds":[0.01,1]#[0.01,50.]#[0.01,10.]
-                }]
+             "bounds":[0.01, 1] #[0.01,2]#[0.01,50.]#[0.01,10.]
+                }
+        ]
         if tune_lacunarity:
             params.append(
             {"name":"lacunarity",
@@ -297,10 +298,13 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         return d
     
         
-    def evaluate(self):
+    def evaluate(self, use_best=False):
         """
         Run a suite of evaluation tests on the test augmentations.
         """
+        if use_best:
+            ind, p, _ = self.client.get_best_trial()
+            self.perturbation = self._generate_perturbation(**p)
         
         tr_dict, outcomes, raw = estimate_transform_robustness(self.detect_func, 
                                                           self.eval_augments,
