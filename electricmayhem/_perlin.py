@@ -224,7 +224,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
             {"name":"lacunarity",
              "type":"range",
              "value_type":"float",
-             "bounds":[1.,3.]
+             "bounds":[1.5,2.5]#[1.,3.]
                 })
         if tune_phase:
             params.append(
