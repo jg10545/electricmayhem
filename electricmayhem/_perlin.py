@@ -201,12 +201,12 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
             {"name":"period_x",
              "type":"range",
              "value_type":"float",
-             "bounds":[0.01,1.] #[0.1,2.]
+             "bounds":[0.01,1.] 
                 },
             {"name":"period_y",
              "type":"range",
              "value_type":"float",
-             "bounds":[0.01,1.] #[0.1,2.]
+             "bounds":[0.01,1.] 
                },
             
             {"name":"octave",
@@ -217,7 +217,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
             {"name":"freq_sine",
              "type":"range",
              "value_type":"float",
-             "bounds":[0.01, self.max_freq] #[0.01,2]#[0.01,50.]#[0.01,10.]
+             "bounds":[0.01, self.max_freq] 
                 }
         ]
         if tune_lacunarity:
@@ -225,7 +225,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
             {"name":"lacunarity",
              "type":"range",
              "value_type":"float",
-             "bounds":[1.5,2.5]#[1.,3.]
+             "bounds":[1.5,2.5]
                 })
         if tune_phase:
             params.append(
@@ -319,12 +319,10 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                                global_step=self.query_counter)
         self.writer.add_scalar("eval_crash_frac", tr_dict["crash_frac"],
                                global_step=self.query_counter)
-        # only log TR to mlflow if we got rid of the mask, otherwise you
-        # could trivially get TR=1
-        if self.a >= self.mask_thresh:
-            self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
-            # store results in memory too
-            self.tr_dict = tr_dict
+        
+        self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
+        # store results in memory too
+        self.tr_dict = tr_dict
             
         # visual check for correlations in transform robustness across augmentation params
         coldict = {-1:'k', 1:'b', 0:'r'}

@@ -61,7 +61,7 @@ def test_get_patch_outer_box_from_mask():
     
     
     
-def test_BlackBoxPatchTrainer(tmp_path_factory):
+def test_BayesianPerlinNoiseTrainer(tmp_path_factory):
     # SAVE IT TO LOG DIR
     logdir = str(tmp_path_factory.mktemp("logs"))
     
