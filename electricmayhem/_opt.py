@@ -210,7 +210,7 @@ class PerlinOptimizer():
                  eval_func=None,
                  fixed_augs=None,
                  mlflow_uri=None,
-                 experiment_name="graphite_optimization", 
+                 experiment_name="perlin_optimization", 
                  load_from_json_file=None):
         """
         :img: torch.Tensor in channel-first format; victim image
@@ -284,7 +284,7 @@ class PerlinOptimizer():
              "type":"range",
              "bounds":num_augments,
              "value_type":"int",
-             "log_scale":True},
+             "log_scale":False},
             
             {"name":"num_sobol",
              "type":"range",
