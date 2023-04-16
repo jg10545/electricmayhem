@@ -221,15 +221,16 @@ class PerlinOptimizer():
             already exist. individual runs will be saved in subdirectories
         :budget: int; query budget for each run
         :num_augments: list of two integers; range of values for num_augments
-        :num_sobol:
-        :max_freq:
+        :num_sobol: number of Sobol steps for each trainer to take before switching to GPEI
+        :max_freq: maximum value for the sine frequency for each trainer to optimize. I've found some cases where large values cause the objective to be 
+            highly nonmonotic and the GP has trouble fitting it
         :aug_params: dictionary of augmentation paramaters
         :eval_augments: int or list of dictionaries; number of augmentations to
             evaluate on
         :num_channels: 1 or 3; number of channels for the perturbation
         :perturbation: torch.Tensor in channel-first format; perturbation to start
             from. if None, initialize a gray tensor for each run.
-        :fixed_augs:
+        :fixed_augs: optional fixed augmentations to sample from instead of randomly generating at each step
         :mflow_uri: string; URI of MLflow server
         :experiment_name: string; name of experiment. Will be used both for AX
             and MLFlow
@@ -249,16 +250,7 @@ class PerlinOptimizer():
         self.fixed_augs = fixed_augs
         self.include_error_as_positive = include_error_as_positive
         self.eval_func = eval_func
-        
-        
-        def sample():
-            return {
-                "num_augments":int(np.random.randint(num_augments[0], num_augments[1])),
-                "num_sobol":int(np.random.randint(num_sobol[0], num_sobol[1])),
-                "max_freq":float(np.random.uniform(max_freq[0], max_freq[1]))
-                }
-        self.sample = sample
-        #"""
+
         # if we're resuming from a previous experiment, load it here.
         if load_from_json_file is not None:
             self.client = AxClient.load_from_json_file(load_from_json_file)
@@ -270,7 +262,7 @@ class PerlinOptimizer():
                 name=experiment_name,
                 parameters=self.params,
                 objectives={"eval_transform_robustness":ObjectiveProperties(minimize=False)},
-            )#"""
+            )
         
 
         
@@ -312,9 +304,6 @@ class PerlinOptimizer():
         trainer = BayesianPerlinNoisePatchTrainer(
             *self.inputs, logdir,
             **p,
-            #num_augments = p["num_augments"], #np.random.randint(5,10),#5,#int(p["num_augments"]),
-            #num_sobol = p["num_sobol"],
-            #max_freq = p["max_freq"],
             aug_params = self.aug_params,
             eval_augments = self.eval_augments,
             fixed_augs = self.fixed_augs,
@@ -355,4 +344,3 @@ class PerlinOptimizer():
             # Local evaluation here can be replaced with deployment to external system.
             self.client.complete_trial(trial_index=trial_index,
                                        raw_data=self._evaluate_trial(parameters))#"""
-            #self._evaluate_trial(self.sample())
