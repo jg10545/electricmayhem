@@ -4,7 +4,7 @@ import torch.utils.tensorboard
 import dask
 
 from electricmayhem import _augment, mask
-from electricmayhem._opt import BlackBoxOptimizer
+from electricmayhem._opt import BlackBoxOptimizer, PerlinOptimizer
 
 dask.config.set(scheduler='threads')
 
@@ -68,3 +68,28 @@ def test_BlackBoxPatchOptimizer_with_gray_perturbation(tmp_path_factory):
                             num_channels=1,
                             eval_func=eval_func)
     opt.fit(2)
+    
+    
+def test_PerlinOptimizer(tmp_path_factory):
+    # SAVE IT TO LOG DIR
+    logdir = str(tmp_path_factory.mktemp("logs"))
+    
+    H = 51
+    W = 57
+    C = 3
+    img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
+    init_mask, final_mask = mask.generate_rectangular_frame_mask(W, H, 20,
+                                        20, 30, 30,
+                                        frame_width=5, 
+                                        return_torch=True)
+    
+    opt = PerlinOptimizer(img, final_mask, 
+                            detect_func, logdir,
+                            budget=100, 
+                            num_augments=[5,7],
+                            num_sobol=[5,10],
+                            max_freq=[0.01,1],
+                            eval_augments=5,
+                            eval_func=eval_func)
+    opt.fit(2)
+    
