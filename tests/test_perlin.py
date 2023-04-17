@@ -1,4 +1,4 @@
-import numpy as np
+import numpy as np 
 import torch
 
 from electricmayhem._perlin import (perlin, 
@@ -61,7 +61,7 @@ def test_get_patch_outer_box_from_mask():
     
     
     
-def test_BayesianPerlinNoisePatchTrainer(tmp_path_factory):
+def test_BayesianPerlinNoiseTrainer(tmp_path_factory):
     # SAVE IT TO LOG DIR
     logdir = str(tmp_path_factory.mktemp("logs"))
     
@@ -77,44 +77,5 @@ def test_BayesianPerlinNoisePatchTrainer(tmp_path_factory):
     trainer = BayesianPerlinNoisePatchTrainer(img, 
                                    final_mask, detect_func, logdir,
                                    num_augments=2)
-    trainer.fit(epochs=1)
-    
-    
-def test_BayesianPerlinNoisePatchTrainer_with_lacunarity(tmp_path_factory):
-    # SAVE IT TO LOG DIR
-    logdir = str(tmp_path_factory.mktemp("logs"))
-    
-    H = 101
-    W = 107
-    C = 3
-    img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
-    init_mask, final_mask = mask.generate_rectangular_frame_mask(W, H, 20,
-                                        20, 30, 30,
-                                        frame_width=5, 
-                                        return_torch=True)
-    
-    trainer = BayesianPerlinNoisePatchTrainer(img, 
-                                   final_mask, detect_func, logdir,
-                                   num_augments=2,
-                                   tune_lacunarity=True)
-    trainer.fit(epochs=1)
-    
-def test_BayesianPerlinNoisePatchTrainer_with_GPKG(tmp_path_factory):
-    # SAVE IT TO LOG DIR
-    logdir = str(tmp_path_factory.mktemp("logs"))
-    
-    H = 101
-    W = 107
-    C = 3
-    img = torch.Tensor(np.random.uniform(0, 1, size=(C,H,W)))
-    init_mask, final_mask = mask.generate_rectangular_frame_mask(W, H, 20,
-                                        20, 30, 30,
-                                        frame_width=5, 
-                                        return_torch=True)
-    
-    trainer = BayesianPerlinNoisePatchTrainer(img, 
-                                   final_mask, detect_func, logdir,
-                                   num_augments=2,
-                                   gpkg=True)
     trainer.fit(epochs=1)
     

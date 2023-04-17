@@ -1,4 +1,4 @@
-import numpy as np
+import numpy as np 
 import torch
 
 def generate_rectangular_frame_mask(W, H, xmin, ymin, xmax, ymax, frame_width=30, 

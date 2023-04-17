@@ -1,10 +1,10 @@
-import numpy as np
+import numpy as np 
 import torch
 import torch.utils.tensorboard
 import dask
 
 from electricmayhem import _augment, mask
-from electricmayhem._opt import BlackBoxOptimizer, BayesianPerlinNoisePatchOptimizer
+from electricmayhem._opt import BlackBoxOptimizer, PerlinOptimizer
 
 dask.config.set(scheduler='threads')
 
@@ -31,9 +31,12 @@ def detect_func(x, return_raw=False):
     else:
         return output
 
-def eval_func(writer, img, **kwargs):
+    
+def eval_func(writer, step, img, **kwargs):
+    assert isinstance(writer, torch.utils.tensorboard.SummaryWriter)
+    assert isinstance(step, int)
     assert isinstance(img, torch.Tensor)
-
+    
 num_augs = 10
 augs = [_augment.generate_aug_params() 
         for _ in range(num_augs)]
@@ -67,8 +70,7 @@ def test_BlackBoxPatchOptimizer_with_gray_perturbation(tmp_path_factory):
     opt.fit(2)
     
     
-"""
-def test_BayesianPerlinNoisePatchOptimizer(tmp_path_factory):
+def test_PerlinOptimizer(tmp_path_factory):
     # SAVE IT TO LOG DIR
     logdir = str(tmp_path_factory.mktemp("logs"))
     
@@ -81,10 +83,13 @@ def test_BayesianPerlinNoisePatchOptimizer(tmp_path_factory):
                                         frame_width=5, 
                                         return_torch=True)
     
-    opt = BayesianPerlinNoisePatchOptimizer(img, final_mask, 
+    opt = PerlinOptimizer(img, final_mask, 
                             detect_func, logdir,
-                            budget=200, 
-                            num_augments=[2,5],
+                            budget=100, 
+                            num_augments=[5,7],
+                            num_sobol=[5,10],
+                            max_freq=[0.01,1],
                             eval_augments=5,
                             eval_func=eval_func)
-    opt.fit(2)"""
+    opt.fit(2)
+    
