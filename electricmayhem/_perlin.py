@@ -79,12 +79,12 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
     """
     
     def __init__(self, img, final_mask, detect_func, logdir,
-                 num_augments=100, aug_params={}, tr_thresh=0.5,
-                 reduce_steps=10, eval_augments=1000, 
-                 mask_thresh=0.99,
+                 num_augments=100, aug_params={}, 
+                 eval_augments=1000, 
                  tune_lacunarity=True, 
                  num_sobol=5,
                  gpkg=False,
+                 max_freq=1,
                  include_error_as_positive=False,
                  extra_params={}, fixed_augs=None,
                  mlflow_uri=None, experiment_name="perlin_noise", eval_func=None,
@@ -95,15 +95,16 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         :detect_func: function; inputs an image and returns 1, 0, or -1 depending on whether the black-box algorithm correctly detected, missed, or threw an error
         :logdir: string; location to save tensorboard logs in
         :num_augments: int; number of augmentations to sample for each mask reduction, RGF, and line search step
-        
         :aug_params: dict; any non-default options to pass to
             _augment.generate_aug_params()
-        :tr_thresh:  float; transform robustness threshold to aim for 
-            during mask reudction step
-        :reduce_steps: int; number of steps to take during mask reduction
         :eval_augments: int or list of aug params. Augmentations to use at the end of every epoch to evaluate performance
-        :mask_thresh: float; when mask reduction hits this threshold swap
-            over to the final_mask
+        :tune_lacunarity: bool; if True include lacunarity in optimization. If False,
+            fix lacunarity=2
+        :num_sobol: int; number of Sobol sampling steps before switching to Gaussian
+            process
+        :gpkg: bool; if True, use Knowledge Gradient instead of Expected Improvement
+            for acquisition function
+        :max_freq: float; maximum value for freq_sine parameter
         :include_error_as_positive: bool; whether to count -1s from the detect function as a positive detection ONLY for boosting, not for mask reduction
         :extra_params: dictionary of other parameters you'd like recorded
         :fixed_augs: fixed augmentation parameters to sample from instead of 
@@ -123,6 +124,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         self.mask_thresh = 0.99
         self.fixed_augs = fixed_augs
         self.eval_func = eval_func
+        self.max_freq = max_freq
         
         self.img = img
         #self.initial_mask = initial_mask
@@ -181,12 +183,11 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         
         self.aug_params = aug_params
         self.params = {"num_augments":num_augments,
-                       "tr_thresh":tr_thresh,
-                      "reduce_steps":reduce_steps, 
                       "include_error_as_positive":include_error_as_positive,
                       "tune_lacunarity":tune_lacunarity,
                       "num_sobol":num_sobol,
-                      "gpkg":gpkg}
+                      "gpkg":gpkg,
+                      "max_freq":max_freq}
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
         # record hyperparams for all posterity
@@ -200,12 +201,12 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
             {"name":"period_x",
              "type":"range",
              "value_type":"float",
-             "bounds":[0.1,2.]
+             "bounds":[0.01,1.] 
                 },
             {"name":"period_y",
              "type":"range",
              "value_type":"float",
-             "bounds":[0.1,2.]
+             "bounds":[0.01,1.] 
                },
             
             {"name":"octave",
@@ -216,14 +217,15 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
             {"name":"freq_sine",
              "type":"range",
              "value_type":"float",
-             "bounds":[0.01,1]#[0.01,50.]#[0.01,10.]
-                }]
+             "bounds":[0.01, self.max_freq] 
+                }
+        ]
         if tune_lacunarity:
             params.append(
             {"name":"lacunarity",
              "type":"range",
              "value_type":"float",
-             "bounds":[1.,3.]
+             "bounds":[1.5,2.5]
                 })
         if tune_phase:
             params.append(
@@ -297,10 +299,13 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         return d
     
         
-    def evaluate(self):
+    def evaluate(self, use_best=False):
         """
         Run a suite of evaluation tests on the test augmentations.
         """
+        if use_best:
+            ind, p, _ = self.client.get_best_trial()
+            self.perturbation = self._generate_perturbation(**p)
         
         tr_dict, outcomes, raw = estimate_transform_robustness(self.detect_func, 
                                                           self.eval_augments,
@@ -314,12 +319,10 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                                global_step=self.query_counter)
         self.writer.add_scalar("eval_crash_frac", tr_dict["crash_frac"],
                                global_step=self.query_counter)
-        # only log TR to mlflow if we got rid of the mask, otherwise you
-        # could trivially get TR=1
-        if self.a >= self.mask_thresh:
-            self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
-            # store results in memory too
-            self.tr_dict = tr_dict
+        
+        self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
+        # store results in memory too
+        self.tr_dict = tr_dict
             
         # visual check for correlations in transform robustness across augmentation params
         coldict = {-1:'k', 1:'b', 0:'r'}
