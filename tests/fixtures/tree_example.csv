@@ -1,0 +1,16 @@
+name,label,type,parent,poss,cost,isposs
+opensafe,Open Safe,or,root,,,False
+picklock,Pick Lock,bas,opensafe,I,40.0,False
+learncombo,Learn Combo,or,opensafe,,,False
+cutopen,Cut Open Safe,and,opensafe,P,,True
+installwrong,Install Improperly,bas,opensafe,I,50.0,False
+findcombo,Find Written Combo,bas,learncombo,I,75.0,False
+getcombo,Get Combo From Target,or,learncombo,,,False
+threaten,Threaten,bas,getcombo,I,75.0,False
+blackmail,Blackmail,bas,getcombo,I,50.0,False
+eavesdrop,Eavesdrop,and,getcombo,,,False
+bribe,Bribe,bas,getcombo,P,100.0,True
+listenconvo,Listen to Conversation,bas,eavesdrop,P,10.0,True
+gettostate,Get Target to State Combo,bas,eavesdrop,I,25.0,False
+findtool,Find Tool,bas,cutopen,P,60.0,True
+usetool,Use Tool to Cut Open,bas,cutopen,P,10.0,True
