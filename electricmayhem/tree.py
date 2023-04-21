@@ -1,6 +1,24 @@
 import numpy as np
 import pandas as pd
 
+def _wrap_string(s, l=25):
+    """
+    
+    """
+    tokens = s.split(" ")
+    output = ""
+    line = 0
+    
+    for t in tokens:
+        output += t
+        line += len(t)
+        if line >= l:
+            output += "\n"
+            line = 0
+        else:
+            output += " "
+    return output.strip()
+
 def notebook_view_pydot(pdot):
     """
     
@@ -121,7 +139,8 @@ def _propagate_condition(data, c):
     return condict
 
 
-def build_tree(data, name="attack tree", sublabel=None, mincost=None, condition=None):
+def build_tree(data, name="attack tree", sublabel=None, mincost=None, 
+               condition=None, l=25):
     """
     Build a PyDot object representing an attack tree.
     
@@ -140,6 +159,9 @@ def build_tree(data, name="attack tree", sublabel=None, mincost=None, condition=
     :mincost: string; display minimum cost subtree relative to this 
         column. Assumes that ONLY basic attack steps (leaf nodes) have
         this value filled in
+    :condition: string; name of a column in dataframe with Boolean values
+        on the leaf nodes. Will propagate and display Booleans across the tree.
+    :l: int; character threshold for line wrapping of node labels
         
     Returns PyDot object. OR nodes will be drawn as houses; AND nodes
     will be squares, and basic attack steps (leaf nodes) will be 
@@ -175,7 +197,8 @@ def build_tree(data, name="attack tree", sublabel=None, mincost=None, condition=
         if condition is not None:
             if not condict[d["name"]]:
                 color = "gray"
-        node = pydot.Node(d["name"], label=label, shape=shape, color=color)
+        node = pydot.Node(d["name"], label=_wrap_string(label,l), 
+                          shape=shape, color=color)
         graph.add_node(node)
     
     # ADD EDGES
