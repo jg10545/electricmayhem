@@ -11,3 +11,4 @@ from electricmayhem._augment import generate_aug_params, compose, augment_image
 from electricmayhem._convenience import load_to_tensor, plot, save
 from electricmayhem._opt import BlackBoxOptimizer, PerlinOptimizer
 from electricmayhem._perlin import BayesianPerlinNoisePatchTrainer
+from electricmayhem._cosine import BayesianCosinePatchTrainer
