@@ -26,24 +26,15 @@ augs = [_augment.generate_aug_params()
 
 
 
-
-
 def test_inverse_cosine_transform():
     Hprime, Wprime = 13, 15
-    z = np.random.normal(0, 1, size=Hprime*Wprime)
-    x = _inverse_cosine_transform(z, (Hprime, Wprime))
+    latent_shape = (3,5)
+    z = np.random.normal(0, 1, size=latent_shape[0]*latent_shape[1])
+    x = _inverse_cosine_transform(z, latent_shape, (Hprime, Wprime))
     
     assert isinstance(x, np.ndarray)
     assert x.shape == (1,Hprime, Wprime)
     
-def test_inverse_cosine_transform_with_reshape():
-    Hprime, Wprime = 13, 15
-    final_shape = (21, 29)
-    z = np.random.normal(0, 1, size=Hprime*Wprime)
-    x = _inverse_cosine_transform(z, (Hprime, Wprime), final_shape)
-    
-    assert isinstance(x, np.ndarray)
-    assert x.shape == (1, final_shape[0], final_shape[1])
     
 
 def test_BayesianCosinePatchTrainer(tmp_path_factory):
