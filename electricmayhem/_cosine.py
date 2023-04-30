@@ -13,12 +13,15 @@ from electricmayhem._graphite import estimate_transform_robustness
 from electricmayhem._perlin import normalize, _get_patch_outer_box_from_mask, BayesianPerlinNoisePatchTrainer
 
 
-def _inverse_cosine_transform(z, latent_shape, patch_shape):
+def _inverse_cosine_transform(z, latent_shape, patch_shape, eps=-1):
     """
     :z:
     :latent_shape: tuple (H',W'); shape to resize z to before taking IDCT
     :patch_shape: tuple (H,W); shape to resize transformed patch to
     """
+    if eps > 0:
+        norm = np.sqrt(np.sum(z**2))
+        z *= eps/norm
     z = z.reshape(latent_shape)
     
     zprime = np.zeros(patch_shape)
@@ -39,7 +42,7 @@ class BayesianCosinePatchTrainer(BayesianPerlinNoisePatchTrainer):
                  num_augments=100, aug_params={}, 
                  eval_augments=1000,  
                  num_sobol=5,
-                 freq_scale=0.5,
+                 freq_scale=0.5, eps=-1,
                  include_error_as_positive=False,
                  extra_params={}, fixed_augs=None,
                  mlflow_uri=None, experiment_name="cosine_noise", eval_func=None,
@@ -89,6 +92,7 @@ class BayesianCosinePatchTrainer(BayesianPerlinNoisePatchTrainer):
                "freq_scale":freq_scale,
                "Hprime":int(freq_scale*self.pert_box["height"]),
                "Wprime":int(freq_scale*self.pert_box["width"]),
+               "eps":eps,
             }
         self._cosine_params["d"] = self._cosine_params["Hprime"]*self._cosine_params["Wprime"]
         #self._perlin_params = {"H":self.pert_box["height"],
@@ -141,7 +145,8 @@ class BayesianCosinePatchTrainer(BayesianPerlinNoisePatchTrainer):
         self.params = {"num_augments":num_augments,
                       "include_error_as_positive":include_error_as_positive,
                       "num_sobol":num_sobol,
-                      "freq_scale":freq_scale,}
+                      "freq_scale":freq_scale,
+                      "eps":eps}
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
         # record hyperparams for all posterity
@@ -159,19 +164,21 @@ class BayesianCosinePatchTrainer(BayesianPerlinNoisePatchTrainer):
         
         return params
         
-    def _generate_perturbation(self, z=None):
+    def _generate_perturbation(self, z=None, **kwargs):
         """
         kwargs overwrite defaults in self._perlin_params
         """
         b = self.pert_box
         if z is None:
             z = self.z
-            
+        if len(kwargs) > 0:
+            z = np.array([kwargs[f"z_{i}"] for i in range(len(kwargs))])
+        
+        p = self._cosine_params
         noise = _inverse_cosine_transform(z,
-                                          (self._cosine_params["Hprime"],
-                                           self._cosine_params["Wprime"]),
-                                          (self._cosine_params["H"],
-                                           self._cosine_params["W"]))
+                                          (p["Hprime"], p["Wprime"]),
+                                          (p["H"], p["W"]),
+                                          p["eps"])
         #if len(kwargs) > 0:
         #    p = kwargs
         #else:
