@@ -11,6 +11,7 @@ import ax.modelbridge.registry
 from electricmayhem import _augment
 from electricmayhem._graphite import estimate_transform_robustness
 from electricmayhem._perlin import normalize, _get_patch_outer_box_from_mask, BayesianPerlinNoisePatchTrainer
+from electricmayhem._baxus import BAxUS
 
 def _inverse_fft(z, latent_shape, patch_shape):
     """
@@ -125,47 +126,60 @@ class BayesianCosinePatchTrainer(BayesianPerlinNoisePatchTrainer):
         self.logdir = logdir
         self.writer = torch.utils.tensorboard.SummaryWriter(logdir)
         
-        # set up Ax client
-        if load_from_json_file is not None:
-            self.client = AxClient.load_from_json_file(load_from_json_file)
-        else:
-            model = ax.modelbridge.registry.Models.GPEI
-            gs = ax.modelbridge.generation_strategy.GenerationStrategy(
-                steps=[
-                    # Quasi-random initialization step
-                    ax.modelbridge.generation_strategy.GenerationStep(
-                        model=ax.modelbridge.registry.Models.SOBOL,
-                        num_trials=num_sobol,  
-                        ),
-                    # Bayesian optimization step using the custom acquisition function
-                    ax.modelbridge.generation_strategy.GenerationStep(
-                        model=model,
-                        num_trials=-1, 
-                        ),
-                    ]
-                )
-            
-            self.client = AxClient(generation_strategy=gs,
-                                   verbose_logging=False)
-            self.params = self._build_params(self._cosine_params["d"])
-            self.client.create_experiment(
-                name=experiment_name,
-                parameters=self.params,
-                objectives={"transform_robustness":ObjectiveProperties(minimize=False)}
-                )
-        
         self.aug_params = aug_params
         self.params = {"num_augments":num_augments,
                       "include_error_as_positive":include_error_as_positive,
                       "num_sobol":num_sobol,
                       "freq_scale":freq_scale,
                       "fft":fft}
+        
+        # set up BAxUS object
+        self.baxus = BAxUS(self._run_trial, 
+                           self._cosine_params["d"], 
+                           num_sobol,0)
+        # baxus object will go ahead and do the sobol sampling,
+        # so update counter accordingly
+        self.query_counter += num_sobol*num_augments
+        #print(self.baxus.X_baxus_target)
+        #print(self.baxus.Y_baxus)
+        
+        # set up Ax client
+        #if load_from_json_file is not None:
+        #    self.client = AxClient.load_from_json_file(load_from_json_file)
+        #else:
+        #    model = ax.modelbridge.registry.Models.GPEI
+        #    gs = ax.modelbridge.generation_strategy.GenerationStrategy(
+        #        steps=[
+        #            # Quasi-random initialization step
+        #            ax.modelbridge.generation_strategy.GenerationStep(
+        #                model=ax.modelbridge.registry.Models.SOBOL,
+        #                num_trials=num_sobol,  
+        #                ),
+        #            # Bayesian optimization step using the custom acquisition function
+        #            ax.modelbridge.generation_strategy.GenerationStep(
+        #                model=model,
+        #                num_trials=-1, 
+        #                ),
+        #            ]
+        #        )
+        #    
+        #    self.client = AxClient(generation_strategy=gs,
+        #                           verbose_logging=False)
+        #    self.params = self._build_params(self._cosine_params["d"])
+        #    self.client.create_experiment(
+        #        name=experiment_name,
+        #        parameters=self.params,
+        #        objectives={"transform_robustness":ObjectiveProperties(minimize=False)}
+        #        )
+        
+        
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
         # record hyperparams for all posterity
         yaml.dump({"params":self.params, "aug_params":self.aug_params,
                    "extra_params":self.extra_params},
                   open(os.path.join(logdir, "config.yml"), "w"))
+        
         
     def _build_params(self, d):
         params = [{
@@ -184,8 +198,10 @@ class BayesianCosinePatchTrainer(BayesianPerlinNoisePatchTrainer):
         b = self.pert_box
         if z is None:
             z = self.z
-        if len(kwargs) > 0:
-            z = np.array([kwargs[f"z_{i}"] for i in range(len(kwargs))])
+        #if len(kwargs) > 0:
+        #    z = np.array([kwargs[f"z_{i}"] for i in range(len(kwargs))])
+        if not isinstance(z, np.ndarray):
+            z = z.numpy()
         
         p = self._cosine_params
         if p["fft"]:
@@ -196,17 +212,7 @@ class BayesianCosinePatchTrainer(BayesianPerlinNoisePatchTrainer):
             noise = _inverse_cosine_transform(z,
                                           (p["Hprime"], p["Wprime"]),
                                           (p["H"], p["W"]))
-        #if len(kwargs) > 0:
-        #    p = kwargs
-        #else:
-        #    p = self.last_p_val
-        #cos_dict = {}
-        #for k in self._perlin_params:
-        #    if k in p:
-        #        perl_dict[k] = p[k]
-        #    else:
-        #        perl_dict[k] = self._perlin_params[k]
-        #noise = perlin(**perl_dict)  
+ 
         perturbation = np.zeros((1, self.img.shape[1], self.img.shape[2]))
         perturbation[:,b["top"]:b["top"]+b["height"],b["left"]:b["left"]+b["width"]] += noise
         return torch.Tensor(perturbation)
@@ -220,7 +226,7 @@ class BayesianCosinePatchTrainer(BayesianPerlinNoisePatchTrainer):
         #for k in p:
         #    self.writer.add_scalar(k, p[k], global_step=self.query_counter)
         #self.last_p_val = p
-        z = np.array([z[f"z_{i}"] for i in range(len(z))])
+        #z = np.array([z[f"z_{i}"] for i in range(len(z))])
         self.z = z
         # get the new perturbation
         self.perturbation = self._generate_perturbation(z=z)
@@ -242,10 +248,67 @@ class BayesianCosinePatchTrainer(BayesianPerlinNoisePatchTrainer):
                                global_step=self.query_counter)
         
 
-        d = {"transform_robustness":(tr_dict["tr"], tr_dict["sem"])}
-        j = self.client.to_json_snapshot()
-        json.dump(j, open(os.path.join(self.logdir, "log.json"), "w"))
-        return d
+        #d = {"transform_robustness":(tr_dict["tr"], tr_dict["sem"])}
+        #j = self.client.to_json_snapshot()
+        #json.dump(j, open(os.path.join(self.logdir, "log.json"), "w"))
+        #return d
+        return tr_dict["tr"]
+    
+    def _run_one_epoch(self, lrs=None, budget=None):
+        #parameters, trial_index = self.client.get_next_trial()
+        #self.client.complete_trial(trial_index=trial_index, 
+        #                           raw_data=self._run_trial(parameters))
+        self.baxus.run_one_step()
+        
+    
+    def evaluate(self, use_best=False):
+        """
+        Run a suite of evaluation tests on the test augmentations.
+        """
+        if use_best:
+            #ind, p, _ = self.client.get_best_trial()
+            z = self.baxus.get_best_X()
+            #self.perturbation = self._generate_perturbation(**p)
+            self.perturbation = self._generate_perturbation(z=z)
+        
+        tr_dict, outcomes, raw = estimate_transform_robustness(self.detect_func, 
+                                                          self.eval_augments,
+                                                          self.img,
+                                                          self._get_mask(),
+                                                          self.perturbation,
+                                                          return_outcomes=True,
+                                                          include_error_as_positive=self.params["include_error_as_positive"])
+        
+        self.writer.add_scalar("eval_transform_robustness", tr_dict["tr"],
+                               global_step=self.query_counter)
+        self.writer.add_scalar("eval_crash_frac", tr_dict["crash_frac"],
+                               global_step=self.query_counter)
+        
+        self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
+        # store results in memory too
+        self.tr_dict = tr_dict
+            
+        # visual check for correlations in transform robustness across augmentation params
+        coldict = {-1:'k', 1:'b', 0:'r'}
+        fig, ax = plt.subplots(nrows=1, ncols=1)
+        ax.scatter([a["scale"] for a in self.eval_augments],
+                   [a["gamma"] for a in self.eval_augments],
+                   s=[2+2*a["blur"] for a in self.eval_augments],
+                   c=[coldict[o] for o in outcomes],
+                  alpha=0.5)
+        ax.set_xlabel("scale", fontsize=14)
+        ax.set_ylabel("gamma", fontsize=14)
+        
+        self.writer.add_figure("evaluation_augmentations", fig, global_step=self.query_counter)
+        
+        if self.eval_func is not None:
+            self.eval_func(self.writer, self.query_counter, 
+                           img=self.img, mask=self._get_mask(),
+                           perturbation=self.perturbation,
+                           augs=self.eval_augments,
+                           tr_dict=tr_dict, outcomes=outcomes, raw=raw,
+                           include_error_as_positive=self.params["include_error_as_positive"])
+        
     
         
     def contour_plot(self):
