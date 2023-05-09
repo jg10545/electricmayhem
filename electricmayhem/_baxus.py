@@ -193,8 +193,11 @@ def increase_embedding_and_observations(
 def get_initial_points(dim, n_pts, seed=0, device: str = "cpu"):
     sobol = SobolEngine(dimension=dim, scramble=True, seed=seed)
     X_init = (
-        2 * sobol.draw(n=n_pts).to(dtype=torch.double, device=device) - 1
-    )  # points have to be in [-1, 1]^d
+        #2 * sobol.draw(n=n_pts).to(dtype=torch.double, device=device) - 1
+        sobol.draw(n=n_pts).to(dtype=torch.double, device=device)
+    )  # points have to be in [-1, 1]^d // that was for branin turtorial;
+       # let's stick with unit hypercube here.
+    
     return X_init
 
 
@@ -223,8 +226,11 @@ def create_candidate(
     weights = model.covar_module.base_kernel.lengthscale.detach().view(-1)
     weights = weights / weights.mean()
     weights = weights / torch.prod(weights.pow(1.0 / len(weights)))
-    tr_lb = torch.clamp(x_center - weights * state.length, -1.0, 1.0)
-    tr_ub = torch.clamp(x_center + weights * state.length, -1.0, 1.0)
+    #tr_lb = torch.clamp(x_center - weights * state.length, -1.0, 1.0)
+    #tr_ub = torch.clamp(x_center + weights * state.length, -1.0, 1.0)
+    tr_lb = torch.clamp(x_center - weights * state.length / 2.0, 0.0, 1.0)
+    tr_ub = torch.clamp(x_center + weights * state.length / 2.0, 0.0, 1.0)
+    
 
     if acqf == "ts":
         dim = X.shape[-1]
@@ -397,17 +403,17 @@ class BAxUS():
         self.Y_baxus = torch.cat((self.Y_baxus, Y_next), dim=0)
 
         # Print current status
-        logging.debug(
+        logging.info(
             f"iteration {len(self.X_baxus_input)}, d={len(self.X_baxus_target.T)})  Best value: {self.state.best_value:.3}, TR length: {self.state.length:.3}"
         )
 
         if self.state.restart_triggered:
             self.state.restart_triggered = False
-            logging.debug("increasing target space")
+            logging.info("increasing target space")
             self.S, self.X_baxus_target = increase_embedding_and_observations(
                 self.S, self.X_baxus_target, self.state.new_bins_on_split
             )
-            logging.debug(f"new dimensionality: {len(self.S)}")
+            logging.info(f"new dimensionality: {len(self.S)}")
             self.state.target_dim = len(self.S)
             self.state.length = self.state.length_init
             self.state.failure_counter = 0
