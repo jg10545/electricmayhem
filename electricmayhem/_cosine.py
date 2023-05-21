@@ -62,7 +62,7 @@ class BayesianCosinePatchTrainer(BayesianPerlinNoisePatchTrainer):
                  num_augments=100, aug_params={}, 
                  eval_augments=1000,  
                  num_sobol=5,
-                 freq_scale=0.5, fft=False,
+                 freq_scale=0.5, fft=True,
                  include_error_as_positive=False,
                  extra_params={}, fixed_augs=None,
                  mlflow_uri=None, experiment_name="cosine_noise", eval_func=None,
