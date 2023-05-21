@@ -19,13 +19,19 @@ def _inverse_fft(z, latent_shape, patch_shape):
     :latent_shape: tuple (H',W'); shape to resize z to before taking IDCT
     :patch_shape: tuple (H,W); shape to resize transformed patch to
     """
+    # first half of z is the real component; second half is imaginary
+    l = int(len(z)/2)
+    z = z[:l] + z[l:]*1.0j
     z = z.reshape(latent_shape)
-    
-    zprime = np.zeros(patch_shape)
-    zprime[:latent_shape[0],:latent_shape[1]] = z
-        
-    x = scipy.fft.ifft2(zprime).real
-        
+    # embed this frequency patch as the low-frequency region of
+    # an array the same shape as the perturbation
+    zprime = np.zeros(patch_shape, dtype=np.complex128)
+    zprime[:latent_shape[0],:latent_shape[1]] += z
+    # take the inverse transform
+    x = scipy.fft.ifft2(zprime)
+    # and compute the magnitude
+    x = np.sqrt(x.real**2 + x.imag**2)
+    # convert to channel-first format and normalize
     x = np.expand_dims(x, 0)
     return normalize(x)
 
@@ -108,7 +114,7 @@ class BayesianCosinePatchTrainer(BayesianPerlinNoisePatchTrainer):
                "Wprime":int(freq_scale*self.pert_box["width"]),
                "fft":fft,
             }
-        self._cosine_params["d"] = self._cosine_params["Hprime"]*self._cosine_params["Wprime"]
+        self._cosine_params["d"] = self._cosine_params["Hprime"]*self._cosine_params["Wprime"]*2
         #self._perlin_params = {"H":self.pert_box["height"],
         #                       "W":self.pert_box["width"], 
         #                       "period_y":1, 
