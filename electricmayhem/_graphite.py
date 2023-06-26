@@ -239,7 +239,7 @@ class BlackBoxPatchTrainer():
     """
     
     def __init__(self, img, initial_mask, final_mask, detect_func, logdir,
-                 num_augments=100, q=10, beta=1, aug_params={}, tr_thresh=0.5,
+                 num_augments=100, q=10, beta=1, aug_params={}, tr_thresh=0.25,
                  reduce_steps=10,
                  eval_augments=1000, perturbation=None, mask_thresh=0.99,
                  num_boost_iters=1, include_error_as_positive=False,
