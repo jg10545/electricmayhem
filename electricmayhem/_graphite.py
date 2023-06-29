@@ -239,11 +239,11 @@ class BlackBoxPatchTrainer():
     """
     
     def __init__(self, img, initial_mask, final_mask, detect_func, logdir,
-                 num_augments=100, q=10, beta=1, aug_params={}, tr_thresh=0.5,
+                 num_augments=100, q=10, beta=1, aug_params={}, tr_thresh=0.25,
                  reduce_steps=10,
                  eval_augments=1000, perturbation=None, mask_thresh=0.99,
                  num_boost_iters=1, include_error_as_positive=False,
-                 extra_params={}, fixed_augs=None,
+                 extra_params={}, fixed_augs=None, reduce_mask=True,
                  mlflow_uri=None, experiment_name=None, eval_func=None):
         """
         :img: torch.Tensor in (C,H,W) format representing the image being modified
@@ -269,6 +269,7 @@ class BlackBoxPatchTrainer():
         :extra_params: dictionary of other parameters you'd like recorded
         :fixed_augs: fixed augmentation parameters to sample from instead of 
             generating new ones each step.
+        :reduce_mask: whether to include GRAPHITE's mask reduction step
         :mlflow_uri: string; URI for MLFlow server or directory
         :experiment_name: string; name of MLFlow experiment to log
         :eval_func: function containing any additional evalution metrics. run 
@@ -276,7 +277,10 @@ class BlackBoxPatchTrainer():
         
         """
         self.query_counter = 0
-        self.a = 0
+        if reduce_mask:
+            self.a = 0
+        else:
+            self.a = 1
         self.tr = 0
         self.mask_thresh = 0.99
         self.fixed_augs = fixed_augs
@@ -303,7 +307,8 @@ class BlackBoxPatchTrainer():
                        "tr_thresh":tr_thresh,
                       "reduce_steps":reduce_steps, 
                       "num_boost_iters":num_boost_iters,
-                      "include_error_as_positive":include_error_as_positive}
+                      "include_error_as_positive":include_error_as_positive,
+                      "reduce_mask":reduce_mask}
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
         # record hyperparams for all posterity
@@ -395,8 +400,18 @@ class BlackBoxPatchTrainer():
         Estimate gradient with RGF
         """
         augments = self._sample_augmentations()
+        mask = self._get_mask()
+        self.tr = estimate_transform_robustness(self.detect_func,
+                                                augments,
+                                                self.img,
+                                                mask=mask,
+                                                pert=self.perturbation,
+                                                include_error_as_positive=self.params["include_error_as_positive"])["tr"]
+        self.query_counter += self.params["num_augments"]
+        self.writer.add_scalar("tr", self.tr, global_step=self.query_counter)
+      
         gradient = estimate_gradient(self.img, 
-                                     self._get_mask(), 
+                                     mask, 
                                      self.perturbation, 
                                      augments, 
                                      self.detect_func, 

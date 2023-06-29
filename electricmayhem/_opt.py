@@ -7,6 +7,13 @@ import time
 import kornia.geometry.transform
 
 from ax.service.ax_client import AxClient, ObjectiveProperties
+import ax.plot.diagnostic, ax.plot.scatter,  ax.plot.contour
+import ax.utils.notebook.plotting
+import ax.modelbridge.cross_validation
+import ax.modelbridge.generation_strategy 
+import ax.modelbridge.registry 
+
+
 
 from electricmayhem._graphite import BlackBoxPatchTrainer
 from electricmayhem._perlin import BayesianPerlinNoisePatchTrainer
@@ -27,6 +34,9 @@ class BlackBoxOptimizer():
                  beta=[0.01, 5], downsample=[1,2,4,8,16],
                  aug_params={}, eval_augments=1000, 
                  num_channels=3, perturbation=None, 
+                 tr_thresh=0.25,
+                 reduce_mask=True,
+                 num_sobol=10,
                  include_error_as_positive=False,
                  eval_func=None,
                  fixed_augs=None,
@@ -53,6 +63,11 @@ class BlackBoxOptimizer():
         :num_channels: 1 or 3; number of channels for the perturbation
         :perturbation: torch.Tensor in channel-first format; perturbation to start
             from. if None, initialize a gray tensor for each run.
+        :tr_thresh:  float; transform robustness threshold to aim for 
+            during mask reudction step
+        :reduce_mask: whether to include GRAPHITE mask reduction step
+        :num_sobol: how many Sobol-sampled steps to take before starting to fit
+            a Gaussian process
         :fixed_augs:
         :mflow_uri: string; URI of MLflow server
         :experiment_name: string; name of experiment. Will be used both for AX
@@ -73,12 +88,30 @@ class BlackBoxOptimizer():
         self.fixed_augs = fixed_augs
         self.include_error_as_positive = include_error_as_positive
         self.eval_func = eval_func
+        self.tr_thresh = tr_thresh
+        self.reduce_mask = reduce_mask
         
         # if we're resuming from a previous experiment, load it here.
         if load_from_json_file is not None:
             self.client = AxClient.load_from_json_file(load_from_json_file)
         else:
-            self.client = AxClient()    
+            gs = ax.modelbridge.generation_strategy.GenerationStrategy(
+                steps=[
+                    # Quasi-random initialization step
+                    ax.modelbridge.generation_strategy.GenerationStep(
+                        model=ax.modelbridge.registry.Models.SOBOL,
+                        num_trials=num_sobol,  
+                        ),
+                    # Bayesian optimization step using the custom acquisition function
+                    ax.modelbridge.generation_strategy.GenerationStep(
+                        model=ax.modelbridge.registry.Models.GPEI,
+                        num_trials=-1, 
+                        ),
+                    ]
+                )
+            
+            self.client = AxClient(generation_strategy=gs)
+            #self.client = AxClient()    
             # set up the experiment!
             self.params = self._build_params(num_augments, q, beta, downsample)
             self.client.create_experiment(
@@ -149,14 +182,18 @@ class BlackBoxOptimizer():
                                        aug_params=self.aug_params,
                                        eval_augments=self.eval_augments,
                                        perturbation=perturbation,
+                                       tr_thresh=self.tr_thresh,
                                        extra_params={"downsample":p["downsample"]},
                                        fixed_augs=self.fixed_augs,
+                                       reduce_mask=self.reduce_mask,
                                        mlflow_uri=self.mlflow_uri,
                                        experiment_name=self.experiment_name,
                                        include_error_as_positive=self.include_error_as_positive,
                                        eval_func=self.eval_func)
         # fit the patch
-        trainer.fit(budget=self.budget)
+        trainer.fit(budget=self.budget, eval_every=10*self.budget)
+        trainer.evaluate()
+        trainer._log_image()
         
         # get TR and SEM results to send back to Bayesian optimizer. If we didn't
         # get through at least one epoch, return zero for both
@@ -313,6 +350,7 @@ class PerlinOptimizer():
             eval_func = self.eval_func)
         trainer.fit(budget=self.budget, eval_every=10*self.budget)
         trainer.evaluate(use_best=True)
+        trainer._log_image()
         
         # get TR and SEM results to send back to Bayesian optimizer. If we didn't
         # get through at least one epoch, return zero for both
