@@ -395,8 +395,18 @@ class BlackBoxPatchTrainer():
         Estimate gradient with RGF
         """
         augments = self._sample_augmentations()
+        mask = self._get_mask()
+        self.tr = estimate_transform_robustness(self.detect_func,
+                                                augments,
+                                                self.img,
+                                                mask=mask,
+                                                pert=self.perturbation,
+                                                include_error_as_positive=self.params["include_error_as_positive"])["tr"]
+        self.query_counter += self.params["num_augments"]
+        self.writer.add_scalar("tr", self.tr, global_step=self.query_counter)
+      
         gradient = estimate_gradient(self.img, 
-                                     self._get_mask(), 
+                                     mask, 
                                      self.perturbation, 
                                      augments, 
                                      self.detect_func, 
