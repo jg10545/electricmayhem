@@ -348,9 +348,10 @@ class BlackBoxPatchTrainer():
             num_augments = self.params["num_augments"]
             
         # if fixed augmentations were passed, sample from them
-        # with replacement
+        # without replacement
         if self.fixed_augs is not None:
-            return list(np.random.choice(self.fixed_augs, size=num_augments))
+            return list(np.random.choice(self.fixed_augs, size=num_augments,
+                                         replace=False))
         # otherwise generate new ones
         else:
             return [_augment.generate_aug_params(**self.aug_params) 
