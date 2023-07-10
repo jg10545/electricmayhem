@@ -225,7 +225,7 @@ def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None,
     updated_pert = pert + final_lr*gradient
     # there's almost certainly a more sophisticated way to clamp this. but just sticking it to [-1,1] 
     # will prevent it from slowly accumulating enormous values anywhere
-    updated_pert = torch.clamp(updated_pert, -1,1)
+    updated_pert = torch.clamp(updated_pert, 0,1)
     return updated_pert, {'lr':final_lr}
 
 
