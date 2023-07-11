@@ -140,7 +140,7 @@ class ResidualBlackBoxPatchTrainer(BlackBoxPatchTrainer):
                                                 augments,
                                                 self.img,
                                                 mask=mask,
-                                                pert=self.shifted,
+                                                pert=shifted,
                                                 include_error_as_positive=ieap)["tr"]
         self.query_counter += self.params["num_augments"]
         
