@@ -89,7 +89,8 @@ class ResidualBlackBoxPatchTrainer(BlackBoxPatchTrainer):
                        "tr_thresh":tr_thresh,
                       "reduce_steps":reduce_steps, 
                       "include_error_as_positive":include_error_as_positive,
-                      "reduce_mask":reduce_mask}
+                      "reduce_mask":reduce_mask,
+                      "num_boost_iters":1}
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
         # record hyperparams for all posterity
