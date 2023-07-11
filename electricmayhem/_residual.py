@@ -11,7 +11,7 @@ from electricmayhem import mask, _augment
 
 
 
-class ResidualBlackBoxPatchTrainer():
+class ResidualBlackBoxPatchTrainer(BlackBoxPatchTrainer):
     """
     Class to wrap together all the pieces needed for black-box training
     of a physical adversarial patch, following the OpenALPR example in
