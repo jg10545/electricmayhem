@@ -154,7 +154,7 @@ class ResidualBlackBoxPatchTrainer(BlackBoxPatchTrainer):
         
         return gradient
         
-    def _update_perturbation(self, gradient):
+    def _update_perturbation(self, gradient, **kwargs):
         """
         Pick a step size and update the perturbation
         """
