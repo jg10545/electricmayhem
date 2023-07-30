@@ -9,7 +9,7 @@ import mlflow
 import os
 import yaml
 
-from electricmayhem import mask
+import electricmayhem.mask
 from electricmayhem import _augment
 
 def estimate_transform_robustness(detect_func, augments, img, 
@@ -239,7 +239,7 @@ class BlackBoxPatchTrainer():
     """
     
     def __init__(self, img, initial_mask, final_mask, detect_func, logdir,
-                 num_augments=100, q=10, beta=1, aug_params={}, tr_thresh=0.25,
+                 num_augments=100, q=10, beta=1, subset_frac=0, aug_params={}, tr_thresh=0.25,
                  reduce_steps=10,
                  eval_augments=1000, perturbation=None, mask_thresh=0.99,
                  num_boost_iters=1, include_error_as_positive=False,
@@ -254,6 +254,7 @@ class BlackBoxPatchTrainer():
         :num_augments: int; number of augmentations to sample for each mask reduction, RGF, and line search step
         :q: int; number of random vectors to use for RGF
         :beta: float; RGF smoothing parameter
+        :subset_frac: float;
         :aug_params: dict; any non-default options to pass to
             _augment.generate_aug_params()
         :tr_thresh:  float; transform robustness threshold to aim for 
@@ -289,7 +290,7 @@ class BlackBoxPatchTrainer():
         self.img = img
         self.initial_mask = initial_mask
         self.final_mask = final_mask
-        self.priority_mask = mask.generate_priority_mask(initial_mask, final_mask)
+        self.priority_mask = electricmayhem.mask.generate_priority_mask(initial_mask, final_mask)
         self.detect_func = detect_func
         
         if isinstance(eval_augments, int):
@@ -308,7 +309,7 @@ class BlackBoxPatchTrainer():
                       "reduce_steps":reduce_steps, 
                       "num_boost_iters":num_boost_iters,
                       "include_error_as_positive":include_error_as_positive,
-                      "reduce_mask":reduce_mask}
+                      "reduce_mask":reduce_mask, "subset_frac":subset_frac}
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
         # record hyperparams for all posterity
@@ -402,6 +403,11 @@ class BlackBoxPatchTrainer():
         """
         augments = self._sample_augmentations()
         mask = self._get_mask()
+        # check to see if we need to take a random subset of the mask
+        subset_frac = self.params["subset_frac"]
+        if subset_frac > 0:
+            mask = electricmayhem.mask.random_subset_mask(mask, subset_frac)
+            self._subset_mask = mask
         self.tr = estimate_transform_robustness(self.detect_func,
                                                 augments,
                                                 self.img,
@@ -429,8 +435,13 @@ class BlackBoxPatchTrainer():
         Pick a step size and update the perturbation
         """
         augments = self._sample_augmentations()
+        # check to see whether we need to load a random subset mask
+        if hasattr(self, "_subset_mask"):
+            mask = self._subset_mask
+        else:
+            mask = self._get_mask()
         self.perturbation, resultdict = update_perturbation(self.img, 
-                                                        self._get_mask(), 
+                                                        mask,
                                                         self.perturbation,
                                                         augments, 
                                                         self.detect_func, 
