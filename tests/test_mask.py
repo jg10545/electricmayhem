@@ -62,3 +62,23 @@ def test_generate_priority_mask():
     priority_mask = generate_priority_mask(init_mask, final_mask)
     assert priority_mask.numpy().sum() < init_mask.numpy().sum()
     assert priority_mask.numpy().sum() > final_mask.numpy().sum()
+    
+def test_random_subset_mask():
+    H = 107
+    W = 101
+    C = 3
+    mask = np.zeros((C,H,W))
+    mask[:,13:56,68:90] = 1
+    mask = torch.tensor(mask)
+    #mask = torch.tensor(np.random.choice([0,1], size=(C,H,W)))
+    newmask = random_subset_mask(mask, 0.5)
+    # did it return the right data type?
+    assert isinstance(newmask, torch.Tensor)
+    # did it return the right shape?
+    assert newmask.shape == mask.shape
+    # does the patch have nonzero elements
+    assert newmask.numpy().sum() > 0
+    # does the new patch overlap the old one?
+    assert (newmask*mask).numpy().sum() > 0
+    # does the new patch unmask anything it shouldn't?
+    assert (newmask*(1-mask)).numpy().sum() == 0
