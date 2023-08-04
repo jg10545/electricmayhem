@@ -16,7 +16,7 @@ def estimate_transform_robustness(detect_func, augments, img,
                                   mask=None, pert=None, 
                                   return_outcomes=False,
                                   include_error_as_positive=False,
-                                  use_agresti_coull=True):
+                                  use_agresti_coull=True, use_scores=False):
     """
     Estimate transform robustness as an expectation over transformations. 
     
@@ -30,6 +30,7 @@ def estimate_transform_robustness(detect_func, augments, img,
         augmentation
     :include_error_as_positive: bool; whether to count -1s from the detect function
         as a positive detection
+    :use_scores: if True, use soft scores instead of hard labels
     
     Returns a dictionary containing:
         :crash_frac: fraction of augments where function returned an empty string
@@ -39,7 +40,11 @@ def estimate_transform_robustness(detect_func, augments, img,
             not detected
     """
     def _augment_and_detect(i,m,p,a):
-        return detect_func(_augment.augment_image(i,mask=m, perturbation=p, **a),
+        if use_scores:
+            return detect_func(_augment.augment_image(i,mask=m, perturbation=p, **a),
+                           return_raw=return_outcomes, return_scores=True)
+        else:
+            return detect_func(_augment.augment_image(i,mask=m, perturbation=p, **a),
                            return_raw=return_outcomes)
     
     tasks = [dask.delayed(_augment_and_detect)(img, mask, pert, a) 
@@ -54,15 +59,17 @@ def estimate_transform_robustness(detect_func, augments, img,
     # how often did openALPR crap out?
     crash_frac = np.mean([o == -1 for o in outcomes])
     if include_error_as_positive:
-        num_positives = np.sum([o in (1,-1) for o in outcomes])
+        #num_positives = np.sum([o in (1,-1) for o in outcomes])
+        num_positives = np.sum([abs(o) for o in outcomes]) # to work with scores
         n = len(outcomes)
     else:
         # how often did it detect the plate?
-        num_positives = np.sum([o == 1 for o in outcomes])
+        #num_positives = np.sum([o == 1 for o in outcomes])
+        num_positives = np.sum([o for o in outcomes if o > 0]) # to work with scores
         n = len([o for o in outcomes if o >= 0])
         #detect_frac = np.mean([o == 1 for o in outcomes])
         #tr = 1-detect_frac/max((1-crash_frac), 1e-5)
-    detect_frac = num_positives/n
+    detect_frac = num_positives/n # if using scores, this becomes the mean score
     tr = 1-detect_frac
         
     # Agresti-Coull interval for z=1
@@ -88,7 +95,7 @@ def estimate_transform_robustness(detect_func, augments, img,
 
 
 def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10,
-                tr_threshold=0.75, maxval=0.9999, minval=0):
+                tr_threshold=0.75, maxval=0.9999, minval=0, use_scores=False):
     """
     Method for interpolating between the initial and final masks- DIFFERENT FROM THE GRAPHITE PAPER
     
@@ -108,6 +115,7 @@ def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10,
     :tr_threshold: transform robustness threshold to aim for
     :maxval: float; max value to search over
     :minval: float; min value to search over
+    :use_scores:
         
     Returns final threshold a and a list of dictionaries containing the TR
         results at each search step.
@@ -121,7 +129,8 @@ def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10,
         # estimate transform robustness
         estimate = estimate_transform_robustness(detect_func, augs, img, 
                                                  mask=M,
-                                                 pert=perturbation)
+                                                 pert=perturbation,
+                                                 use_scores=use_scores)
         estimate["a"] = a
         results.append(estimate)
 
@@ -135,7 +144,7 @@ def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10,
 
 
 def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, 
-                      beta=1, include_error_as_positive=False):
+                      beta=1, include_error_as_positive=False, use_scores=False):
     """
     Use Randomized Gradient-Free estimation to compute a gradient.
     
@@ -154,6 +163,7 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10,
     :beta: float; smoothing parameter setting size of random shifts to perturbation
     :include_error_as_positive: bool; whether to count -1s from the detect function
         as a positive detection
+    :use_scores:
         
     Returns gradient as a (C,H,W) torch Tensor
     """
@@ -172,7 +182,8 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10,
         u_est = estimate_transform_robustness(detect_func, augs, img, 
                                               mask=mask, 
                                               pert=pert+beta*u,
-                                              include_error_as_positive=include_error_as_positive)
+                                              include_error_as_positive=include_error_as_positive,
+                                              use_scores=use_scores)
         us.append(u)
         u_trs.append(u_est["tr"])
         
@@ -184,7 +195,7 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10,
 
 
 def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None,
-                        include_error_as_positive=False):
+                        include_error_as_positive=False, use_scores=False):
     """
     TO DO replace this with backtracking line search
     
@@ -205,6 +216,7 @@ def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None,
         distribution x and y translations
     :include_error_as_positive: bool; hether to count -1s from the detect function
         as a positive detection
+    :use_scores:
         
     Returns updated perturbation as a (C,H,W) torch Tensor, and a dictionary
         containing the chosen learning rate
@@ -217,7 +229,8 @@ def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None,
     for l in lrs:
         est = estimate_transform_robustness(detect_func, augs, img, 
                                             mask=mask,
-                                            pert=pert+l*gradient)
+                                            pert=pert+l*gradient,
+                                           use_scores=use_scores)
         updated_trs.append(est["tr"])
         
     # now just pick whatever value worked best.
@@ -241,7 +254,7 @@ class BlackBoxPatchTrainer():
     def __init__(self, img, initial_mask, final_mask, detect_func, logdir,
                  num_augments=100, q=10, beta=1, subset_frac=0, aug_params={}, tr_thresh=0.25,
                  reduce_steps=10,
-                 eval_augments=1000, perturbation=None, mask_thresh=0.99,
+                 eval_augments=1000, perturbation=None, mask_thresh=0.99, use_scores=False,
                  num_boost_iters=1, include_error_as_positive=False,
                  extra_params={}, fixed_augs=None, reduce_mask=True,
                  mlflow_uri=None, experiment_name=None, eval_func=None):
@@ -264,6 +277,7 @@ class BlackBoxPatchTrainer():
         :perturbation: torch.Tensor in (C,H,W) format. Optional initial perturbation
         :mask_thresh: float; when mask reduction hits this threshold swap
             over to the final_mask
+        :use_scores:
         :num_boost_iters: int; number of boosts (RGF/line search) steps to
             run per epoch. GRAPHITE used 5.
         :include_error_as_positive: bool; whether to count -1s from the detect function as a positive detection ONLY for boosting, not for mask reduction
@@ -309,7 +323,8 @@ class BlackBoxPatchTrainer():
                       "reduce_steps":reduce_steps, 
                       "num_boost_iters":num_boost_iters,
                       "include_error_as_positive":include_error_as_positive,
-                      "reduce_mask":reduce_mask, "subset_frac":subset_frac}
+                      "reduce_mask":reduce_mask, "subset_frac":subset_frac,
+                      "use_scores":use_scores}
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
         # record hyperparams for all posterity
@@ -387,7 +402,8 @@ class BlackBoxPatchTrainer():
                                            augments,
                                            n=self.params["reduce_steps"],
                                            tr_threshold=self.params["tr_thresh"],
-                                           minval=self.a)
+                                           minval=self.a,
+                                           use_scores=self.params["use_scores"])
         self.a = a
         self.tr = results[-1]["tr"]
         # for every mask threshold step record stats in tensorboard
@@ -413,7 +429,8 @@ class BlackBoxPatchTrainer():
                                                 self.img,
                                                 mask=mask,
                                                 pert=self.perturbation,
-                                                include_error_as_positive=self.params["include_error_as_positive"])["tr"]
+                                                include_error_as_positive=self.params["include_error_as_positive"],
+                                                use_scores=self.params["use_scores"])["tr"]
         self.query_counter += self.params["num_augments"]
         self.writer.add_scalar("tr", self.tr, global_step=self.query_counter)
       
@@ -425,7 +442,8 @@ class BlackBoxPatchTrainer():
                                      self.tr, 
                                      q=self.params["q"], 
                                      beta=self.params["beta"],
-                                     include_error_as_positive=self.params["include_error_as_positive"])
+                                     include_error_as_positive=self.params["include_error_as_positive"],
+                                     use_scores=self.params["use_scores"])
         self.query_counter += self.params["num_augments"]*self.params["q"]
         self.writer.add_scalar("gradient_l2_norm", np.sqrt(np.sum(gradient.numpy()**2)), global_step=self.query_counter)
         return gradient
@@ -447,7 +465,8 @@ class BlackBoxPatchTrainer():
                                                         self.detect_func, 
                                                         gradient, 
                                                         lrs=lrs,
-                                                        include_error_as_positive=self.params["include_error_as_positive"])
+                                                        include_error_as_positive=self.params["include_error_as_positive"],
+                                                        use_scores=self.params["use_scores"])
         self.query_counter += 8*self.params["num_augments"]
         self.writer.add_scalar("learning_rate", resultdict["lr"], global_step=self.query_counter)
         
