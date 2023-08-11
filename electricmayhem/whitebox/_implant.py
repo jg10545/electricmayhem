@@ -14,15 +14,15 @@ class RectanglePatchImplanter(PipelineBase):
     
     Assume all images are the same dimensions.
     """
+    name = "RectanglePatchImplanter"
     
-    def __init__(self, imagedict, boxdict, scale=(0.75,1.25), name="RectanglePatchImplanter"):
+    def __init__(self, imagedict, boxdict, scale=(0.75,1.25)):
         """
         :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
         :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
             {"img1":[[xmin1, ymin1, xmax1, ymax1], [xmin2, ymin2, xmax2, ymax2]]}
         :scale: tuple of floats; range of scaling factors
         """
-        self.name = name
         self.imgkeys = list(imagedict.keys())
         self.images = [_img_to_tensor(imagedict[k]) for k in self.imgkeys]
         self.boxes = [boxdict[k] for k in self.imgkeys]
