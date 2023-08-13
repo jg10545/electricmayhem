@@ -66,3 +66,12 @@ def test_rectanglepatchimplanter_call_bw_patch_batch():
     assert isinstance(implanted, torch.Tensor)
     assert implanted.shape[0] == 2
     assert implanted.shape[1:] == torch.tensor(testtensor).permute(2,0,1).shape
+    
+    
+def test_rectanglepatchimplanter_apply_dont_implant():
+    # make sure nothing happens if we tell it not to implant
+    imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]})
+    unimplanted = imp.apply(bwpatch.unsqueeze(0), dont_implant=True)
+    unimplanted = unimplanted.squeeze(0)
+    assert isinstance(unimplanted, torch.Tensor)
+    assert ((unimplanted.numpy() - imp.images[0].numpy())**2).mean() < 1e-6
