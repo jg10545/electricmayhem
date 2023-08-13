@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import kornia.geometry
 import logging
+import matplotlib.pyplot as plt
+import matplotlib
 
 from ._util import _img_to_tensor
 from ._pipeline import PipelineBase
@@ -120,4 +122,32 @@ class RectanglePatchImplanter(PipelineBase):
             return torch.stack(images,0)
         
         return self._implant_patch(images, patchlist, offset_x, offset_y)
+    
+    def plot_boxes(self):
+        """
+        Quick visualization with matplotlib of the victim images and box regions
+        """
+        n = len(self.images)
+        d = int(np.ceil(np.sqrt(n)))
+        fig, axs = plt.subplots(nrows=d, ncols=d, squeeze=False)
+
+        i = 0
+        for axrow in axs:
+            for ax in axrow:
+                ax.set_axis_off()
+                if i < n:
+                    ax.imshow((self.images[i].permute(1,2,0).numpy()))
+                    
+                    for j in range(len(self.boxes[i])):
+                        b = self.boxes[i][j]
+                        xw = (b[0], b[1])
+                        width = b[2]-b[0]
+                        height = b[3]-b[1]
+                        rect = matplotlib.patches.Rectangle(xw, width, height, linewidth=2, fill=False, color="r")
+                        ax.add_artist(rect)
+                        ax.text(xw[0], xw[1], str(j))
+                    ax.set_title(self.imgkeys[i])
+                
+                i += 1
+        return fig
         

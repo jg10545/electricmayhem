@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import matplotlib
 
 from electricmayhem.whitebox._implant import RectanglePatchImplanter
 
@@ -75,3 +76,11 @@ def test_rectanglepatchimplanter_apply_dont_implant():
     unimplanted = unimplanted.squeeze(0)
     assert isinstance(unimplanted, torch.Tensor)
     assert ((unimplanted.numpy() - imp.images[0].numpy())**2).mean() < 1e-6
+    
+    
+
+def test_rectanglepatchimplanter_plot_boxes():
+    # make sure nothing happens if we tell it not to implant
+    imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]})
+    fig = imp.plot_boxes()
+    assert isinstance(fig, matplotlib.figure.Figure)
