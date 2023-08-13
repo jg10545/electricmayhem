@@ -39,3 +39,11 @@ def test_korniaaugmentationpipeline_apply():
     assert y.shape == testim.shape
     assert not (y.numpy() == testim.numpy()).all()
     
+    
+def test_korniaaugmentationpipeline_reproducibility():
+    augdict = {"ColorJiggle":{"contrast":0.2, "hue":0.2, "p":0.25},
+          "RandomAffine":{"scale":[0.1,1.5], "degrees":45, "p":1}}
+    
+    aug = _pipeline.KorniaAugmentationPipeline(augdict)
+    repro = aug.check_reproducibility()
+    assert repro == 0

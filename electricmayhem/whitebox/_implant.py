@@ -13,6 +13,8 @@ class RectanglePatchImplanter(PipelineBase):
     Class for adding a patch to an image, with noise
     
     Assume all images are the same dimensions.
+    
+    Use validate() to make sure all your bounding boxes fit a patch.
     """
     name = "RectanglePatchImplanter"
     
@@ -34,7 +36,8 @@ class RectanglePatchImplanter(PipelineBase):
         
     def sample(self, n, **kwargs):
         """
-        
+        Sample implantation parameters for batch size n, overwriting with
+        kwargs if necessary.
         """
         sampdict = {k:kwargs[k] for k in kwargs}
         if "scale" not in kwargs:
@@ -81,16 +84,18 @@ class RectanglePatchImplanter(PipelineBase):
         
         return torch.stack(implanted,0)
     
-    def apply(self, patches, **kwargs):
+    def apply(self, patches, dont_implant=False, **kwargs):
         """
+        Implant a batch of patches in a batch of images
         
+        :patches: torch Tensor; stack of patches
+        :dont_implant: if True, leave the patches off (for diagnostics)
+        :kwargs: passed to self.sample()
         """
         # sample parameters if necessary
         self.sample(patches.shape[0], **kwargs)
         s = self.lastsample
         if self.params["scale"][1] > self.params["scale"][0]:
-            #patch = torch.concat([kornia.geometry.rescale(patches[i].unsqueeze(0), (s["scale"][i], s["scale"][i])) 
-            #                      for i in range(patches.shape[0])], dim=0)
             patchlist = [kornia.geometry.rescale(patches[i].unsqueeze(0), (s["scale"][i], s["scale"][i])).squeeze(0) 
                                   for i in range(patches.shape[0])]
             
@@ -110,6 +115,9 @@ class RectanglePatchImplanter(PipelineBase):
         offset_y = (dy*s["offset_frac_y"] + boxy).type(torch.IntTensor)
         offset_x = (dx*s["offset_frac_x"] + boxx).type(torch.IntTensor)
         images = [self.images[i] for i in s["image"]]
+        
+        if dont_implant:
+            return torch.stack(images,0)
         
         return self._implant_patch(images, patchlist, offset_x, offset_y)
         
