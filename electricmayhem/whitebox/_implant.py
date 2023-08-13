@@ -27,6 +27,7 @@ class RectanglePatchImplanter(PipelineBase):
             {"img1":[[xmin1, ymin1, xmax1, ymax1], [xmin2, ymin2, xmax2, ymax2]]}
         :scale: tuple of floats; range of scaling factors
         """
+        super(RectanglePatchImplanter, self).__init__()
         self.imgkeys = list(imagedict.keys())
         self.images = [_img_to_tensor(imagedict[k]) for k in self.imgkeys]
         self.boxes = [boxdict[k] for k in self.imgkeys]

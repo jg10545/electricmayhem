@@ -18,7 +18,7 @@ class PipelineBase(torch.nn.Module):
     def log_params_to_mlflow(self):
         mlflow.log_params(self.params)
         
-    def apply(self, x, **kwargs):
+    def apply(self, x, control=False, **kwargs):
         return x
         
     def __call__(self, x, **kwargs):
@@ -32,7 +32,15 @@ class PipelineBase(torch.nn.Module):
             y = y.squeeze(0)
             
         return y
+    
+    def __add__(self, y):
+        # check to see if it's an electricmayhem object. if not assume it's
+        # a pytorch model
+        if not issubclass(type(y), PipelineBase):
+            y = ModelWrapper(y)
             
+        return Pipeline(self,y)
+
         
 class KorniaAugmentationPipeline(PipelineBase):
     """
@@ -54,7 +62,7 @@ class KorniaAugmentationPipeline(PipelineBase):
         # initialize the kornia augmentations
         augs = []
         if ordering is None:
-            ordering = augmentations.keys()
+            ordering = list(augmentations.keys())
         for o in ordering:
             evalstring = f"kornia.augmentation.{o}(**{augmentations[o]})"
             augs.append(eval(evalstring))
@@ -104,3 +112,51 @@ class KorniaAugmentationPipeline(PipelineBase):
         if failures > 0:
             logging.warning(f"reproducibility check failed {failures} out of {N} times")
         return failures
+    
+    
+class ModelWrapper(PipelineBase):
+    """
+    Lightweight wrapper class for torch models
+    """
+    name = "ModelWrapper"
+    
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+        self.params = {}
+        if model.training:
+            logging.warn("model appears to be set to train mode. was this intentional?")
+        
+    def apply(self, x, control=False, **kwargs):
+        return self.model(x)
+    
+class Pipeline(PipelineBase):
+    """
+    Class to manage a sequence of pipeline steps
+    """
+    name = "Pipeline"
+    def __init__(self, *args, **kwargs):
+        super(Pipeline, self).__init__(**kwargs)
+        self.steps = []
+        for a in args:
+            _ = self.__add__(a)
+        self.params = {}
+            
+    def apply(self, x, control=False, **kwargs):
+        for a in self.steps:
+            x = a.apply(x, control=control)
+        return x
+    
+    def __add__(self, y):
+        # check to see if it's an electricmayhem object. if not assume it's
+        # a pytorch model
+        if not issubclass(type(y), PipelineBase):
+            print(y, type(y))
+            y = ModelWrapper(y)
+        self.steps.append(y)
+        return self
+    
+    def to_yaml(self):
+        params = {s.name:s.params for s in self.steps}
+        params["Pipeline"] = self.params
+        return yaml.dump(params, default_flow_style=False)

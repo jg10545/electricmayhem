@@ -47,3 +47,67 @@ def test_korniaaugmentationpipeline_reproducibility():
     aug = _pipeline.KorniaAugmentationPipeline(augdict)
     repro = aug.check_reproducibility()
     assert repro == 0
+    
+def test_modelwrapper():
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(1, 3, 5)
+
+        def forward(self, x):
+            return self.conv1(x)
+        
+    mod = Model().eval()
+    wrapper = _pipeline.ModelWrapper(mod)
+    assert isinstance(wrapper.to_yaml(), str)
+    
+    
+def test_pipeline_manual_creation():
+    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":0.25}}
+    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":0.25}}
+    
+    aug1 = _pipeline.KorniaAugmentationPipeline(augdict1)
+    aug2 = _pipeline.KorniaAugmentationPipeline(augdict2)
+    
+    pipe = _pipeline.Pipeline(aug1, aug2)
+    inpt = torch.tensor(np.random.uniform(0, 1, (1,3,32,32)).astype(np.float32))
+    # test apply
+    outpt = pipe.apply(inpt)
+    assert inpt.shape == outpt.shape
+    # test __call__
+    inpt = torch.tensor(np.random.uniform(0, 1, (3,32,32)).astype(np.float32))
+    outpt = pipe(inpt)
+    assert inpt.shape == outpt.shape
+    
+def test_pipeline_dunderscore_creation():
+    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":0.25}}
+    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":0.25}}
+    
+    aug1 = _pipeline.KorniaAugmentationPipeline(augdict1)
+    aug2 = _pipeline.KorniaAugmentationPipeline(augdict2)
+    
+    pipe = aug1 + aug2
+    inpt = torch.tensor(np.random.uniform(0, 1, (1,3,32,32)).astype(np.float32))
+    # test apply
+    outpt = pipe.apply(inpt)
+    assert inpt.shape == outpt.shape
+    
+def test_pipeline_creation_with_model():
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(1, 3, 5)
+
+        def forward(self, x):
+            return self.conv1(x)
+    mod = Model().eval()
+    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":0.25}}
+    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":0.25}}
+    
+    aug1 = _pipeline.KorniaAugmentationPipeline(augdict1)
+    aug2 = _pipeline.KorniaAugmentationPipeline(augdict2)
+    
+    pipe = aug1 + aug2 + mod
+    assert len(pipe.steps) == 3
+    assert isinstance(pipe.to_yaml(), str)
+    
