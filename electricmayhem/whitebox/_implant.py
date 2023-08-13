@@ -86,12 +86,12 @@ class RectanglePatchImplanter(PipelineBase):
         
         return torch.stack(implanted,0)
     
-    def apply(self, patches, dont_implant=False, **kwargs):
+    def apply(self, patches, control=False, **kwargs):
         """
         Implant a batch of patches in a batch of images
         
         :patches: torch Tensor; stack of patches
-        :dont_implant: if True, leave the patches off (for diagnostics)
+        :control: if True, leave the patches off (for diagnostics)
         :kwargs: passed to self.sample()
         """
         # sample parameters if necessary
@@ -118,7 +118,7 @@ class RectanglePatchImplanter(PipelineBase):
         offset_x = (dx*s["offset_frac_x"] + boxx).type(torch.IntTensor)
         images = [self.images[i] for i in s["image"]]
         
-        if dont_implant:
+        if control:
             return torch.stack(images,0)
         
         return self._implant_patch(images, patchlist, offset_x, offset_y)

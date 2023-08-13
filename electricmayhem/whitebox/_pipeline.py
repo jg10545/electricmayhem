@@ -65,10 +65,15 @@ class KorniaAugmentationPipeline(PipelineBase):
         self.params["ordering"] = ordering
         
         
-    def apply(self, x, params=None):
+    def apply(self, x, control=False, params=None):
         """
         apply augmentations to image
+        
+        :x: torch.Tensor batch of images in channelfirst format
+        :control: boolean; if True use augmentation values from previous batch
         """
+        if control:
+            params = self.lastsample
         if params is None:
             y = self.aug(x)
         else:
@@ -93,7 +98,7 @@ class KorniaAugmentationPipeline(PipelineBase):
         failures = 0
         for _ in range(100):
             y1 = self.apply(x)
-            y2 = self.apply(x, params=self.lastsample)
+            y2 = self.apply(x, control=True)
             if ((y1-y2)**2).numpy().mean() > epsilon:
                 failures += 1
         if failures > 0:
