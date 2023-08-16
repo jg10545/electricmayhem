@@ -6,6 +6,8 @@ import torch
 def _img_to_tensor(x):
     if isinstance(x, Image.Image):
         x = np.array(x)
+    if len(x.shape) == 2:
+        x = np.stack([x,x,x], -1)
     
     x = torch.tensor(x.astype(np.float32)/255)[:,:,:3].permute(2,0,1)
     return x
