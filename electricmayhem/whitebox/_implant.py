@@ -87,7 +87,7 @@ class RectanglePatchImplanter(PipelineBase):
         
         return torch.stack(implanted,0)
     
-    def apply(self, patches, control=False, **kwargs):
+    def forward(self, patches, control=False, **kwargs):
         """
         Implant a batch of patches in a batch of images
         
@@ -151,4 +151,16 @@ class RectanglePatchImplanter(PipelineBase):
                 
                 i += 1
         return fig
+    
+    def get_last_sample_as_dict(self):
+        """
+        Return last sample as a JSON-serializable dict
+        """
+        outdict = {}
+        for k in self.lastsample:
+            if k == "image":
+                outdict["image"] = [self.imgkeys[i] for i in self.lastsample["image"].cpu().detach().numpy()]
+        else:
+            outdict[k] = [float(i) for i in self.lastsample[k].cpu().detach().numpy()]
+        return outdict
         

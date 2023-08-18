@@ -6,6 +6,13 @@ import kornia.augmentation
 
 
 class PipelineBase(torch.nn.Module):
+    """
+    Base class for pipeline stages. When subclassing this, specify:
+        -a forward() method that should have an input x, a boolean 'control' kwarg, 
+            and accept arbitrary other kwargs
+        -a get_last_sample_as_dict() method that returns any stochastic parameters as a
+            JSON-serializable dict
+    """
     name = "PipelineBase"
     
     def __init__(self, **kwargs):
@@ -18,21 +25,15 @@ class PipelineBase(torch.nn.Module):
     def log_params_to_mlflow(self):
         mlflow.log_params(self.params)
         
-    def apply(self, x, control=False, **kwargs):
+    def forward(self, x, control=False, **kwargs):
         return x
         
-    def __call__(self, x, **kwargs):
-        # check and see if we're missing a batch dimension
-        missingbatch = isinstance(x, torch.Tensor)&(len(x.shape) == 3)
-        if missingbatch:
-            x = x.unsqueeze(0)
-            
-        y = self.apply(x, **kwargs)
-        if missingbatch:
-            y = y.squeeze(0)
-            
-        return y
-    
+    def get_last_sample_as_dict(self):
+        """
+        Return last sample as a JSON-serializable dict
+        """
+        return {"foobar":"looks like some chucklehead forgot to define this function when they subclassed PipelineBase"}
+        
     def __add__(self, y):
         # check to see if it's an electricmayhem object. if not assume it's
         # a pytorch model
@@ -73,7 +74,7 @@ class KorniaAugmentationPipeline(PipelineBase):
         self.params["ordering"] = ordering
         
         
-    def apply(self, x, control=False, params=None):
+    def forward(self, x, control=False, params=None):
         """
         apply augmentations to image
         
@@ -105,13 +106,33 @@ class KorniaAugmentationPipeline(PipelineBase):
             x = torch.tensor(np.random.uniform(0, 1, size=(3,128,128)).astype(np.float32))
         failures = 0
         for _ in range(100):
-            y1 = self.apply(x)
-            y2 = self.apply(x, control=True)
+            y1 = self(x)#self.apply(x)
+            y2 = self(x, control=True)#self.apply(x, control=True)
             if ((y1-y2)**2).numpy().mean() > epsilon:
                 failures += 1
         if failures > 0:
             logging.warning(f"reproducibility check failed {failures} out of {N} times")
         return failures
+    
+    def get_last_sample_as_dict(self):
+        """
+        Return last sample as a JSON-serializable dict
+        """
+        outdict = {}
+        for p in self.lastsample:
+            for k in p.data:
+                key = f"{p.name}_{k}"
+                # some info not necessary to record
+                if k in ["forward_input_shape"]:
+                    continue
+                # flatten multidimensional params
+                elif len(p.data[k].shape) > 1:
+                    for i in range(p.data[k].shape[1]):
+                        outdict[f"{p.name}_{k}_{i}"] = [float(x[i]) for x in p.data[k]]
+                else:
+                    outdict[key] = [float(x) for x in p.data[k].cpu().detach().numpy()]
+        return outdict
+        
     
     
 class ModelWrapper(PipelineBase):
@@ -127,8 +148,15 @@ class ModelWrapper(PipelineBase):
         if model.training:
             logging.warn("model appears to be set to train mode. was this intentional?")
         
-    def apply(self, x, control=False, **kwargs):
+    def forward(self, x, control=False, **kwargs):
         return self.model(x)
+    
+    def get_last_sample_as_dict(self):
+        """
+        Return last sample as a JSON-serializable dict
+        """
+        return {}
+    
     
 class Pipeline(PipelineBase):
     """
@@ -142,9 +170,9 @@ class Pipeline(PipelineBase):
             _ = self.__add__(a)
         self.params = {}
             
-    def apply(self, x, control=False, **kwargs):
+    def forward(self, x, control=False, **kwargs):
         for a in self.steps:
-            x = a.apply(x, control=control)
+            x = a(x, control=control)
         return x
     
     def __add__(self, y):

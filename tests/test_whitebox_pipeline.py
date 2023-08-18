@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import json
 
 from electricmayhem.whitebox import _pipeline
 
@@ -20,24 +21,15 @@ def test_pipelinebase_to_yaml():
 def test_korniaaugmentationpipeline_call():
     augdict = {"RandomPlasmaShadow":{"roughness":(0.4,0.5), "p":1.},
           "ColorJiggle":{"contrast":0.2, "hue":0.2, "p":1.}}
-    testim = torch.tensor(np.random.uniform(0, 1, (3, 29, 37)))
+    testim = torch.tensor(np.random.uniform(0, 1, (1,3, 29, 37)))
     
     aug = _pipeline.KorniaAugmentationPipeline(augdict)
     y = aug(testim)
     assert isinstance(y, torch.Tensor)
     assert y.shape == testim.shape
     assert not (y.numpy() == testim.numpy()).all()
+
     
-def test_korniaaugmentationpipeline_apply():
-    augdict = {"RandomPlasmaShadow":{"roughness":(0.4,0.5), "p":1.},
-          "ColorJiggle":{"contrast":0.2, "hue":0.2, "p":1.}}
-    testim = torch.tensor(np.random.uniform(0, 1, (1, 3, 29, 37)))
-    
-    aug = _pipeline.KorniaAugmentationPipeline(augdict)
-    y = aug.apply(testim)
-    assert isinstance(y, torch.Tensor)
-    assert y.shape == testim.shape
-    assert not (y.numpy() == testim.numpy()).all()
     
     
 def test_korniaaugmentationpipeline_reproducibility():
@@ -72,12 +64,12 @@ def test_pipeline_manual_creation():
     pipe = _pipeline.Pipeline(aug1, aug2)
     inpt = torch.tensor(np.random.uniform(0, 1, (1,3,32,32)).astype(np.float32))
     # test apply
-    outpt = pipe.apply(inpt)
-    assert inpt.shape == outpt.shape
-    # test __call__
-    inpt = torch.tensor(np.random.uniform(0, 1, (3,32,32)).astype(np.float32))
     outpt = pipe(inpt)
     assert inpt.shape == outpt.shape
+    # test __call__
+    #inpt = torch.tensor(np.random.uniform(0, 1, (3,32,32)).astype(np.float32))
+    #outpt = pipe(inpt)
+    #assert inpt.shape == outpt.shape
     
 def test_pipeline_dunderscore_creation():
     augdict1 = {"ColorJiggle":{"contrast":0.2, "p":0.25}}
@@ -89,7 +81,7 @@ def test_pipeline_dunderscore_creation():
     pipe = aug1 + aug2
     inpt = torch.tensor(np.random.uniform(0, 1, (1,3,32,32)).astype(np.float32))
     # test apply
-    outpt = pipe.apply(inpt)
+    outpt = pipe(inpt)
     assert inpt.shape == outpt.shape
     
 def test_pipeline_creation_with_model():
@@ -110,4 +102,19 @@ def test_pipeline_creation_with_model():
     pipe = aug1 + aug2 + mod
     assert len(pipe.steps) == 3
     assert isinstance(pipe.to_yaml(), str)
+    
+    
+
+def test_korniaaugmentationpipeline_get_last_sample_as_dict():
+    augdict = {"RandomPlasmaShadow":{"roughness":(0.4,0.5), "p":1.},
+          "ColorJiggle":{"contrast":0.2, "hue":0.2, "p":1.}}
+    testim = torch.tensor(np.random.uniform(0, 1, (1,3, 29, 37)))
+    
+    aug = _pipeline.KorniaAugmentationPipeline(augdict)
+    y = aug(testim)
+    sampdict = aug.get_last_sample_as_dict()
+    assert isinstance(sampdict, dict)
+    # check to make sure we can turn it into a json
+    assert isinstance(json.dumps(sampdict), str)
+
     
