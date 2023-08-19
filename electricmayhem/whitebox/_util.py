@@ -35,3 +35,11 @@ def _concat_dicts_of_arrays(*d):
     for k in d[0]:
         outdict[k] = np.concatenate([x[k] for x in d], 0)
     return outdict
+
+def _bootstrap_std(measure, num_samples=100):
+    """
+    Estimate the standard deviation of a 1D torch.Tensor using bootstrap sampling
+    """
+    N = measure.shape[0]
+    return np.std([torch.mean(measure[np.random.choice(np.arange(N), size=N, replace=True)]).item()
+           for _ in range(num_samples)])

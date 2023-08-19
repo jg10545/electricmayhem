@@ -86,3 +86,13 @@ def test_pipeline_initialize_patch_with_size():
     pipeline.initialize_patch(patch_shape=shape)
     assert isinstance(pipeline.patch, torch.Tensor)
     assert pipeline.patch.shape == shape
+    
+    
+def test_pipeline_initialize_patch_with_pre_initialized_patch():
+    shape = (1,3,5)
+    startpatch = torch.zeros(shape)
+    pipeline = _pipeline.Pipeline()
+    pipeline.initialize_patch(patch = startpatch)
+    assert isinstance(pipeline.patch, torch.Tensor)
+    assert pipeline.patch.shape == shape
+    assert pipeline.patch.numpy().max() == 0

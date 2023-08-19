@@ -46,3 +46,9 @@ def test_concat_dicts_of_arrays():
     assert len(outdict) == 2
     assert outdict["a"].shape == (17,)
     assert outdict["b"].shape == (4,5,7)
+    
+def test_bootstrap_std():
+    measure = torch.zeros((13), dtype=torch.float32).uniform_(0,1)
+    std = _util._bootstrap_std(measure, 25)
+    assert isinstance(std, float)
+    assert std > 0
