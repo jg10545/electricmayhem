@@ -132,3 +132,19 @@ class Pipeline(PipelineBase):
             self._logging_to_mlflow = True
         elif (mlflow_uri is not None)&(experiment_name is not None):
             logging.warning("both a server URI and experiment name are required for MLFlow")
+            
+    def initialize_patch(self, patch_shape=None, patch=None):
+        """
+        Generate an untrained patch uniformly on the unit interval.
+        
+        Saves to self.patch
+        """
+        if (patch_shape is not None)&(patch is None):
+            patch = torch.zeros(patch_shape, dtype=torch.float32).uniform_(0,1)
+            
+        if len(patch.shape) != 3:
+            logging.error("initialize_patch() expects a patch shape of length 3; (C,H,W)")
+        elif patch.shape[0] not in [1,3]:
+            logging.error("initialize_patch() only works with 1 or 3 channels")
+            
+        self.patch = patch

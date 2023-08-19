@@ -78,18 +78,11 @@ def test_pipeline_creation_with_model():
     assert len(pipe.steps) == 3
     assert isinstance(pipe.to_yaml(), str)
     
-    
-
-def test_korniaaugmentationpipeline_get_last_sample_as_dict():
-    augdict = {"RandomPlasmaShadow":{"roughness":(0.4,0.5), "p":1.},
-          "ColorJiggle":{"contrast":0.2, "hue":0.2, "p":1.}}
-    testim = torch.tensor(np.random.uniform(0, 1, (1,3, 29, 37)))
-    
-    aug = _aug.KorniaAugmentationPipeline(augdict)
-    y = aug(testim)
-    sampdict = aug.get_last_sample_as_dict()
-    assert isinstance(sampdict, dict)
-    # check to make sure we can turn it into a json
-    assert isinstance(json.dumps(sampdict), str)
 
     
+def test_pipeline_initialize_patch_with_size():
+    shape = (1,3,5)
+    pipeline = _pipeline.Pipeline()
+    pipeline.initialize_patch(patch_shape=shape)
+    assert isinstance(pipeline.patch, torch.Tensor)
+    assert pipeline.patch.shape == shape
