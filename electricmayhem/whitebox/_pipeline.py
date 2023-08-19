@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torch.utils.tensorboard
 import yaml
 import mlflow
 import kornia.augmentation
@@ -169,6 +170,8 @@ class Pipeline(PipelineBase):
         for a in args:
             _ = self.__add__(a)
         self.params = {}
+        self.global_step = 0
+        self.logging_to_mlflow = False
             
     def forward(self, x, control=False, **kwargs):
         for a in self.steps:
@@ -200,3 +203,23 @@ class Pipeline(PipelineBase):
                 outdict[f"{s.name}_{k}"] = sampdict[k]
                 
         return outdict
+    
+    def set_logging(self, logdir=None, mlflow_uri=None, experiment_name=None):
+        """
+        Configure TensorBoard and MLFlow for logging results
+        
+        :logdir: string; path to directory for saving tensorboard logs
+        :mlflow_uri: string; URI of MLFlow server
+        :experiment_name: string; name to use for MLflow experiment
+        """
+        if logdir is not None:
+            self.logdir = logdir
+            self.writer = torch.utils.tensorboard.SummaryWriter(logdir)
+
+        if (mlflow_uri is not None)&(experiment_name is not None):
+            mlflow.set_tracking_uri(mlflow_uri)
+            mlflow.set_experiment(experiment_name)
+            mlflow.start_run()
+            self._logging_to_mlflow = True
+        elif (mlflow_uri is not None)&(experiment_name is not None):
+            logging.warning("both a server URI and experiment name are required for MLFlow")
