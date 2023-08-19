@@ -188,3 +188,15 @@ class Pipeline(PipelineBase):
         params = {s.name:s.params for s in self.steps}
         params["Pipeline"] = self.params
         return yaml.dump(params, default_flow_style=False)
+    
+    def get_last_sample_as_dict(self):
+        """
+        Return last sample as a JSON-serializable dict
+        """
+        outdict = {}
+        for s in self.steps:
+            sampdict = s.get_last_sample_as_dict()
+            for k in sampdict:
+                outdict[f"{s.name}_{k}"] = sampdict[k]
+                
+        return outdict
