@@ -3,7 +3,9 @@ import torch
 import torch.utils.tensorboard
 import yaml
 import mlflow
+from tqdm import tqdm
 
+from ._util import *
 
 class PipelineBase(torch.nn.Module):
     """
@@ -79,6 +81,7 @@ class Pipeline(PipelineBase):
         for a in args:
             _ = self.__add__(a)
         self.params = {}
+        self._defaults = {}
         self.global_step = 0
         self.logging_to_mlflow = False
             
@@ -99,6 +102,7 @@ class Pipeline(PipelineBase):
     def to_yaml(self):
         params = {s.name:s.params for s in self.steps}
         params["Pipeline"] = self.params
+        params["training"] = self._defaults
         return yaml.dump(params, default_flow_style=False)
     
     def get_last_sample_as_dict(self):
@@ -133,21 +137,57 @@ class Pipeline(PipelineBase):
         elif (mlflow_uri is not None)&(experiment_name is not None):
             logging.warning("both a server URI and experiment name are required for MLFlow")
             
-    def initialize_patch(self, patch_shape=None, patch=None):
+    def initialize_patch_params(self, patch_shape=None, patch=None, single_patch=True):
         """
-        Generate an untrained patch uniformly on the unit interval.
+        Generate parameters for an untrained patch uniformly on the unit interval.
         
-        Saves to self.patch
+        :patch_shape: tuple; dimensions of patch parameters. will be sampled on the
+            unit interval
+        :patch: torch.Tensor; instead of passing parameters you can just pass your
+            own initialized patch
+        :single_patch: bool; True if this is a single patch param and False if it's
+            a batch of them.
+        
+        Saves to self.patch_params
         """
         if (patch_shape is not None)&(patch is None):
             patch = torch.zeros(patch_shape, dtype=torch.float32).uniform_(0,1)
+        # these checks don't really make sense if the patch parameterization is a
+        # GAN latent vector, for example
+        #if len(patch.shape) != 3:
+        #    logging.error("initialize_patch() expects a patch shape of length 3; (C,H,W)")
+        #elif patch.shape[0] not in [1,3]:
+        #    logging.error("initialize_patch() only works with 1 or 3 channels")
+        self._defaults["patch_param_shape"] = patch.shape    
+        self.patch_params = patch
+        self._single_patch = single_patch
+        
+     
+    def _log_images(self, **kwargs):
+        """
+        log images to tensorboard
+        """
+        if hasattr(self, "writer"):
+            for k in kwargs:
+                self.writer.add_image(k, kwargs[k], global_step=self.global_step)
+
+    def _log_scalars(self, mlflow_metric=False, **kwargs):
+        """
+        log scalars
+        """
+        if hasattr(self, "writer"):
+            for k in kwargs:
+                self.writer.add_scalar(k, kwargs[k], global_step=self.global_step)
+        if mlflow_metric&self._logging_to_mlflow:
+            mlflow.log_metrics(kwargs, step=self.global_step)
             
-        if len(patch.shape) != 3:
-            logging.error("initialize_patch() expects a patch shape of length 3; (C,H,W)")
-        elif patch.shape[0] not in [1,3]:
-            logging.error("initialize_patch() only works with 1 or 3 channels")
-            
-        self.patch = patch
+    def _log_histograms(self, **kwargs):
+        """
+        log scalars
+        """
+        if hasattr(self, "writer"):
+            for k in kwargs:
+                self.writer.add_histogram(k, kwargs[k], global_step=self.global_step)
         
     def set_loss(self, lossfunc, test_patch_shape=(2,3,64,64)):
         """
@@ -173,7 +213,80 @@ class Pipeline(PipelineBase):
             for k in lossdict:
                 assert isinstance(lossdict[k], torch.Tensor), f"loss function output {k} doesn't appear to be a Tensor"
                 assert lossdict[k].shape == (test_patch_shape[0],), f"loss function output {k} doesn't appear to return the correct shape"
+            # record loss dictionary keys
+            self._lossdictkeys = list(lossdict.keys())
         
-    
+    def evaluate(self, batch_size=None, num_eval_steps=None):
+        """
+        
+        """
+        if batch_size is None:
+            batch_size = self._default_training_params["batch_size"]
+        if num_eval_steps is None:
+            num_eval_steps = self._default_training_params["num_eval_steps"]
+        
+        pass
+        
+        
+    def train(self, batch_size, step_size, num_steps, eval_every, num_eval_steps, accumulate=1,
+             **kwargs):
+        """
+        
+        """
+        # warn the user if they didn't pass any keys from the loss dict
+        if hasattr(self, "_lossdictkeys"):
+            if len(set(self._lossdictkeys)&set(kwargs.keys())) == 0:
+                logging.warning("no weights given for any terms in your loss dictionary")
+        # record the training parameters
+        self._default_training_params = {"batch_size":batch_size, "step_size":step_size, "num_steps":num_steps,
+                                        "eval_every":eval_every, "num_eval_steps":num_eval_steps,
+                                        "accumulate":accumulate}
+        # dump experiment as YAML to log directory
+        
+        # copy patch and turn on gradients
+        patch_params = self.patch_params.clone().detach().requires_grad_(True)
+        # make a tensor to hold the gradients
+        gradient = torch.zero_like(patch_params)
+        
+        for i in tqdm(range(num_steps)):
+            # stack into a batch of patches
+            if self._single_patch:
+                patchbatch = torch.stack([patch_params for _ in range(batch_size)], 0)
+            else:
+                patchbatch = patch_params
+            
+            # run through the pipeline
+            outputs = self(patchbatch)
+            
+            # compute loss
+            lossdict = self.lossfunc(outputs, patchbatch)
+            loss = 0
+            record = {}
+            for k in lossdict:
+                meanloss = torch.mean(lossdict[k])
+                record[k] = meanloss
+                if k in kwargs:
+                    loss += kwargs[k]*meanloss
+            # save metrics to tensorboard
+            self._log_scalars(mlflow_metric=False, **record)
+            
+            # estimate gradients
+            gradient += torch.autograd.grad(loss, patch_params)/accumulate
+            
+            # if this is an update step- update patch, clamp to unit interval
+            if (i+1)%acumulate == 0:
+                patch_params = patch_params.detach() + step_size*gradient
+                patch_params = patch_params.clamp(0,1).detach().requires_grad_(True)
+                gradient = torch.zero_like(patch_params)
+                
+            
+            # if this is an evaluate step- run evaluation
+            if (i+1)%eval_every == 0:
+                self.evaluate()
+                
+            self.global_step += 1
+                
+        # finished training- save a copy of the patch tensor
+        self.patch_params = patch_params.clone().detach()
         
     
