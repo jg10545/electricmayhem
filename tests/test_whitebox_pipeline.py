@@ -1,8 +1,9 @@
 import numpy as np
 import torch
 import json
+import pytest
 
-from electricmayhem.whitebox import _pipeline, _aug
+from electricmayhem.whitebox import _pipeline, _aug, _create
 
 def test_pipelinebase_apply():
     base = _pipeline.PipelineBase(a="foo", b="bar")
@@ -96,3 +97,42 @@ def test_pipeline_initialize_patch_with_pre_initialized_patch():
     assert isinstance(pipeline.patch, torch.Tensor)
     assert pipeline.patch.shape == shape
     assert pipeline.patch.numpy().max() == 0
+    
+    
+def test_pipeline_set_loss():
+    def myloss(outputs, patchparam):
+        outputs = outputs.reshape(outputs.shape[0],-1)
+        outdict = {}
+        trueclass = 3
+        labels = trueclass*torch.ones(outputs.shape[0], dtype=torch.long)
+        outdict["crossent"] = -1* torch.nn.CrossEntropyLoss(reduce=False)(outputs, labels)
+        outdict["acc"] = (torch.argmax(outputs,1) == labels).type(torch.float32)
+        return outdict     
+
+    step = _create.PatchResizer((11,13))
+    pipeline = _pipeline.Pipeline(step)
+    pipeline.set_loss(myloss)
+    
+    
+def test_pipeline_set_loss_throws_error_for_bad_outputs():
+    def myloss(outputs, patchparam):
+        
+        return outputs
+    step = _create.PatchResizer((11,13))
+    pipeline = _pipeline.Pipeline(step)
+    with pytest.raises(AssertionError) as err: 
+        pipeline.set_loss(myloss)
+        
+    assert "dictionary" in str(err.value)
+    
+    
+def test_pipeline_set_loss_throws_error_for_bad_output_shapes():
+    def myloss(outputs, patchparam):
+        return {"foo":torch.zeros((5,7,2))}
+    step = _create.PatchResizer((11,13))
+    pipeline = _pipeline.Pipeline(step)
+    with pytest.raises(AssertionError) as err: 
+        pipeline.set_loss(myloss)
+        
+    assert "correct shape" in str(err.value)
+    

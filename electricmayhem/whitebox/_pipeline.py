@@ -148,3 +148,32 @@ class Pipeline(PipelineBase):
             logging.error("initialize_patch() only works with 1 or 3 channels")
             
         self.patch = patch
+        
+    def set_loss(self, lossfunc, test_patch_shape=(2,3,64,64)):
+        """
+        Set a loss function for training a patch. lossfunc should input:
+            :outputs: model outputs
+            :patchparam: the parameterization of the batch of patches
+            
+        lossfunc should output a dictionary containing one key for each term in
+        the loss function (or other metrics you want to compute) and each value
+        should be elementwise values of that measure.
+        
+        When using loss functions from torch.nn, make sure to set
+        "reduce=False" so that it returns elementwise loss.
+        
+        """
+        self.loss = lossfunc
+        
+        if test_patch_shape is not None:
+            test_patch = torch.ones(test_patch_shape, dtype=torch.float32).uniform_(0,1)
+            model_output = self(test_patch)
+            lossdict = lossfunc(model_output, test_patch)
+            assert isinstance(lossdict, dict), "this loss function doesn't appear to generate a dictionary"
+            for k in lossdict:
+                assert isinstance(lossdict[k], torch.Tensor), f"loss function output {k} doesn't appear to be a Tensor"
+                assert lossdict[k].shape == (test_patch_shape[0],), f"loss function output {k} doesn't appear to return the correct shape"
+        
+    
+        
+    
