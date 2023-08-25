@@ -224,14 +224,49 @@ class Pipeline(PipelineBase):
             batch_size = self._default_training_params["batch_size"]
         if num_eval_steps is None:
             num_eval_steps = self._default_training_params["num_eval_steps"]
+            
+        # stack into a batch of patches
+        if self._single_patch:
+            patchbatch = torch.stack([patch_params for _ in range(batch_size)], 0)
+        else:
+            patchbatch = patch_params
+            
+        results = []
         
-        pass
+        # for each eval step
+        for _ in range(num_eval_steps):
+            stepdict = {}
+            # run a batch through with the patch included
+            result_patch = _dict_of_tensors_to_dict_of_arrays(self.lossfunc(self(patchbatch), patchbatch))
+            # then a control batch; no patch but same parameters
+            result_control = _dict_of_tensors_to_dict_of_arrays(self.lossfunc(self(patchbatch, control=True),
+                                                                              patchbatch))
+            for k in result_patch:
+                stepdict[f"{k}_patch"] = result_patch[k]
+                stepdict[f"{k}_control"] = result_control[k]
+                stepdict[f"{k}_delta"] = result_patch[k] - result_control[k]
+            results.append(stepdict)
         
+        # concatenate list of dicts
+        results = _concat_dicts_of_arrays(*results)
+        # record distributions
+        self._log_histograms(**{k:results[k] for k in results if "_control" not in k})
+        
+        # if patch_params has the shape of an image we should just log it as an image
+        print("add thing to log image")
         
     def train(self, batch_size, step_size, num_steps, eval_every, num_eval_steps, accumulate=1,
              **kwargs):
         """
+        Patch training loop. Expects that you've already called initialize_patch_params() and
+        set_loss().
         
+        :batch_size: number of implantation/composition parameters to run at a time
+        :step_size: float; learning rate for the attack
+        :num_steps: int; number of attack steps to take
+        :eval_every: int; how many steps before running self.evaluate()
+        :num_eval_steps: int; number of evaluation batches to run
+        :accumulate: int; how many batches to accumulate gradients across before updating patch
         """
         # warn the user if they didn't pass any keys from the loss dict
         if hasattr(self, "_lossdictkeys"):
@@ -278,6 +313,7 @@ class Pipeline(PipelineBase):
                 patch_params = patch_params.detach() + step_size*gradient
                 patch_params = patch_params.clamp(0,1).detach().requires_grad_(True)
                 gradient = torch.zero_like(patch_params)
+                self.patch_params = patch_params.clone().detach()
                 
             
             # if this is an evaluate step- run evaluation
