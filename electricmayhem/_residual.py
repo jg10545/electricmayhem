@@ -149,8 +149,13 @@ class ResidualBlackBoxPatchTrainer(BlackBoxPatchTrainer):
         
         # estimated gradient
         gradient = u * (shifted_tr - self._residual_tr)/self.params["beta"]
+        # TRY GUARDRAIL
+        if shifted_tr > self._residual_tr:
+            self.perturbation = shifted
+            self._residual_tr = shifted_tr
         
-        self._residual_tr = shifted_tr
+        
+        #self._residual_tr = shifted_tr
         
         return gradient
         
@@ -158,5 +163,6 @@ class ResidualBlackBoxPatchTrainer(BlackBoxPatchTrainer):
         """
         Pick a step size and update the perturbation
         """
-        pert = self.perturbation - self.params["lr"]*gradient
-        self.perturbation = torch.clamp(pert, 0, 1)
+        #pert = self.perturbation - self.params["lr"]*gradient
+        #self.perturbation = torch.clamp(pert, 0, 1)
+        pass

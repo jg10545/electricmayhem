@@ -86,6 +86,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                  gpkg=False,
                  max_freq=1,
                  include_error_as_positive=False,
+                 use_scores=False,
                  extra_params={}, fixed_augs=None,
                  mlflow_uri=None, experiment_name="perlin_noise", eval_func=None,
                  load_from_json_file=None):
@@ -106,6 +107,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
             for acquisition function
         :max_freq: float; maximum value for freq_sine parameter
         :include_error_as_positive: bool; whether to count -1s from the detect function as a positive detection ONLY for boosting, not for mask reduction
+        :use_scores: incorporate scores instead of hard labels (training only)
         :extra_params: dictionary of other parameters you'd like recorded
         :fixed_augs: fixed augmentation parameters to sample from instead of 
             generating new ones each step.
@@ -187,7 +189,8 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                       "tune_lacunarity":tune_lacunarity,
                       "num_sobol":num_sobol,
                       "gpkg":gpkg,
-                      "max_freq":max_freq}
+                      "max_freq":max_freq,
+                      "use_scores":use_scores}
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
         # record hyperparams for all posterity
@@ -284,7 +287,8 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                 self.img,
                 mask=self.final_mask,
                 pert=self.perturbation,
-                include_error_as_positive=self.params["include_error_as_positive"]
+                include_error_as_positive=self.params["include_error_as_positive"],
+                use_scores=self.params["use_scores"]
             )
         self.query_counter += len(augments)
         self.writer.add_scalar("transform_robustness", tr_dict["tr"],

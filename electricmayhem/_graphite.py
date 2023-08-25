@@ -277,7 +277,7 @@ class BlackBoxPatchTrainer():
         :perturbation: torch.Tensor in (C,H,W) format. Optional initial perturbation
         :mask_thresh: float; when mask reduction hits this threshold swap
             over to the final_mask
-        :use_scores:
+        :use_scores: incorporate scores instead of hard labels (training only)
         :num_boost_iters: int; number of boosts (RGF/line search) steps to
             run per epoch. GRAPHITE used 5.
         :include_error_as_positive: bool; whether to count -1s from the detect function as a positive detection ONLY for boosting, not for mask reduction
