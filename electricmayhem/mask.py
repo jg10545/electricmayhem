@@ -56,3 +56,42 @@ def generate_priority_mask(init_mask, final_mask):
     priority = torch.Tensor(np.random.uniform(0, 1, size=(1, H, W)))
     priority_mask = final_mask + priority*(init_mask-final_mask)
     return priority_mask
+
+
+
+def random_subset_mask(m, frac=0):
+    """
+    Take a random subset of the mask, within some 
+    :m: mask as a pytorch tensor in channel-first format
+    :frac: size of random mask, as a fraction of the max
+        dimensions of the patch. 0 to disable subsetting.
+    """
+    # disable
+    if frac <= 0:
+        return m
+    # find the dimensions of the extent of nonzero parts of the mask
+    mn = m.clone().detach().numpy()
+    C,H,W = mn.shape  
+    yvals = np.arange(H)[mn.sum(0).sum(1).astype(bool)]
+    xvals = np.arange(W)[mn.sum(0).sum(0).astype(bool)]
+    ymin, ymax = yvals.min(), yvals.max()
+    xmin, xmax = xvals.min(), xvals.max()
+    # half-dimensions of our subset
+    dy = int(frac*(ymax-ymin)/2)
+    dx = int(frac*(xmax-xmin)/2)
+    
+    # pick a random point. we expect masks to have complicated shapes
+    # including holes, so sample from the nonzero mask elements instead
+    # of uniformly from the extent
+    mnr = mn.sum(0).ravel()
+    options = np.arange(len(mnr))[mnr > 0]
+    # pick a point for the centroid of our subset
+    choice = np.random.choice(options)
+    xx, yy = np.meshgrid(np.arange(W), np.arange(H))
+    ychoice = yy.ravel()[choice]
+    xchoice = xx.ravel()[choice]
+    # now create a rectangular mask around that point
+    choicemask = np.zeros_like(mn)
+    choicemask[:, ychoice-dy:ychoice+dy, xchoice-dx:xchoice+dx] = 1
+    # return the conjunction of our subset and the initial mask
+    return torch.tensor(choicemask)*m
