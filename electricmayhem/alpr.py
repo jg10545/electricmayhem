@@ -121,18 +121,31 @@ def build_api_detect_function(plate, url='http://localhost:8088/api', empty_is_e
     :plate: string; plate number
     :url: string; URL of API
     """
-    def detect_function(img, return_raw=False):
+    def detect_function(img, return_raw=False, return_scores=False):
         memfile = BytesIO()
         img = Image.fromarray((img.permute(1,2,0).numpy()*255).astype(np.uint8))
         img.save(memfile, "JPEG", quality=100)
         memfile.seek(0)
         r = requests.post(url, data=memfile)
         results = json.loads(r.content.decode('utf8'))
+        # parse json
+        candidates = {}
+        for r in results["results"]:
+            #print(r)
+            for c in r["candidates"]:
+                candidates[c["plate"]] = max(float(c["confidence"])/100, candidates.get(c["plate"],0))
+        # if there were any plates detected
         if len(results["results"]) > 0:
-            if plate in [x["plate"] for x in results["results"][0]["candidates"]]:
-                output = 1
+            # get the score corresponding to the plate if we're doing score-based optimization
+            if return_scores:
+                output = candidates.get(plate,0)
+            # and if not just return 1 or 0
             else:
-                output = 0
+                output = int(plate in candidates)
+            #if plate in [x["plate"] for x in results["results"][0]["candidates"]]:
+            #    output = 1
+            #else:
+            #    output = 0
         # no plates returned
         else:
             if empty_is_error:
