@@ -93,5 +93,7 @@ def random_subset_mask(m, frac=0):
     # now create a rectangular mask around that point
     choicemask = np.zeros_like(mn)
     choicemask[:, ychoice-dy:ychoice+dy, xchoice-dx:xchoice+dx] = 1
+    if choicemask.sum() == 0:
+        return random_subset_mask(m, frac)
     # return the conjunction of our subset and the initial mask
     return torch.tensor(choicemask)*m

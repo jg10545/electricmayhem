@@ -222,7 +222,7 @@ def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None,
         containing the chosen learning rate
     """
     if lrs is None:
-        lrs = [0.1, 0.3, 1, 3, 10, 30, 100, 300]
+        lrs = [0., 0.3, 1, 3, 10, 30, 100, 300]
         
     # measure transform robustness at each 
     updated_trs = []
@@ -236,7 +236,7 @@ def update_perturbation(img, mask, pert, augs, detect_func, gradient, lrs=None,
     # now just pick whatever value worked best.
     final_lr = lrs[np.argmax(updated_trs)]
     updated_pert = pert + final_lr*gradient
-    # there's almost certainly a more sophisticated way to clamp this. but just sticking it to [-1,1] 
+    # there's almost certainly a more sophisticated way to clamp this. but just sticking it to [0,1] 
     # will prevent it from slowly accumulating enormous values anywhere
     updated_pert = torch.clamp(updated_pert, 0,1)
     return updated_pert, {'lr':final_lr}
@@ -424,6 +424,7 @@ class BlackBoxPatchTrainer():
         if subset_frac > 0:
             mask = electricmayhem.mask.random_subset_mask(mask, subset_frac)
             self._subset_mask = mask
+            self.writer.add_image("subset_mask", mask, global_step=self.query_counter)
         self.tr = estimate_transform_robustness(self.detect_func,
                                                 augments,
                                                 self.img,
