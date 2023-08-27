@@ -8,7 +8,8 @@ import logging
 import os
 import inspect
 
-from ._util import *
+from ._util import _dict_of_tensors_to_dict_of_arrays, _img_to_tensor, _concat_dicts_of_arrays
+from ._util import from_paramitem, to_paramitem
 
 class PipelineBase(torch.nn.Module):
     """
@@ -79,7 +80,7 @@ class Pipeline(PipelineBase):
     """
     name = "Pipeline"
     def __init__(self, *args, **kwargs):
-        super(Pipeline, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.steps = []
         for a in args:
             _ = self.__add__(a)
@@ -250,10 +251,11 @@ class Pipeline(PipelineBase):
         
         # concatenate list of dicts
         results = _concat_dicts_of_arrays(*results)
+        self.results = results
         # record distributions
         self._log_histograms(**{k:results[k] for k in results if "_control" not in k})
         # record averages
-        self._log_scalars(**{k:torch.mean(results[k]) for k in results if "_control" not in k})
+        self._log_scalars(**{k:np.mean(results[k]) for k in results if "_control" not in k})
         
         # if patch_params has the shape of an image we should just log it as an image
         if len(patch_params.shape) == 3:
@@ -288,7 +290,7 @@ class Pipeline(PipelineBase):
             self._defaults[k] = newdefaults[k]
         # dump experiment as YAML to log directory
         if hasattr(self, "logdir"):
-            open(os.patch.join(self.logdir, "config.yml"),
+            open(os.path.join(self.logdir, "config.yml"),
                  "w").write(self.to_yaml())
         
         # copy patch and turn on gradients
@@ -320,10 +322,11 @@ class Pipeline(PipelineBase):
             
             # estimate gradients
             gradient += torch.autograd.grad(loss, patch_params)[0]/accumulate
+            self._log_scalars(gradient_norm = torch.mean(gradient**2))
             
             # if this is an update step- update patch, clamp to unit interval
             if (i+1)%accumulate == 0:
-                patch_params = patch_params.detach() + step_size*gradient
+                patch_params = patch_params.detach() - step_size*gradient.sign()
                 patch_params = patch_params.clamp(0,1).detach().requires_grad_(True)
                 gradient = torch.zeros_like(patch_params)
                 self.patch_params = patch_params.clone().detach()
