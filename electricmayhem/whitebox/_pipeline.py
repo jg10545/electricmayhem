@@ -4,6 +4,7 @@ import torch.utils.tensorboard
 import yaml
 import mlflow
 from tqdm import tqdm
+import logging
 
 from ._util import *
 
@@ -83,7 +84,7 @@ class Pipeline(PipelineBase):
         self.params = {}
         self._defaults = {}
         self.global_step = 0
-        self.logging_to_mlflow = False
+        self._logging_to_mlflow = False
             
     def forward(self, x, control=False, **kwargs):
         for a in self.steps:
@@ -152,12 +153,7 @@ class Pipeline(PipelineBase):
         """
         if (patch_shape is not None)&(patch is None):
             patch = torch.zeros(patch_shape, dtype=torch.float32).uniform_(0,1)
-        # these checks don't really make sense if the patch parameterization is a
-        # GAN latent vector, for example
-        #if len(patch.shape) != 3:
-        #    logging.error("initialize_patch() expects a patch shape of length 3; (C,H,W)")
-        #elif patch.shape[0] not in [1,3]:
-        #    logging.error("initialize_patch() only works with 1 or 3 channels")
+
         self._defaults["patch_param_shape"] = patch.shape    
         self.patch_params = patch
         self._single_patch = single_patch
@@ -221,9 +217,9 @@ class Pipeline(PipelineBase):
         
         """
         if batch_size is None:
-            batch_size = self._default_training_params["batch_size"]
+            batch_size = self._defaults["batch_size"]
         if num_eval_steps is None:
-            num_eval_steps = self._default_training_params["num_eval_steps"]
+            num_eval_steps = self._defaults["num_eval_steps"]
             
         # stack into a batch of patches
         if self._single_patch:
@@ -237,9 +233,9 @@ class Pipeline(PipelineBase):
         for _ in range(num_eval_steps):
             stepdict = {}
             # run a batch through with the patch included
-            result_patch = _dict_of_tensors_to_dict_of_arrays(self.lossfunc(self(patchbatch), patchbatch))
+            result_patch = _dict_of_tensors_to_dict_of_arrays(self.loss(self(patchbatch), patchbatch))
             # then a control batch; no patch but same parameters
-            result_control = _dict_of_tensors_to_dict_of_arrays(self.lossfunc(self(patchbatch, control=True),
+            result_control = _dict_of_tensors_to_dict_of_arrays(self.loss(self(patchbatch, control=True),
                                                                               patchbatch))
             for k in result_patch:
                 stepdict[f"{k}_patch"] = result_patch[k]
@@ -273,15 +269,21 @@ class Pipeline(PipelineBase):
             if len(set(self._lossdictkeys)&set(kwargs.keys())) == 0:
                 logging.warning("no weights given for any terms in your loss dictionary")
         # record the training parameters
-        self._default_training_params = {"batch_size":batch_size, "step_size":step_size, "num_steps":num_steps,
-                                        "eval_every":eval_every, "num_eval_steps":num_eval_steps,
-                                        "accumulate":accumulate}
+        newdefaults = {"batch_size":batch_size,
+                    "step_size":step_size, "num_steps":num_steps,
+                    "eval_every":eval_every, "num_eval_steps":num_eval_steps,
+                    "accumulate":accumulate}
+        for k in newdefaults:
+            self._defaults[k] = newdefaults[k]
         # dump experiment as YAML to log directory
+        if hasattr(self, "logdir"):
+            open(os.patch.join(self.logdir, "config.yml"),
+                 "w").write(self.to_yaml())
         
         # copy patch and turn on gradients
         patch_params = self.patch_params.clone().detach().requires_grad_(True)
         # make a tensor to hold the gradients
-        gradient = torch.zero_like(patch_params)
+        gradient = torch.zeros_like(patch_params)
         
         for i in tqdm(range(num_steps)):
             # stack into a batch of patches
@@ -294,7 +296,7 @@ class Pipeline(PipelineBase):
             outputs = self(patchbatch)
             
             # compute loss
-            lossdict = self.lossfunc(outputs, patchbatch)
+            lossdict = self.loss(outputs, patchbatch)
             loss = 0
             record = {}
             for k in lossdict:
@@ -306,13 +308,13 @@ class Pipeline(PipelineBase):
             self._log_scalars(mlflow_metric=False, **record)
             
             # estimate gradients
-            gradient += torch.autograd.grad(loss, patch_params)/accumulate
+            gradient += torch.autograd.grad(loss, patch_params)[0]/accumulate
             
             # if this is an update step- update patch, clamp to unit interval
-            if (i+1)%acumulate == 0:
+            if (i+1)%accumulate == 0:
                 patch_params = patch_params.detach() + step_size*gradient
                 patch_params = patch_params.clamp(0,1).detach().requires_grad_(True)
-                gradient = torch.zero_like(patch_params)
+                gradient = torch.zeros_like(patch_params)
                 self.patch_params = patch_params.clone().detach()
                 
             
@@ -324,5 +326,6 @@ class Pipeline(PipelineBase):
                 
         # finished training- save a copy of the patch tensor
         self.patch_params = patch_params.clone().detach()
+        return self.patch_params
         
     

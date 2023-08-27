@@ -4,6 +4,7 @@ import kornia
 import logging
 
 from ._pipeline import PipelineBase
+from ._util import to_paramitem, from_paramitem
 
 
 
@@ -51,8 +52,8 @@ class KorniaAugmentationPipeline(PipelineBase):
         if params is None:
             y = self.aug(x)
         else:
-            y = self.aug(x, params=params)
-        self.lastsample = self.aug._params
+            y = self.aug(x, params=to_paramitem(params))
+        self.lastsample = from_paramitem(self.aug._params)
         return y
     
     def check_reproducibility(self, x=None, N=100, epsilon=1e-6):
@@ -71,29 +72,11 @@ class KorniaAugmentationPipeline(PipelineBase):
             x = torch.tensor(np.random.uniform(0, 1, size=(3,128,128)).astype(np.float32))
         failures = 0
         for _ in range(100):
-            y1 = self(x)#self.apply(x)
-            y2 = self(x, control=True)#self.apply(x, control=True)
+            y1 = self(x)
+            y2 = self(x, control=True)
             if ((y1-y2)**2).numpy().mean() > epsilon:
                 failures += 1
         if failures > 0:
             logging.warning(f"reproducibility check failed {failures} out of {N} times")
         return failures
     
-    def get_last_sample_as_dict(self):
-        """
-        Return last sample as a JSON-serializable dict
-        """
-        outdict = {}
-        for p in self.lastsample:
-            for k in p.data:
-                key = f"{p.name}_{k}"
-                # some info not necessary to record
-                if k in ["forward_input_shape"]:
-                    continue
-                # flatten multidimensional params
-                elif len(p.data[k].shape) > 1:
-                    for i in range(p.data[k].shape[1]):
-                        outdict[f"{p.name}_{k}_{i}"] = [float(x[i]) for x in p.data[k]]
-                else:
-                    outdict[key] = [float(x) for x in p.data[k].cpu().detach().numpy()]
-        return outdict

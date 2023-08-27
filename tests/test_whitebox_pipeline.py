@@ -136,3 +136,31 @@ def test_pipeline_set_loss_throws_error_for_bad_output_shapes():
         
     assert "correct shape" in str(err.value)
     
+    
+    
+  
+def test_pipeline_training_loop_runs():
+    """
+    This is a pretty minimal test just to see
+    if it runs without crashing for a trivial case
+    """
+    batch_size = 2
+    step_size = 1e-2
+    num_steps = 5
+    eval_every = 1000
+    num_eval_steps = 1
+    def myloss(outputs, patchparam):
+        outdict = {}
+        outputs = outputs.reshape(outputs.shape[0], -1)
+        outdict["mainloss"] = torch.mean(outputs, 1)
+        return outdict    
+    
+
+    shape = (3,5,7)
+    step = _create.PatchResizer((11,13))
+    pipeline = _pipeline.Pipeline(step)
+    pipeline.initialize_patch_params(shape)
+    pipeline.set_loss(myloss)
+    out = pipeline.train(batch_size, step_size, num_steps,
+                         eval_every, num_eval_steps, mainloss=1)
+    assert out.shape == shape
