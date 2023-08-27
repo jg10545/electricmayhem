@@ -80,3 +80,9 @@ class KorniaAugmentationPipeline(PipelineBase):
             logging.warning(f"reproducibility check failed {failures} out of {N} times")
         return failures
     
+    
+    def get_last_sample_as_dict(self):
+        """
+        Return last sample as a JSON-serializable dict
+        """
+        return self.lastsample

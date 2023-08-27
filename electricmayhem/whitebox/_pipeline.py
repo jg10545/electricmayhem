@@ -5,6 +5,8 @@ import yaml
 import mlflow
 from tqdm import tqdm
 import logging
+import os
+import inspect
 
 from ._util import *
 
@@ -104,6 +106,8 @@ class Pipeline(PipelineBase):
         params = {s.name:s.params for s in self.steps}
         params["Pipeline"] = self.params
         params["training"] = self._defaults
+        if hasattr(self, "loss"):
+            params["loss"] = inspect.getsource(self.loss)
         return yaml.dump(params, default_flow_style=False)
     
     def get_last_sample_as_dict(self):
@@ -214,8 +218,9 @@ class Pipeline(PipelineBase):
         
     def evaluate(self, batch_size=None, num_eval_steps=None):
         """
-        
+        Run a set of evaluation batches and log results.
         """
+        patch_params = self.patch_params
         if batch_size is None:
             batch_size = self._defaults["batch_size"]
         if num_eval_steps is None:
@@ -247,9 +252,15 @@ class Pipeline(PipelineBase):
         results = _concat_dicts_of_arrays(*results)
         # record distributions
         self._log_histograms(**{k:results[k] for k in results if "_control" not in k})
+        # record averages
+        self._log_scalars(**{k:torch.mean(results[k]) for k in results if "_control" not in k})
         
         # if patch_params has the shape of an image we should just log it as an image
-        print("add thing to log image")
+        if len(patch_params.shape) == 3:
+            if patch_params.shape[0] == 3:
+                self._log_images(patch_params=patch_params)
+            elif patch_params.shape[0] == 1:
+                self._log_images(patch_params=patch_params, dataformats="CHW")
         
     def train(self, batch_size, step_size, num_steps, eval_every, num_eval_steps, accumulate=1,
              **kwargs):
