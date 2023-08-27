@@ -81,7 +81,7 @@ class Pipeline(PipelineBase):
     name = "Pipeline"
     def __init__(self, *args, **kwargs):
         super().__init__(**kwargs)
-        self.steps = []
+        self.steps = torch.nn.ModuleList() #[]
         for a in args:
             _ = self.__add__(a)
         self.params = {}
@@ -143,7 +143,7 @@ class Pipeline(PipelineBase):
         elif (mlflow_uri is not None)&(experiment_name is not None):
             logging.warning("both a server URI and experiment name are required for MLFlow")
             
-    def initialize_patch_params(self, patch_shape=None, patch=None, single_patch=True):
+    def initialize_patch_params(self, patch_shape=None, patch=None, single_patch=True, device=None):
         """
         Generate parameters for an untrained patch uniformly on the unit interval.
         
@@ -153,14 +153,22 @@ class Pipeline(PipelineBase):
             own initialized patch
         :single_patch: bool; True if this is a single patch param and False if it's
             a batch of them.
+        :device: which device to initialize to
         
         Saves to self.patch_params
         """
+        # figure out which device the model is currently on
+        if device is None:
+            device = "cpu"
+            for n in self.parameters():
+                device = n.device
+                break
+            #device = next(self.parameters()).device
         if (patch_shape is not None)&(patch is None):
             patch = torch.zeros(patch_shape, dtype=torch.float32).uniform_(0,1)
 
         self._defaults["patch_param_shape"] = patch.shape    
-        self.patch_params = patch
+        self.patch_params = patch.to(device)
         self._single_patch = single_patch
         
      

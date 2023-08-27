@@ -29,7 +29,8 @@ class RectanglePatchImplanter(PipelineBase):
         """
         super(RectanglePatchImplanter, self).__init__()
         self.imgkeys = list(imagedict.keys())
-        self.images = [_img_to_tensor(imagedict[k]) for k in self.imgkeys]
+        #self.images = [_img_to_tensor(imagedict[k]) for k in self.imgkeys]
+        self.images = torch.nn.ParameterList([_img_to_tensor(imagedict[k]) for k in self.imgkeys])
         self.boxes = [boxdict[k] for k in self.imgkeys]
         
         self.params = {"scale":list(scale), "imgkeys":self.imgkeys}
@@ -137,7 +138,7 @@ class RectanglePatchImplanter(PipelineBase):
             for ax in axrow:
                 ax.set_axis_off()
                 if i < n:
-                    ax.imshow((self.images[i].permute(1,2,0).numpy()))
+                    ax.imshow((self.images[i].permute(1,2,0).detach().cpu().numpy()))
                     
                     for j in range(len(self.boxes[i])):
                         b = self.boxes[i][j]
