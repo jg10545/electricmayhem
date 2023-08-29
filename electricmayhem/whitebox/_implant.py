@@ -88,16 +88,19 @@ class RectanglePatchImplanter(PipelineBase):
         
         return torch.stack(implanted,0)
     
-    def forward(self, patches, control=False, **kwargs):
+    def forward(self, patches, control=False, params={}, **kwargs):
         """
         Implant a batch of patches in a batch of images
         
         :patches: torch Tensor; stack of patches
         :control: if True, leave the patches off (for diagnostics)
+        :params: dictionary of params to override random sampling
         :kwargs: passed to self.sample()
         """
+        if control:
+            params = self.lastsample
         # sample parameters if necessary
-        self.sample(patches.shape[0], **kwargs)
+        self.sample(patches.shape[0], **params)
         s = self.lastsample
         if self.params["scale"][1] > self.params["scale"][0]:
             patchlist = [kornia.geometry.rescale(patches[i].unsqueeze(0), (s["scale"][i], s["scale"][i])).squeeze(0) 

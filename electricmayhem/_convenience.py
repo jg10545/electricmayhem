@@ -34,6 +34,11 @@ def plot(i, augs=None, detect_func=None, mask=None, perturbation=None):
     :detect_func: if a detection function is passed, output will be
         used as an image title
     """
+    # in case it's on the GPU
+    i = i.detach().cpu()
+    # if there's a batch dimension just take it off
+    if len(i.shape) == 4:
+        i = i.squeeze(0)
     if augs is not None:
         chosen_augs = np.random.choice(augs, size=9)
         for e, a in enumerate(chosen_augs):
