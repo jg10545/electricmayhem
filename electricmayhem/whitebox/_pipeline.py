@@ -98,7 +98,6 @@ class Pipeline(PipelineBase):
         # check to see if it's an electricmayhem object. if not assume it's
         # a pytorch model
         if not issubclass(type(y), PipelineBase):
-            print(y, type(y))
             y = ModelWrapper(y)
         self.steps.append(y)
         return self
@@ -261,9 +260,9 @@ class Pipeline(PipelineBase):
         results = _concat_dicts_of_arrays(*results)
         self.results = results
         # record distributions
-        self._log_histograms(**{k:results[k] for k in results if "_control" not in k})
+        self._log_histograms(**{f"eval_{k}_distribution":results[k] for k in results if "_control" not in k})
         # record averages
-        self._log_scalars(**{k:np.mean(results[k]) for k in results if "_control" not in k})
+        self._log_scalars(**{f"eval_{k}":np.mean(results[k]) for k in results if "_control" not in k})
         
         # if patch_params has the shape of an image we should just log it as an image
         if len(patch_params.shape) == 3:
