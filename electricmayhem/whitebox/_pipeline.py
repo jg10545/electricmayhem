@@ -269,7 +269,7 @@ class Pipeline(PipelineBase):
             if patch_params.shape[0] == 3:
                 self._log_images(patch_params=patch_params)
             elif patch_params.shape[0] == 1:
-                self._log_images(patch_params=patch_params, dataformats="CHW")
+                self._log_images(patch_params=torch.concat([patch_params for _ in range(3)], 0))
         
     def train(self, batch_size, step_size, num_steps, eval_every, num_eval_steps, accumulate=1,
              **kwargs):
