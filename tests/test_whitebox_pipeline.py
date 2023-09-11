@@ -161,6 +161,6 @@ def test_pipeline_training_loop_runs():
     pipeline = _pipeline.Pipeline(step)
     pipeline.initialize_patch_params(shape)
     pipeline.set_loss(myloss)
-    out = pipeline.train(batch_size, step_size, num_steps,
+    out = pipeline.train(batch_size, num_steps, step_size, 
                          eval_every, num_eval_steps, mainloss=1)
     assert out.shape == shape

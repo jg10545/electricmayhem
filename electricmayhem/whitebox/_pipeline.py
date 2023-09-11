@@ -170,6 +170,16 @@ class Pipeline(PipelineBase):
         self.patch_params = patch.to(device)
         self._single_patch = single_patch
         
+    def _get_learning_rate(self):
+        p = self._defaults
+        if p.get("lr_decay", None) == "cosine":
+            lr = p["learning_rate"]*np.cos(self.global_step*np.pi/(2*p["num_steps"]))
+        else:
+            lr = p["learning_rate"]
+        
+        self._log_scalars(learning_rate=lr)
+        return lr
+        
      
     def _log_images(self, **kwargs):
         """
@@ -271,18 +281,20 @@ class Pipeline(PipelineBase):
             elif patch_params.shape[0] == 1:
                 self._log_images(patch_params=torch.concat([patch_params for _ in range(3)], 0))
         
-    def train(self, batch_size, step_size, num_steps, eval_every, num_eval_steps, accumulate=1,
-             **kwargs):
+    def train(self, batch_size, num_steps, learning_rate, eval_every, num_eval_steps, 
+              accumulate=1, lr_decay=None, **kwargs):
         """
         Patch training loop. Expects that you've already called initialize_patch_params() and
         set_loss().
         
         :batch_size: number of implantation/composition parameters to run at a time
-        :step_size: float; learning rate for the attack
+        
         :num_steps: int; number of attack steps to take
+        :learning_rate:
         :eval_every: int; how many steps before running self.evaluate()
         :num_eval_steps: int; number of evaluation batches to run
         :accumulate: int; how many batches to accumulate gradients across before updating patch
+        :lr_decay: None or "cosine"
         """
         # warn the user if they didn't pass any keys from the loss dict
         if hasattr(self, "_lossdictkeys"):
@@ -290,9 +302,9 @@ class Pipeline(PipelineBase):
                 logging.warning("no weights given for any terms in your loss dictionary")
         # record the training parameters
         newdefaults = {"batch_size":batch_size,
-                    "step_size":step_size, "num_steps":num_steps,
+                    "learning_rate":learning_rate, "num_steps":num_steps,
                     "eval_every":eval_every, "num_eval_steps":num_eval_steps,
-                    "accumulate":accumulate}
+                    "accumulate":accumulate, "lr_decay":lr_decay}
         for k in newdefaults:
             self._defaults[k] = newdefaults[k]
         # dump experiment as YAML to log directory
@@ -333,7 +345,7 @@ class Pipeline(PipelineBase):
             
             # if this is an update step- update patch, clamp to unit interval
             if (i+1)%accumulate == 0:
-                patch_params = patch_params.detach() - step_size*gradient.sign()
+                patch_params = patch_params.detach() - self._get_learning_rate()*gradient.sign()
                 patch_params = patch_params.clamp(0,1).detach().requires_grad_(True)
                 gradient = torch.zeros_like(patch_params)
                 self.patch_params = patch_params.clone().detach()
