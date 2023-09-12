@@ -27,7 +27,7 @@ class PatchResizer(PipelineBase):
         self.lastsample = {}
         
     
-    def forward(self, patches, control=False, **kwargs):
+    def forward(self, patches, control=False, evaluate=False, **kwargs):
         """
         Implant a batch of patches in a batch of images
         
@@ -63,7 +63,7 @@ class PatchStacker(PipelineBase):
         self.lastsample = {}
         
     
-    def forward(self, patches, control=False, **kwargs):
+    def forward(self, patches, control=False, evaluate=False, **kwargs):
         """
         Implant a batch of patches in a batch of images
         

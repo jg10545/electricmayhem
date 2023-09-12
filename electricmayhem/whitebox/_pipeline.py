@@ -31,7 +31,7 @@ class PipelineBase(torch.nn.Module):
     def log_params_to_mlflow(self):
         mlflow.log_params(self.params)
         
-    def forward(self, x, control=False, **kwargs):
+    def forward(self, x, control=False, evaluate=False, **kwargs):
         return x
         
     def get_last_sample_as_dict(self):
@@ -64,7 +64,7 @@ class ModelWrapper(PipelineBase):
         if model.training:
             logging.warn("model appears to be set to train mode. was this intentional?")
         
-    def forward(self, x, control=False, **kwargs):
+    def forward(self, x, control=False, evaluate=False, **kwargs):
         return self.model(x)
     
     def get_last_sample_as_dict(self):
@@ -90,9 +90,9 @@ class Pipeline(PipelineBase):
         self._logging_to_mlflow = False
         self._profiling = False
             
-    def forward(self, x, control=False, **kwargs):
+    def forward(self, x, control=False, evaluate=False, **kwargs):
         for a in self.steps:
-            x = a(x, control=control, **kwargs)
+            x = a(x, control=control, evaluate=False, **kwargs)
         return x
     
     def __add__(self, y):
@@ -270,9 +270,11 @@ class Pipeline(PipelineBase):
         for _ in range(num_eval_steps):
             stepdict = {}
             # run a batch through with the patch included
-            result_patch = _dict_of_tensors_to_dict_of_arrays(self.loss(self(patchbatch), patchbatch))
+            result_patch = _dict_of_tensors_to_dict_of_arrays(self.loss(self(patchbatch, evaluate=True),
+                                                                        patchbatch))
             # then a control batch; no patch but same parameters
-            result_control = _dict_of_tensors_to_dict_of_arrays(self.loss(self(patchbatch, control=True),
+            result_control = _dict_of_tensors_to_dict_of_arrays(self.loss(self(patchbatch, control=True,
+                                                                               evaluate=True),
                                                                               patchbatch))
             for k in result_patch:
                 stepdict[f"{k}_patch"] = result_patch[k]

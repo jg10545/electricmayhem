@@ -12,44 +12,68 @@ from ._pipeline import PipelineBase
 
 class RectanglePatchImplanter(PipelineBase):
     """
-    Class for adding a patch to an image, with noise
-    
-    Assume all images are the same dimensions.
+    Class for adding a patch to an image, with noise. Assume all images are 
+    the same dimensions.
     
     Use validate() to make sure all your bounding boxes fit a patch.
+    
+    If eval_imagedict and eval_boxdict aren't passed, evaluation will be done
+    one training images/boxes.
     """
     name = "RectanglePatchImplanter"
     
-    def __init__(self, imagedict, boxdict, scale=(0.75,1.25)):
+    def __init__(self, imagedict, boxdict, eval_imagedict=None,
+                 eval_boxdict=None, scale=(0.75,1.25)):
         """
         :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
         :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
             {"img1":[[xmin1, ymin1, xmax1, ymax1], [xmin2, ymin2, xmax2, ymax2]]}
+        :eval_imagedict: separate dictionary of images to evaluate on
+        :eval_boxdict: separate dictionary of lists of bounding boxes for evaluation
         :scale: tuple of floats; range of scaling factors
         """
         super(RectanglePatchImplanter, self).__init__()
+        # save training image/box information
         self.imgkeys = list(imagedict.keys())
-        #self.images = [_img_to_tensor(imagedict[k]) for k in self.imgkeys]
         self.images = torch.nn.ParameterList([_img_to_tensor(imagedict[k]) for k in self.imgkeys])
         self.boxes = [boxdict[k] for k in self.imgkeys]
+        
+        # save eval image/box information
+        if eval_imagedict is None:
+            eval_imagedict = imagedict
+            eval_boxdict = boxdict
+            
+        self.eval_imgkeys = list(eval_imagedict.keys())
+        self.eval_images = torch.nn.ParameterList([_img_to_tensor(eval_imagedict[k]) for k in
+                                                   self.eval_imgkeys])
+        self.eval_boxes = [eval_boxdict[k] for k in self.eval_imgkeys]
+            
+        
         
         self.params = {"scale":list(scale), "imgkeys":self.imgkeys}
         self.lastsample = {}
         
         assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
         
-    def sample(self, n, **kwargs):
+    def sample(self, n, evaluate=False, **kwargs):
         """
         Sample implantation parameters for batch size n, overwriting with
         kwargs if necessary.
         """
+        if evaluate:
+            images = self.eval_images
+            boxes = self.eval_boxes
+        else:
+            images = self.images
+            boxes = self.boxes
+        
         sampdict = {k:kwargs[k] for k in kwargs}
         if "scale" not in kwargs:
             sampdict["scale"] = torch.FloatTensor(n).uniform_(self.params["scale"][0], self.params["scale"][1])
         if "image" not in kwargs:
-            sampdict["image"] = torch.randint(low=0, high=len(self.images), size=[n])
+            sampdict["image"] = torch.randint(low=0, high=len(images), size=[n])
         if "box" not in kwargs:
-            i = torch.tensor([torch.randint(low=0, high=len(self.boxes[j]), size=[]) for j in sampdict["image"]])
+            i = torch.tensor([torch.randint(low=0, high=len(boxes[j]), size=[]) for j in sampdict["image"]])
             sampdict["box"] = i
         if "offset_frac_x" not in kwargs:
             sampdict["offset_frac_x"] = torch.rand([n])
@@ -74,6 +98,15 @@ class RectanglePatchImplanter(PipelineBase):
                 if (max_y >= dy)|(max_x >= dx):
                     logging.warning(f"box {j} of image {self.imgkeys[i]} is too small for this patch and scale")
                     all_validated = False
+                    
+        for i in range(len(self.eval_images)):
+            for j in range(len(self.eval_boxes[i])):
+                b = self.eval_boxes[i][j]
+                dy = b[3] - b[1]
+                dx = b[2] - b[0]
+                if (max_y >= dy)|(max_x >= dx):
+                    logging.warning(f"box {j} of eval image {self.imgkeys[i]} is too small for this patch and scale")
+                    all_validated = False
         return all_validated
         
     def _implant_patch(self, image, patch, offset_x, offset_y):
@@ -88,7 +121,7 @@ class RectanglePatchImplanter(PipelineBase):
         
         return torch.stack(implanted,0)
     
-    def forward(self, patches, control=False, params={}, **kwargs):
+    def forward(self, patches, control=False, evaluate=False, params={}, **kwargs):
         """
         Implant a batch of patches in a batch of images
         
@@ -97,9 +130,17 @@ class RectanglePatchImplanter(PipelineBase):
         :params: dictionary of params to override random sampling
         :kwargs: passed to self.sample()
         """
+        if evaluate:
+            images = self.eval_images
+            boxes = self.eval_boxes
+        else:
+            images = self.images
+            boxes = self.boxes
+        
         if control:
             params = self.lastsample
         # sample parameters if necessary
+        #self.sample(patches.shape[0], control=control, **params)
         self.sample(patches.shape[0], **params)
         s = self.lastsample
         if self.params["scale"][1] > self.params["scale"][0]:
@@ -113,7 +154,7 @@ class RectanglePatchImplanter(PipelineBase):
         boxx = torch.zeros(bs)
         boxy = torch.zeros(bs)
         for i in range(bs):
-            box = self.boxes[s["image"][i]][s["box"][i]]
+            box = boxes[s["image"][i]][s["box"][i]]
             dy[i] = box[3] - box[1] - patchlist[i].shape[1]
             dx[i] = box[2] - box[0] - patchlist[i].shape[2]
             boxx[i] = box[0]
@@ -121,18 +162,27 @@ class RectanglePatchImplanter(PipelineBase):
             
         offset_y = (dy*s["offset_frac_y"] + boxy).type(torch.IntTensor)
         offset_x = (dx*s["offset_frac_x"] + boxx).type(torch.IntTensor)
-        images = [self.images[i] for i in s["image"]]
+        images = [images[i] for i in s["image"]]
         
         if control:
             return torch.stack(images,0)
         
         return self._implant_patch(images, patchlist, offset_x, offset_y)
     
-    def plot_boxes(self):
+    def plot_boxes(self, evaluate=False):
         """
         Quick visualization with matplotlib of the victim images and box regions
         """
-        n = len(self.images)
+        if evaluate:
+            images = self.eval_images
+            boxes = self.eval_boxes
+            imgkeys = self.eval_imgkeys
+        else:
+            images = self.images
+            boxes = self.boxes
+            imgkeys = self.imgkeys
+            
+        n = len(images)
         d = int(np.ceil(np.sqrt(n)))
         fig, axs = plt.subplots(nrows=d, ncols=d, squeeze=False)
 
@@ -141,17 +191,17 @@ class RectanglePatchImplanter(PipelineBase):
             for ax in axrow:
                 ax.set_axis_off()
                 if i < n:
-                    ax.imshow((self.images[i].permute(1,2,0).detach().cpu().numpy()))
+                    ax.imshow((images[i].permute(1,2,0).detach().cpu().numpy()))
                     
-                    for j in range(len(self.boxes[i])):
-                        b = self.boxes[i][j]
+                    for j in range(len(boxes[i])):
+                        b = boxes[i][j]
                         xw = (b[0], b[1])
                         width = b[2]-b[0]
                         height = b[3]-b[1]
                         rect = matplotlib.patches.Rectangle(xw, width, height, linewidth=2, fill=False, color="r")
                         ax.add_artist(rect)
                         ax.text(xw[0], xw[1], str(j))
-                    ax.set_title(self.imgkeys[i])
+                    ax.set_title(imgkeys[i])
                 
                 i += 1
         return fig

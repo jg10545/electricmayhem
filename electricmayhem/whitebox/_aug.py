@@ -40,7 +40,7 @@ class KorniaAugmentationPipeline(PipelineBase):
         self.params["ordering"] = ordering
         
         
-    def forward(self, x, control=False, params=None):
+    def forward(self, x, control=False, evaluate=False, params=None, **kwargs):
         """
         apply augmentations to image
         
