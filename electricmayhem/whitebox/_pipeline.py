@@ -88,10 +88,11 @@ class Pipeline(PipelineBase):
         self._defaults = {}
         self.global_step = 0
         self._logging_to_mlflow = False
+        self._profiling = False
             
     def forward(self, x, control=False, **kwargs):
         for a in self.steps:
-            x = a(x, control=control)
+            x = a(x, control=control, **kwargs)
         return x
     
     def __add__(self, y):
@@ -103,7 +104,7 @@ class Pipeline(PipelineBase):
         return self
     
     def to_yaml(self):
-        params = {s.name:s.params for s in self.steps}
+        params = {f"{e}_{s.name}":s.params for e,s in enumerate(self.steps)}
         params["Pipeline"] = self.params
         params["training"] = self._defaults
         if hasattr(self, "loss"):
@@ -141,6 +142,19 @@ class Pipeline(PipelineBase):
             self._logging_to_mlflow = True
         elif (mlflow_uri is not None)&(experiment_name is not None):
             logging.warning("both a server URI and experiment name are required for MLFlow")
+            
+    def _get_profiler(self, wait=1, warmup=1, active=3, repeat=1):
+        self._profiling = True
+        self._stop_profiling_on = (wait+warmup+active)*repeat
+        prof =  torch.profiler.profile(
+            schedule=torch.profiler.schedule(wait=wait, warmup=warmup, 
+                                             active=active, repeat=repeat),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(self.logdir),
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True)
+        prof.start()
+        return prof
             
     def initialize_patch_params(self, patch_shape=None, patch=None, single_patch=True, device=None):
         """
@@ -282,7 +296,7 @@ class Pipeline(PipelineBase):
                 self._log_images(patch_params=torch.concat([patch_params for _ in range(3)], 0))
         
     def train(self, batch_size, num_steps, learning_rate, eval_every, num_eval_steps, 
-              accumulate=1, lr_decay=None, **kwargs):
+              accumulate=1, lr_decay=None, profile=0, **kwargs):
         """
         Patch training loop. Expects that you've already called initialize_patch_params() and
         set_loss().
@@ -295,6 +309,7 @@ class Pipeline(PipelineBase):
         :num_eval_steps: int; number of evaluation batches to run
         :accumulate: int; how many batches to accumulate gradients across before updating patch
         :lr_decay: None or "cosine"
+        :profile:
         """
         # warn the user if they didn't pass any keys from the loss dict
         if hasattr(self, "_lossdictkeys"):
@@ -311,6 +326,9 @@ class Pipeline(PipelineBase):
         if hasattr(self, "logdir"):
             open(os.path.join(self.logdir, "config.yml"),
                  "w").write(self.to_yaml())
+            
+        if profile > 0:
+            prof = self._get_profiler(active=profile)
         
         # copy patch and turn on gradients
         patch_params = self.patch_params.clone().detach().requires_grad_(True)
@@ -354,6 +372,14 @@ class Pipeline(PipelineBase):
             # if this is an evaluate step- run evaluation
             if (i+1)%eval_every == 0:
                 self.evaluate()
+                
+            # if we're profiling, update the profiler
+            if self._profiling:
+                prof.step()
+                if self.global_step > self._stop_profiling_on+1:
+                    prof.stop()
+                    self._profiling = False
+                    self.prof = prof
                 
             self.global_step += 1
                 
