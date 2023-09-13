@@ -140,7 +140,7 @@ class Pipeline(PipelineBase):
         return outdict
     
     def set_logging(self, logdir=None, mlflow_uri=None, experiment_name=None, 
-                    description=None, tags={}):
+                    description=None, tags={}, extra_params={}):
         """
         Configure TensorBoard and MLFlow for logging results
         
@@ -165,6 +165,8 @@ class Pipeline(PipelineBase):
                 description = _mlflow_description(self)
             self.activerun = mlflow.start_run(description=description,
                                               tags=alltags)
+            if len(extra_params) > 0:
+                mlflow.log_params(extra_params)
             self._logging_to_mlflow = True
         elif (mlflow_uri is not None)&(experiment_name is not None):
             logging.warning("both a server URI and experiment name are required for MLFlow")
