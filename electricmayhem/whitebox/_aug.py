@@ -15,6 +15,11 @@ class KorniaAugmentationPipeline(PipelineBase):
     
     Use check_reproducibility() to make sure the augmentations chosen
     are repeatable.
+    
+    DO NOT USE p < 1.0 FOR ANY AUGMENTATIONS
+    
+    Tracking parameters is more complicated in this case and not currently
+    implemented. 
     """
     name = "KorniaAugmentationPipeline"
     
@@ -47,6 +52,7 @@ class KorniaAugmentationPipeline(PipelineBase):
         :x: torch.Tensor batch of images in channelfirst format
         :control: boolean; if True use augmentation values from previous batch
         """
+
         if control:
             params = self.lastsample
         if params is None:
@@ -85,7 +91,23 @@ class KorniaAugmentationPipeline(PipelineBase):
         """
         Return last sample as a JSON-serializable dict
         """
-        return self.lastsample
+        outdict = {}
+        # for each augmentation
+        for s in self.lastsample:
+            # for each parameter sampled for that augmentation
+            for k in s['data']:
+                # skip ordering, input shape, and batch_prob (which should be True for all if p=1.0)
+                if ('order' not in k)&('input_shape' not in k)&('batch_prob' not in k):
+                    # some samples are multidimensional- unravel to two dimensions
+                    data = np.array(s["data"][k][1])
+                    data = data.reshape(s["data"][k][0][0], -1)
+                    # record each dimension separately
+                    for i in range(data.shape[1]):
+                        if data.shape[1] > 1:
+                            outdict[f"{s['name']}_{k}_{i}"] = data[:,i]
+                        else:
+                            outdict[f"{s['name']}_{k}"] = data[:,i]
+        return outdict
     
     def get_description(self):
         return f"**{self.name}:** {', '.join(self.params['ordering'])}"

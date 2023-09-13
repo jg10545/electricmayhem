@@ -1,4 +1,6 @@
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 import torch
 import torch.utils.tensorboard
 import yaml
@@ -116,11 +118,9 @@ class Pipeline(PipelineBase):
         return self
     
     def save_yaml(self):
-        #params = {f"{e}_{s.name}":s.params for e,s in enumerate(self.steps)}
-        #params["Pipeline"] = self.params
-        #params["training"] = self._defaults
-        #if hasattr(self, "loss"):
-        #    params["loss"] = inspect.getsource(self.loss)
+        """
+        Save self.params to a YAML file
+        """
         yamltext = yaml.dump(self.params, default_flow_style=False)
         if hasattr(self, "logdir"):
             open(os.path.join(self.logdir, "config.yml"),
@@ -132,10 +132,10 @@ class Pipeline(PipelineBase):
         Return last sample as a JSON-serializable dict
         """
         outdict = {}
-        for s in self.steps:
+        for e, s in enumerate(self.steps):
             sampdict = s.get_last_sample_as_dict()
             for k in sampdict:
-                outdict[f"{s.name}_{k}"] = sampdict[k]
+                outdict[f"{e}_{s.name}_{k}"] = sampdict[k]
                 
         return outdict
     
@@ -300,7 +300,10 @@ class Pipeline(PipelineBase):
         else:
             patchbatch = patch_params
             
+        # store loss function outputs for each eval batch
         results = []
+        # store sampled parameters for each eval batch
+        samples = []
         
         # for each eval step
         for _ in range(num_eval_steps):
@@ -317,10 +320,17 @@ class Pipeline(PipelineBase):
                 stepdict[f"{k}_control"] = result_control[k]
                 stepdict[f"{k}_delta"] = result_patch[k] - result_control[k]
             results.append(stepdict)
+            samples.append(self.get_last_sample_as_dict())
         
         # concatenate list of dicts
         results = _concat_dicts_of_arrays(*results)
+        samples = _concat_dicts_of_arrays(*samples)
         self.results = results
+        # combine results and sampled parameters into a dataframe and save.
+        for r in results:
+            samples[r] = results[r]
+        self.df = pd.DataFrame(samples)
+        self.df.to_csv(os.path.join(self.logdir, "eval_results.csv"), index=False)
         # record distributions
         self._log_histograms(**{f"eval_{k}_distribution":results[k] for k in results if "_control" not in k})
         # record averages
@@ -433,6 +443,22 @@ class Pipeline(PipelineBase):
         if self._logging_to_mlflow: mlflow.end_run()
         return self.patch_params
     
+    def visualize_eval_results(self):
+        """
+        Use ipywidgets to visualize eval results within a notebook
+        """
+        import ipywidgets
+        def scatter(x, y, c):
+            plt.cla()
+            plt.scatter(self.df[x].values, self.df[y].values, 
+                        c=self.df[c].values, alpha=0.5)
+            plt.colorbar()
+            plt.xlabel(x)
+            plt.ylabel(y)
+            plt.title(c)
+        columns = list(self.df.columns)
+        colors = list(self.results.keys())
+        ipywidgets.interact(scatter, x=columns, y=columns, c=colors)
     
     def optimize(self):
         """
