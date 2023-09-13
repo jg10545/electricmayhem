@@ -7,9 +7,10 @@ from tqdm import tqdm
 import logging
 import os
 import inspect
+import mlflow
 
 from ._util import _dict_of_tensors_to_dict_of_arrays, _img_to_tensor, _concat_dicts_of_arrays
-from ._util import from_paramitem, to_paramitem
+from ._util import from_paramitem, to_paramitem, _flatten_dict, _mlflow_description
 
 class PipelineBase(torch.nn.Module):
     """
@@ -29,7 +30,7 @@ class PipelineBase(torch.nn.Module):
         return yaml.dump(self.params, default_flow_style=False)
     
     def log_params_to_mlflow(self):
-        mlflow.log_params(self.params)
+        mlflow.log_params(_flatten_dict(self.params))
         
     def forward(self, x, control=False, evaluate=False, **kwargs):
         return x
@@ -47,6 +48,13 @@ class PipelineBase(torch.nn.Module):
             y = ModelWrapper(y)
             
         return Pipeline(self,y)
+    
+    def get_description(self):
+        """
+        Return a markdown-formatted one-line string describing the pipeline step. Used for
+        auto-populating a description for MLFlow.
+        """
+        return f"**{self.name}**"
 
         
     
@@ -84,11 +92,15 @@ class Pipeline(PipelineBase):
         self.steps = torch.nn.ModuleList() #[]
         for a in args:
             _ = self.__add__(a)
-        self.params = {}
         self._defaults = {}
         self.global_step = 0
         self._logging_to_mlflow = False
         self._profiling = False
+        
+        
+        self.params = {}
+        for e,s in enumerate(self.steps):
+            self.params[f"{e}_{s.name}"] = s.params
             
     def forward(self, x, control=False, evaluate=False, **kwargs):
         for a in self.steps:
@@ -103,13 +115,17 @@ class Pipeline(PipelineBase):
         self.steps.append(y)
         return self
     
-    def to_yaml(self):
-        params = {f"{e}_{s.name}":s.params for e,s in enumerate(self.steps)}
-        params["Pipeline"] = self.params
-        params["training"] = self._defaults
-        if hasattr(self, "loss"):
-            params["loss"] = inspect.getsource(self.loss)
-        return yaml.dump(params, default_flow_style=False)
+    def save_yaml(self):
+        #params = {f"{e}_{s.name}":s.params for e,s in enumerate(self.steps)}
+        #params["Pipeline"] = self.params
+        #params["training"] = self._defaults
+        #if hasattr(self, "loss"):
+        #    params["loss"] = inspect.getsource(self.loss)
+        yamltext = yaml.dump(self.params, default_flow_style=False)
+        if hasattr(self, "logdir"):
+            open(os.path.join(self.logdir, "config.yml"),
+                 "w").write(yamltext)
+        return 
     
     def get_last_sample_as_dict(self):
         """
@@ -123,13 +139,16 @@ class Pipeline(PipelineBase):
                 
         return outdict
     
-    def set_logging(self, logdir=None, mlflow_uri=None, experiment_name=None):
+    def set_logging(self, logdir=None, mlflow_uri=None, experiment_name=None, 
+                    description=None, tags={}):
         """
         Configure TensorBoard and MLFlow for logging results
         
         :logdir: string; path to directory for saving tensorboard logs
         :mlflow_uri: string; URI of MLFlow server
         :experiment_name: string; name to use for MLflow experiment
+        :description:
+        :tags:
         """
         if logdir is not None:
             self.logdir = logdir
@@ -138,7 +157,14 @@ class Pipeline(PipelineBase):
         if (mlflow_uri is not None)&(experiment_name is not None):
             mlflow.set_tracking_uri(mlflow_uri)
             mlflow.set_experiment(experiment_name)
-            mlflow.start_run()
+            
+            alltags = {"logdir":logdir}
+            for k in tags:
+                alltags[k] = tags[k]
+            if description is None:
+                description = _mlflow_description(self)
+            self.activerun = mlflow.start_run(description=description,
+                                              tags=alltags)
             self._logging_to_mlflow = True
         elif (mlflow_uri is not None)&(experiment_name is not None):
             logging.warning("both a server URI and experiment name are required for MLFlow")
@@ -185,7 +211,7 @@ class Pipeline(PipelineBase):
         self._single_patch = single_patch
         
     def _get_learning_rate(self):
-        p = self._defaults
+        p = self.params["training"]
         if p.get("lr_decay", None) == "cosine":
             lr = p["learning_rate"]*np.cos(self.global_step*np.pi/(2*p["num_steps"]))
         else:
@@ -202,6 +228,13 @@ class Pipeline(PipelineBase):
         if hasattr(self, "writer"):
             for k in kwargs:
                 self.writer.add_image(k, kwargs[k], global_step=self.global_step)
+        
+    def _log_image_to_mlflow(self, img, filename):
+        if self._logging_to_mlflow:
+            if len(img.shape) == 3:
+                # convert from channel-first to channel-last
+                img = img.permute(1,2,0).detach().cpu().numpy()
+                mlflow.log_image(img, filename)
 
     def _log_scalars(self, mlflow_metric=False, **kwargs):
         """
@@ -247,16 +280,19 @@ class Pipeline(PipelineBase):
                 assert lossdict[k].shape == (test_patch_shape[0],), f"loss function output {k} doesn't appear to return the correct shape"
             # record loss dictionary keys
             self._lossdictkeys = list(lossdict.keys())
+            
+        self.params["loss"] = inspect.getsource(self.loss)
         
     def evaluate(self, batch_size=None, num_eval_steps=None):
         """
         Run a set of evaluation batches and log results.
         """
+        p = self.params["training"]
         patch_params = self.patch_params
         if batch_size is None:
-            batch_size = self._defaults["batch_size"]
+            batch_size = p["batch_size"]
         if num_eval_steps is None:
-            num_eval_steps = self._defaults["num_eval_steps"]
+            num_eval_steps = p["num_eval_steps"]
             
         # stack into a batch of patches
         if self._single_patch:
@@ -288,7 +324,12 @@ class Pipeline(PipelineBase):
         # record distributions
         self._log_histograms(**{f"eval_{k}_distribution":results[k] for k in results if "_control" not in k})
         # record averages
-        self._log_scalars(**{f"eval_{k}":np.mean(results[k]) for k in results if "_control" not in k})
+        meanresults = {f"eval_{k}":np.mean(results[k]) for k in results if "_control" not in k}
+        self._log_scalars(**meanresults)
+        
+        # record metrics to mlflow
+        if self._logging_to_mlflow:
+            mlflow.log_metrics(meanresults, step=self.global_step)
         
         # if patch_params has the shape of an image we should just log it as an image
         if len(patch_params.shape) == 3:
@@ -296,6 +337,7 @@ class Pipeline(PipelineBase):
                 self._log_images(patch_params=patch_params)
             elif patch_params.shape[0] == 1:
                 self._log_images(patch_params=torch.concat([patch_params for _ in range(3)], 0))
+                
         
     def train(self, batch_size, num_steps, learning_rate, eval_every, num_eval_steps, 
               accumulate=1, lr_decay=None, profile=0, **kwargs):
@@ -318,16 +360,15 @@ class Pipeline(PipelineBase):
             if len(set(self._lossdictkeys)&set(kwargs.keys())) == 0:
                 logging.warning("no weights given for any terms in your loss dictionary")
         # record the training parameters
-        newdefaults = {"batch_size":batch_size,
+        trainparams = {"batch_size":batch_size,
                     "learning_rate":learning_rate, "num_steps":num_steps,
                     "eval_every":eval_every, "num_eval_steps":num_eval_steps,
                     "accumulate":accumulate, "lr_decay":lr_decay}
-        for k in newdefaults:
-            self._defaults[k] = newdefaults[k]
+        
+        self.params["training"] = trainparams
         # dump experiment as YAML to log directory
-        if hasattr(self, "logdir"):
-            open(os.path.join(self.logdir, "config.yml"),
-                 "w").write(self.to_yaml())
+        self.save_yaml()
+        self.log_params_to_mlflow()
             
         if profile > 0:
             prof = self._get_profiler(active=profile)
@@ -387,6 +428,16 @@ class Pipeline(PipelineBase):
                 
         # finished training- save a copy of the patch tensor
         self.patch_params = patch_params.clone().detach()
+        # wrap up mlflow logging
+        self._log_image_to_mlflow(patch_params, "patch.png")
+        if self._logging_to_mlflow: mlflow.end_run()
         return self.patch_params
+    
+    
+    def optimize(self):
+        """
+        foo
+        """
+        return False
         
     

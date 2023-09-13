@@ -1,6 +1,7 @@
 import numpy as np
 from PIL import Image
 import torch
+from collections.abc import MutableMapping
 
 try:
     # kornia >= 0.7
@@ -100,3 +101,37 @@ def to_paramitem(x):
         data = None
     return ParamItem(x["name"], data)
 
+
+def _flatten_dict(dictionary, parent_key='', separator='_'):
+    """
+    Flatten a bunch of nested dictionaries into one dictionary.
+    """
+    items = []
+    for key, value in dictionary.items():
+        new_key = parent_key + separator + key if parent_key else key
+        if isinstance(value, MutableMapping):
+            items.extend(_flatten_dict(value, new_key, separator=separator).items())
+        else:
+            if isinstance(value, list):
+                value = ",".join([str(v) for v in value])
+            items.append((new_key, value))
+    return dict(items)
+
+
+def _mlflow_description(pipe):
+    """
+    convenience function to auto-generate a markdown description for
+    a pipeline
+    """
+    outstr = "# `electricmayhem` pipeline"
+    
+    outstr += "\n## stages"
+    for s in pipe.steps:
+        outstr += f"\n* {s.get_description()}"
+        
+        
+    if hasattr(pipe, "_lossdictkeys"):
+        outstr += "\n## loss\n* **keys:** "
+        outstr += ", ".join(pipe._lossdictkeys)
+    return outstr
+    

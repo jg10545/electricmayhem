@@ -86,3 +86,6 @@ class KorniaAugmentationPipeline(PipelineBase):
         Return last sample as a JSON-serializable dict
         """
         return self.lastsample
+    
+    def get_description(self):
+        return f"**{self.name}:** {', '.join(self.params['ordering'])}"

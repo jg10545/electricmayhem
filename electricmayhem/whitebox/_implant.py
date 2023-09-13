@@ -50,7 +50,8 @@ class RectanglePatchImplanter(PipelineBase):
             
         
         
-        self.params = {"scale":list(scale), "imgkeys":self.imgkeys}
+        self.params = {"scale":list(scale), "imgkeys":self.imgkeys,
+                       "eval_imgkeys":self.eval_imgkeys}
         self.lastsample = {}
         
         assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
@@ -217,4 +218,7 @@ class RectanglePatchImplanter(PipelineBase):
         else:
             outdict[k] = [float(i) for i in self.lastsample[k].cpu().detach().numpy()]
         return outdict
+    
+    def get_description(self):
+        return f"**{self.name}:** {len(self.imgkeys)} training and {len(self.eval_imgkeys)} eval images"
         
