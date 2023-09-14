@@ -84,3 +84,42 @@ def test_to_paramitem():
     assert isinstance(unparsed, ParamItem)
     assert unparsed.name == par.name
     assert unparsed.data["foo"].shape == par.data["foo"].shape
+    
+    
+def test_flatten_dict():
+    testdict = {
+        "foo":{"a":0, "b":1},
+        "bar":{
+            "x":0,
+            "y":1,
+            "z":{"x":0, "y":8}
+            }
+        }
+    flattened = _util._flatten_dict(testdict)
+    assert isinstance(flattened, dict)
+    assert len(flattened) == 6
+    print(list(flattened.keys()))
+    for x in ["foo_a", "bar_x", "bar_z_y"]:
+        assert x in flattened
+        
+def test_mlflow_description():
+    class FauxPipe():
+        def __init__(self, description):
+            self.d = description
+        def get_description(self):
+            return self.d
+        
+    class FauxPipeline():
+        def __init__(self):
+            self.steps = [FauxPipe(str(i)+"_step") for i in range(10)]
+            self._lossdictkeys = ["foo", "bar"]
+            
+    markdown = _util._mlflow_description(FauxPipeline())
+    assert isinstance(markdown, str)
+    for x in ["foo", "bar", "_step"]:
+        assert x in markdown
+    
+    
+        
+    
+    
