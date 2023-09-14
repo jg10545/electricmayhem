@@ -8,11 +8,12 @@ import mlflow
 from tqdm import tqdm
 import logging
 import os
+import json
 import inspect
-import mlflow
 
-from ._util import _dict_of_tensors_to_dict_of_arrays, _img_to_tensor, _concat_dicts_of_arrays
-from ._util import from_paramitem, to_paramitem, _flatten_dict, _mlflow_description
+from ._util import _dict_of_tensors_to_dict_of_arrays, _concat_dicts_of_arrays
+from ._util import _flatten_dict, _mlflow_description, _bootstrap_std
+from ._opt import _create_ax_client
 
 class PipelineBase(torch.nn.Module):
     """
@@ -351,7 +352,7 @@ class Pipeline(PipelineBase):
                 self._log_images(patch_params=torch.concat([patch_params for _ in range(3)], 0))
                 
         
-    def train(self, batch_size, num_steps, learning_rate, eval_every, num_eval_steps, 
+    def train(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000, num_eval_steps=10, 
               accumulate=1, lr_decay=None, profile=0, **kwargs):
         """
         Patch training loop. Expects that you've already called initialize_patch_params() and
@@ -425,7 +426,7 @@ class Pipeline(PipelineBase):
                 
             
             # if this is an evaluate step- run evaluation
-            if (i+1)%eval_every == 0:
+            if ((i+1)%eval_every == 0)&(eval_every > 0):
                 self.evaluate()
                 
             # if we're profiling, update the profiler
@@ -462,10 +463,38 @@ class Pipeline(PipelineBase):
         colors = list(self.results.keys())
         ipywidgets.interact(scatter, x=columns, y=columns, c=colors)
     
-    def optimize(self):
+    def optimize(self, objective, logdir, patch_shape, N, num_steps, 
+                 batch_size, num_eval_steps=10, mlflow_uri=None, experiment_name=None, 
+                      extra_params={}, minimize=True,  **params):
         """
         foo
         """
+        self.client = _create_ax_client(objective, minimize=minimize, **params)
+        
+        def _evaluate_trial(p):
+            self.train(batch_size, num_steps, eval_every=-1, **p)
+            self.evaluate(batch_size, num_eval_steps)
+            result_mean = np.mean(self.results[objective])
+            sem = _bootstrap_std(self.results[objective])
+            return {objective:(result_mean, sem)}
+        
+        # for each trial
+        for i in tqdm(range(N)):
+            # point the logger to a new subdirectory
+            ld = os.path.join(logdir, i)
+            self.set_logging(logdir=ld, mlflow_uri=mlflow_uri,
+                             experiment_name=experiment_name,
+                             extra_params=extra_params)
+            # create a new patch
+            self.initialize_patch_params(patch_shape=patch_shape)
+            # run the trial
+            parameters, trial_index = self.client.get_next_trial()
+            self.client.complete_trial(trial_index=trial_index,
+                                       raw_data=_evaluate_trial(parameters))
+            j = self.client.to_json_snapshot()
+            json.dump(j, open(os.path.join(logdir, "log.json"), "w"))
+            
+            
         return False
         
     

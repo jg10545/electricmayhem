@@ -47,6 +47,8 @@ def _bootstrap_std(measure, num_samples=100):
     """
     Estimate the standard deviation of a 1D torch.Tensor using bootstrap sampling
     """
+    if isinstance(measure, dict):
+        return {k:_bootstrap_std(measure[k], num_samples) for k in measure}
     N = measure.shape[0]
     return np.std([torch.mean(measure[np.random.choice(np.arange(N), size=N, replace=True)]).item()
            for _ in range(num_samples)])

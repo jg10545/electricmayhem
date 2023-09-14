@@ -35,8 +35,8 @@ def test_modelwrapper():
     
     
 def test_pipeline_manual_creation():
-    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":0.25}}
-    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":0.25}}
+    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
+    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":1}}
     
     aug1 = _aug.KorniaAugmentationPipeline(augdict1)
     aug2 = _aug.KorniaAugmentationPipeline(augdict2)
@@ -48,8 +48,8 @@ def test_pipeline_manual_creation():
     assert inpt.shape == outpt.shape
     
 def test_pipeline_dunderscore_creation():
-    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":0.25}}
-    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":0.25}}
+    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
+    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":1}}
     
     aug1 = _aug.KorniaAugmentationPipeline(augdict1)
     aug2 = _aug.KorniaAugmentationPipeline(augdict2)
@@ -69,8 +69,8 @@ def test_pipeline_creation_with_model():
         def forward(self, x):
             return self.conv1(x)
     mod = Model().eval()
-    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":0.25}}
-    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":0.25}}
+    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
+    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":1}}
     
     aug1 = _aug.KorniaAugmentationPipeline(augdict1)
     aug2 = _aug.KorniaAugmentationPipeline(augdict2)

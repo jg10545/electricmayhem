@@ -37,6 +37,8 @@ class KorniaAugmentationPipeline(PipelineBase):
             ordering = list(augmentations.keys())
         for o in ordering:
             evalstring = f"kornia.augmentation.{o}(**{augmentations[o]})"
+            if "p" in augmentations[o]:
+                assert augmentations[o]["p"] == 1, "augmentations need to be applied with p=1.0"
             augs.append(eval(evalstring))
         
         self.aug = kornia.augmentation.container.AugmentationSequential(*augs)
