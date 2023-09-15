@@ -49,9 +49,14 @@ def _bootstrap_std(measure, num_samples=100):
     """
     if isinstance(measure, dict):
         return {k:_bootstrap_std(measure[k], num_samples) for k in measure}
-    N = measure.shape[0]
-    return np.std([torch.mean(measure[np.random.choice(np.arange(N), size=N, replace=True)]).item()
-           for _ in range(num_samples)])
+    elif isinstance(measure, torch.Tensor):
+        N = measure.shape[0]
+        return np.std([torch.mean(measure[np.random.choice(np.arange(N), size=N, replace=True)]).item()
+                       for _ in range(num_samples)])
+    elif isinstance(measure, np.ndarray):
+        N = measure.shape[0]
+        return np.std([np.mean(measure[np.random.choice(np.arange(N), size=N, replace=True)]).item()
+                       for _ in range(num_samples)])
 
 
 def from_paramitem(x):

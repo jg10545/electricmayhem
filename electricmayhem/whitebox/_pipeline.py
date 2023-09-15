@@ -443,7 +443,6 @@ class Pipeline(PipelineBase):
         self.patch_params = patch_params.clone().detach()
         # wrap up mlflow logging
         self._log_image_to_mlflow(patch_params, "patch.png")
-        if self._logging_to_mlflow: mlflow.end_run()
         return self.patch_params
     
     def visualize_eval_results(self):
@@ -462,17 +461,21 @@ class Pipeline(PipelineBase):
         columns = list(self.df.columns)
         colors = list(self.results.keys())
         ipywidgets.interact(scatter, x=columns, y=columns, c=colors)
+        
+    def __del__(self):
+        if self._logging_to_mlflow: mlflow.end_run()
     
     def optimize(self, objective, logdir, patch_shape, N, num_steps, 
                  batch_size, num_eval_steps=10, mlflow_uri=None, experiment_name=None, 
-                      extra_params={}, minimize=True,  **params):
+                      extra_params={}, minimize=True, lr_decay="cosine",
+                      **params):
         """
         foo
         """
         self.client = _create_ax_client(objective, minimize=minimize, **params)
         
         def _evaluate_trial(p):
-            self.train(batch_size, num_steps, eval_every=-1, **p)
+            self.train(batch_size, num_steps, eval_every=-1, lr_decay=lr_decay, **p)
             self.evaluate(batch_size, num_eval_steps)
             result_mean = np.mean(self.results[objective])
             sem = _bootstrap_std(self.results[objective])
@@ -480,8 +483,9 @@ class Pipeline(PipelineBase):
         
         # for each trial
         for i in tqdm(range(N)):
+            self.global_step = 0
             # point the logger to a new subdirectory
-            ld = os.path.join(logdir, i)
+            ld = os.path.join(logdir, str(i))
             self.set_logging(logdir=ld, mlflow_uri=mlflow_uri,
                              experiment_name=experiment_name,
                              extra_params=extra_params)
@@ -493,7 +497,7 @@ class Pipeline(PipelineBase):
                                        raw_data=_evaluate_trial(parameters))
             j = self.client.to_json_snapshot()
             json.dump(j, open(os.path.join(logdir, "log.json"), "w"))
-            
+            if self._logging_to_mlflow: mlflow.end_run()
             
         return False
         

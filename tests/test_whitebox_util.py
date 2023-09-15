@@ -98,7 +98,6 @@ def test_flatten_dict():
     flattened = _util._flatten_dict(testdict)
     assert isinstance(flattened, dict)
     assert len(flattened) == 6
-    print(list(flattened.keys()))
     for x in ["foo_a", "bar_x", "bar_z_y"]:
         assert x in flattened
         
