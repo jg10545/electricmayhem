@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import json
 import pytest
+import os
 
 from electricmayhem.whitebox import _pipeline, _aug, _create
 
@@ -35,8 +36,8 @@ def test_modelwrapper():
     
     
 def test_pipeline_manual_creation():
-    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":0.25}}
-    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":0.25}}
+    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
+    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":1}}
     
     aug1 = _aug.KorniaAugmentationPipeline(augdict1)
     aug2 = _aug.KorniaAugmentationPipeline(augdict2)
@@ -48,8 +49,8 @@ def test_pipeline_manual_creation():
     assert inpt.shape == outpt.shape
     
 def test_pipeline_dunderscore_creation():
-    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":0.25}}
-    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":0.25}}
+    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
+    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":1}}
     
     aug1 = _aug.KorniaAugmentationPipeline(augdict1)
     aug2 = _aug.KorniaAugmentationPipeline(augdict2)
@@ -69,8 +70,8 @@ def test_pipeline_creation_with_model():
         def forward(self, x):
             return self.conv1(x)
     mod = Model().eval()
-    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":0.25}}
-    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":0.25}}
+    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
+    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":1}}
     
     aug1 = _aug.KorniaAugmentationPipeline(augdict1)
     aug2 = _aug.KorniaAugmentationPipeline(augdict2)
@@ -161,6 +162,52 @@ def test_pipeline_training_loop_runs():
     pipeline = _pipeline.Pipeline(step)
     pipeline.initialize_patch_params(shape)
     pipeline.set_loss(myloss)
-    out = pipeline.train(batch_size, step_size, num_steps,
+    out = pipeline.train(batch_size, num_steps, step_size, 
                          eval_every, num_eval_steps, mainloss=1)
     assert out.shape == shape
+    
+    
+def test_pipeline_get_last_sample_as_dict():
+    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
+    augdict2 = {"ColorJiggle":{"brightness":0.1, "p":1}}
+    
+    aug1 = _aug.KorniaAugmentationPipeline(augdict1)
+    aug2 = _aug.KorniaAugmentationPipeline(augdict2)
+    
+    pipe = aug1 + aug2
+    batch_size = 7
+    inpt = torch.tensor(np.random.uniform(0, 1, (batch_size,3,32,32)).astype(np.float32))
+    # test apply
+    outpt = pipe(inpt)
+    lastsample = pipe.get_last_sample_as_dict()
+    assert isinstance(lastsample, dict)
+    keys = list(lastsample.keys())
+    assert len(lastsample[keys[0]]) == batch_size
+    
+    
+def test_pipeline_save_yaml(tmp_path_factory):
+    fn = str(tmp_path_factory.mktemp("logs"))
+    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
+    
+    stack = _create.PatchStacker()
+    aug = _aug.KorniaAugmentationPipeline(augdict1)
+    
+    pipe = stack + aug
+    pipe.set_logging(logdir=fn)
+    pipe.save_yaml()
+    # now let's open it back up
+    ymltxt = open(os.path.join(pipe.logdir,"config.yml")).read()
+    assert "ColorJiggle" in ymltxt
+    
+    
+def test_pipeline_get_profiler(tmp_path_factory):
+    fn = str(tmp_path_factory.mktemp("logs"))
+    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
+    
+    stack = _create.PatchStacker()
+    aug = _aug.KorniaAugmentationPipeline(augdict1)
+    
+    pipe = stack + aug
+    pipe.set_logging(logdir=fn)
+    prof = pipe._get_profiler()
+    assert isinstance(prof, torch.profiler.profiler.profile)

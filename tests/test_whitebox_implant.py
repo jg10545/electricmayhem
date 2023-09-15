@@ -7,6 +7,7 @@ from electricmayhem.whitebox._implant import RectanglePatchImplanter
 
 
 testtensor = np.random.randint(0, 255, size=(128,128,3))
+testtensor2 = np.random.randint(0, 255, size=(128,128,3))
 colorpatch = torch.tensor(np.random.uniform(0, 1, size=(3, 50,50)))
 bwpatch = torch.tensor(np.random.uniform(0, 1, size=(1, 50,50)))
 box = [10, 10, 100, 100]
@@ -22,6 +23,44 @@ def test_rectanglepatchimplanter_validate_good_patch():
     val = imp.validate(colorpatch)
     assert val
     
+def test_rectanglepatchimplanter_train_and_eval_images():
+    imp = RectanglePatchImplanter({"im1":testtensor, "im2":testtensor}, 
+                                  {"im1":[box], "im2":[box]}, 
+                                  eval_imagedict={"im3":testtensor2, "im4":testtensor2},
+                                  eval_boxdict={"im3":[box], "im4":[box]}, 
+                                  scale=(0.75, 1.25))
+    val = imp.validate(colorpatch)
+    assert val
+    # run a training image through
+    implanted = imp(colorpatch.unsqueeze(0))
+    # do it again without the patch
+    unimplanted = imp(colorpatch.unsqueeze(0), control=True)
+    assert (unimplanted.squeeze(0) == imp.images[0]).all()
+    assert not (unimplanted.squeeze(0) == imp.eval_images[0]).all()
+    # run an eval image through
+    implanted = imp(colorpatch.unsqueeze(0), evaluate=True)
+    # do it again without the patch
+    unimplanted = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
+    assert not (unimplanted.squeeze(0) == imp.images[0]).all()
+    assert (unimplanted.squeeze(0) == imp.eval_images[0]).all()
+    
+def test_rectanglepatchimplanter_eval_mode_without_separate_eval_set():
+    imp = RectanglePatchImplanter({"im1":testtensor, "im2":testtensor}, 
+                                  {"im1":[box], "im2":[box]}, 
+                                  scale=(0.75, 1.25))
+    val = imp.validate(colorpatch)
+    assert val
+    # run a training image through
+    implanted = imp(colorpatch.unsqueeze(0))
+    # do it again without the patch
+    unimplanted = imp(colorpatch.unsqueeze(0), control=True)
+    assert (unimplanted.squeeze(0) == imp.images[0]).all()
+    # run an eval image through
+    implanted = imp(colorpatch.unsqueeze(0), evaluate=True)
+    # do it again without the patch
+    unimplanted = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
+    assert (unimplanted.squeeze(0) == imp.images[0]).all()
+
 def test_rectanglepatchimplanter_sample():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]})
     imp.sample(3)

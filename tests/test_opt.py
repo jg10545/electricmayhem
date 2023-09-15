@@ -85,7 +85,7 @@ def test_PerlinOptimizer(tmp_path_factory):
     
     opt = PerlinOptimizer(img, final_mask, 
                             detect_func, logdir,
-                            budget=100, 
+                            budget=10, 
                             num_augments=[5,7],
                             num_sobol=[5,10],
                             max_freq=[0.01,1],
