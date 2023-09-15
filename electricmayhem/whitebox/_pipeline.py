@@ -1,4 +1,6 @@
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 import torch
 import torch.utils.tensorboard
 import yaml
@@ -6,10 +8,12 @@ import mlflow
 from tqdm import tqdm
 import logging
 import os
+import json
 import inspect
 
-from ._util import _dict_of_tensors_to_dict_of_arrays, _img_to_tensor, _concat_dicts_of_arrays
-from ._util import from_paramitem, to_paramitem
+from ._util import _dict_of_tensors_to_dict_of_arrays, _concat_dicts_of_arrays
+from ._util import _flatten_dict, _mlflow_description, _bootstrap_std
+from ._opt import _create_ax_client
 
 class PipelineBase(torch.nn.Module):
     """
@@ -29,9 +33,9 @@ class PipelineBase(torch.nn.Module):
         return yaml.dump(self.params, default_flow_style=False)
     
     def log_params_to_mlflow(self):
-        mlflow.log_params(self.params)
+        mlflow.log_params(_flatten_dict(self.params))
         
-    def forward(self, x, control=False, **kwargs):
+    def forward(self, x, control=False, evaluate=False, **kwargs):
         return x
         
     def get_last_sample_as_dict(self):
@@ -47,6 +51,13 @@ class PipelineBase(torch.nn.Module):
             y = ModelWrapper(y)
             
         return Pipeline(self,y)
+    
+    def get_description(self):
+        """
+        Return a markdown-formatted one-line string describing the pipeline step. Used for
+        auto-populating a description for MLFlow.
+        """
+        return f"**{self.name}**"
 
         
     
@@ -64,7 +75,7 @@ class ModelWrapper(PipelineBase):
         if model.training:
             logging.warn("model appears to be set to train mode. was this intentional?")
         
-    def forward(self, x, control=False, **kwargs):
+    def forward(self, x, control=False, evaluate=False, **kwargs):
         return self.model(x)
     
     def get_last_sample_as_dict(self):
@@ -84,14 +95,19 @@ class Pipeline(PipelineBase):
         self.steps = torch.nn.ModuleList() #[]
         for a in args:
             _ = self.__add__(a)
-        self.params = {}
         self._defaults = {}
         self.global_step = 0
         self._logging_to_mlflow = False
+        self._profiling = False
+        
+        
+        self.params = {}
+        for e,s in enumerate(self.steps):
+            self.params[f"{e}_{s.name}"] = s.params
             
-    def forward(self, x, control=False, **kwargs):
+    def forward(self, x, control=False, evaluate=False, **kwargs):
         for a in self.steps:
-            x = a(x, control=control)
+            x = a(x, control=control, evaluate=False, **kwargs)
         return x
     
     def __add__(self, y):
@@ -102,33 +118,38 @@ class Pipeline(PipelineBase):
         self.steps.append(y)
         return self
     
-    def to_yaml(self):
-        params = {s.name:s.params for s in self.steps}
-        params["Pipeline"] = self.params
-        params["training"] = self._defaults
-        if hasattr(self, "loss"):
-            params["loss"] = inspect.getsource(self.loss)
-        return yaml.dump(params, default_flow_style=False)
+    def save_yaml(self):
+        """
+        Save self.params to a YAML file
+        """
+        yamltext = yaml.dump(self.params, default_flow_style=False)
+        if hasattr(self, "logdir"):
+            open(os.path.join(self.logdir, "config.yml"),
+                 "w").write(yamltext)
+        return 
     
     def get_last_sample_as_dict(self):
         """
         Return last sample as a JSON-serializable dict
         """
         outdict = {}
-        for s in self.steps:
+        for e, s in enumerate(self.steps):
             sampdict = s.get_last_sample_as_dict()
             for k in sampdict:
-                outdict[f"{s.name}_{k}"] = sampdict[k]
+                outdict[f"{e}_{s.name}_{k}"] = sampdict[k]
                 
         return outdict
     
-    def set_logging(self, logdir=None, mlflow_uri=None, experiment_name=None):
+    def set_logging(self, logdir=None, mlflow_uri=None, experiment_name=None, 
+                    description=None, tags={}, extra_params={}):
         """
         Configure TensorBoard and MLFlow for logging results
         
         :logdir: string; path to directory for saving tensorboard logs
         :mlflow_uri: string; URI of MLFlow server
         :experiment_name: string; name to use for MLflow experiment
+        :description:
+        :tags:
         """
         if logdir is not None:
             self.logdir = logdir
@@ -137,10 +158,32 @@ class Pipeline(PipelineBase):
         if (mlflow_uri is not None)&(experiment_name is not None):
             mlflow.set_tracking_uri(mlflow_uri)
             mlflow.set_experiment(experiment_name)
-            mlflow.start_run()
+            
+            alltags = {"logdir":logdir}
+            for k in tags:
+                alltags[k] = tags[k]
+            if description is None:
+                description = _mlflow_description(self)
+            self.activerun = mlflow.start_run(description=description,
+                                              tags=alltags)
+            if len(extra_params) > 0:
+                mlflow.log_params(extra_params)
             self._logging_to_mlflow = True
         elif (mlflow_uri is not None)&(experiment_name is not None):
             logging.warning("both a server URI and experiment name are required for MLFlow")
+            
+    def _get_profiler(self, wait=1, warmup=1, active=3, repeat=1):
+        self._profiling = True
+        self._stop_profiling_on = (wait+warmup+active)*repeat
+        prof =  torch.profiler.profile(
+            schedule=torch.profiler.schedule(wait=wait, warmup=warmup, 
+                                             active=active, repeat=repeat),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(self.logdir),
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True)
+        prof.start()
+        return prof
             
     def initialize_patch_params(self, patch_shape=None, patch=None, single_patch=True, device=None):
         """
@@ -170,6 +213,16 @@ class Pipeline(PipelineBase):
         self.patch_params = patch.to(device)
         self._single_patch = single_patch
         
+    def _get_learning_rate(self):
+        p = self.params["training"]
+        if p.get("lr_decay", None) == "cosine":
+            lr = p["learning_rate"]*np.cos(self.global_step*np.pi/(2*p["num_steps"]))
+        else:
+            lr = p["learning_rate"]
+        
+        self._log_scalars(learning_rate=lr)
+        return lr
+        
      
     def _log_images(self, **kwargs):
         """
@@ -178,6 +231,13 @@ class Pipeline(PipelineBase):
         if hasattr(self, "writer"):
             for k in kwargs:
                 self.writer.add_image(k, kwargs[k], global_step=self.global_step)
+        
+    def _log_image_to_mlflow(self, img, filename):
+        if self._logging_to_mlflow:
+            if len(img.shape) == 3:
+                # convert from channel-first to channel-last
+                img = img.permute(1,2,0).detach().cpu().numpy()
+                mlflow.log_image(img, filename)
 
     def _log_scalars(self, mlflow_metric=False, **kwargs):
         """
@@ -223,16 +283,19 @@ class Pipeline(PipelineBase):
                 assert lossdict[k].shape == (test_patch_shape[0],), f"loss function output {k} doesn't appear to return the correct shape"
             # record loss dictionary keys
             self._lossdictkeys = list(lossdict.keys())
+            
+        self.params["loss"] = inspect.getsource(self.loss)
         
     def evaluate(self, batch_size=None, num_eval_steps=None):
         """
         Run a set of evaluation batches and log results.
         """
+        p = self.params["training"]
         patch_params = self.patch_params
         if batch_size is None:
-            batch_size = self._defaults["batch_size"]
+            batch_size = p["batch_size"]
         if num_eval_steps is None:
-            num_eval_steps = self._defaults["num_eval_steps"]
+            num_eval_steps = p["num_eval_steps"]
             
         # stack into a batch of patches
         if self._single_patch:
@@ -240,29 +303,46 @@ class Pipeline(PipelineBase):
         else:
             patchbatch = patch_params
             
+        # store loss function outputs for each eval batch
         results = []
+        # store sampled parameters for each eval batch
+        samples = []
         
         # for each eval step
         for _ in range(num_eval_steps):
             stepdict = {}
             # run a batch through with the patch included
-            result_patch = _dict_of_tensors_to_dict_of_arrays(self.loss(self(patchbatch), patchbatch))
+            result_patch = _dict_of_tensors_to_dict_of_arrays(self.loss(self(patchbatch, evaluate=True),
+                                                                        patchbatch))
             # then a control batch; no patch but same parameters
-            result_control = _dict_of_tensors_to_dict_of_arrays(self.loss(self(patchbatch, control=True),
+            result_control = _dict_of_tensors_to_dict_of_arrays(self.loss(self(patchbatch, control=True,
+                                                                               evaluate=True),
                                                                               patchbatch))
             for k in result_patch:
                 stepdict[f"{k}_patch"] = result_patch[k]
                 stepdict[f"{k}_control"] = result_control[k]
                 stepdict[f"{k}_delta"] = result_patch[k] - result_control[k]
             results.append(stepdict)
+            samples.append(self.get_last_sample_as_dict())
         
         # concatenate list of dicts
         results = _concat_dicts_of_arrays(*results)
+        samples = _concat_dicts_of_arrays(*samples)
         self.results = results
+        # combine results and sampled parameters into a dataframe and save.
+        for r in results:
+            samples[r] = results[r]
+        self.df = pd.DataFrame(samples)
+        self.df.to_csv(os.path.join(self.logdir, "eval_results.csv"), index=False)
         # record distributions
         self._log_histograms(**{f"eval_{k}_distribution":results[k] for k in results if "_control" not in k})
         # record averages
-        self._log_scalars(**{f"eval_{k}":np.mean(results[k]) for k in results if "_control" not in k})
+        meanresults = {f"eval_{k}":np.mean(results[k]) for k in results if "_control" not in k}
+        self._log_scalars(**meanresults)
+        
+        # record metrics to mlflow
+        if self._logging_to_mlflow:
+            mlflow.log_metrics(meanresults, step=self.global_step)
         
         # if patch_params has the shape of an image we should just log it as an image
         if len(patch_params.shape) == 3:
@@ -270,35 +350,41 @@ class Pipeline(PipelineBase):
                 self._log_images(patch_params=patch_params)
             elif patch_params.shape[0] == 1:
                 self._log_images(patch_params=torch.concat([patch_params for _ in range(3)], 0))
+                
         
-    def train(self, batch_size, step_size, num_steps, eval_every, num_eval_steps, accumulate=1,
-             **kwargs):
+    def train(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000, num_eval_steps=10, 
+              accumulate=1, lr_decay=None, profile=0, **kwargs):
         """
         Patch training loop. Expects that you've already called initialize_patch_params() and
         set_loss().
         
         :batch_size: number of implantation/composition parameters to run at a time
-        :step_size: float; learning rate for the attack
+        
         :num_steps: int; number of attack steps to take
+        :learning_rate:
         :eval_every: int; how many steps before running self.evaluate()
         :num_eval_steps: int; number of evaluation batches to run
         :accumulate: int; how many batches to accumulate gradients across before updating patch
+        :lr_decay: None or "cosine"
+        :profile:
         """
         # warn the user if they didn't pass any keys from the loss dict
         if hasattr(self, "_lossdictkeys"):
             if len(set(self._lossdictkeys)&set(kwargs.keys())) == 0:
                 logging.warning("no weights given for any terms in your loss dictionary")
         # record the training parameters
-        newdefaults = {"batch_size":batch_size,
-                    "step_size":step_size, "num_steps":num_steps,
+        trainparams = {"batch_size":batch_size,
+                    "learning_rate":learning_rate, "num_steps":num_steps,
                     "eval_every":eval_every, "num_eval_steps":num_eval_steps,
-                    "accumulate":accumulate}
-        for k in newdefaults:
-            self._defaults[k] = newdefaults[k]
+                    "accumulate":accumulate, "lr_decay":lr_decay}
+        
+        self.params["training"] = trainparams
         # dump experiment as YAML to log directory
-        if hasattr(self, "logdir"):
-            open(os.path.join(self.logdir, "config.yml"),
-                 "w").write(self.to_yaml())
+        self.save_yaml()
+        self.log_params_to_mlflow()
+            
+        if profile > 0:
+            prof = self._get_profiler(active=profile)
         
         # copy patch and turn on gradients
         patch_params = self.patch_params.clone().detach().requires_grad_(True)
@@ -333,20 +419,86 @@ class Pipeline(PipelineBase):
             
             # if this is an update step- update patch, clamp to unit interval
             if (i+1)%accumulate == 0:
-                patch_params = patch_params.detach() - step_size*gradient.sign()
+                patch_params = patch_params.detach() - self._get_learning_rate()*gradient.sign()
                 patch_params = patch_params.clamp(0,1).detach().requires_grad_(True)
                 gradient = torch.zeros_like(patch_params)
                 self.patch_params = patch_params.clone().detach()
                 
             
             # if this is an evaluate step- run evaluation
-            if (i+1)%eval_every == 0:
+            if ((i+1)%eval_every == 0)&(eval_every > 0):
                 self.evaluate()
+                
+            # if we're profiling, update the profiler
+            if self._profiling:
+                prof.step()
+                if self.global_step > self._stop_profiling_on+1:
+                    prof.stop()
+                    self._profiling = False
+                    self.prof = prof
                 
             self.global_step += 1
                 
         # finished training- save a copy of the patch tensor
         self.patch_params = patch_params.clone().detach()
+        # wrap up mlflow logging
+        self._log_image_to_mlflow(patch_params, "patch.png")
         return self.patch_params
+    
+    def visualize_eval_results(self):
+        """
+        Use ipywidgets to visualize eval results within a notebook
+        """
+        import ipywidgets
+        def scatter(x, y, c):
+            plt.cla()
+            plt.scatter(self.df[x].values, self.df[y].values, 
+                        c=self.df[c].values, alpha=0.5)
+            plt.colorbar()
+            plt.xlabel(x)
+            plt.ylabel(y)
+            plt.title(c)
+        columns = list(self.df.columns)
+        colors = list(self.results.keys())
+        ipywidgets.interact(scatter, x=columns, y=columns, c=colors)
+        
+    def __del__(self):
+        if self._logging_to_mlflow: mlflow.end_run()
+    
+    def optimize(self, objective, logdir, patch_shape, N, num_steps, 
+                 batch_size, num_eval_steps=10, mlflow_uri=None, experiment_name=None, 
+                      extra_params={}, minimize=True, lr_decay="cosine",
+                      **params):
+        """
+        foo
+        """
+        self.client = _create_ax_client(objective, minimize=minimize, **params)
+        
+        def _evaluate_trial(p):
+            self.train(batch_size, num_steps, eval_every=-1, lr_decay=lr_decay, **p)
+            self.evaluate(batch_size, num_eval_steps)
+            result_mean = np.mean(self.results[objective])
+            sem = _bootstrap_std(self.results[objective])
+            return {objective:(result_mean, sem)}
+        
+        # for each trial
+        for i in tqdm(range(N)):
+            self.global_step = 0
+            # point the logger to a new subdirectory
+            ld = os.path.join(logdir, str(i))
+            self.set_logging(logdir=ld, mlflow_uri=mlflow_uri,
+                             experiment_name=experiment_name,
+                             extra_params=extra_params)
+            # create a new patch
+            self.initialize_patch_params(patch_shape=patch_shape)
+            # run the trial
+            parameters, trial_index = self.client.get_next_trial()
+            self.client.complete_trial(trial_index=trial_index,
+                                       raw_data=_evaluate_trial(parameters))
+            j = self.client.to_json_snapshot()
+            json.dump(j, open(os.path.join(logdir, "log.json"), "w"))
+            if self._logging_to_mlflow: mlflow.end_run()
+            
+        return False
         
     
