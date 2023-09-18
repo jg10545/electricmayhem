@@ -144,7 +144,8 @@ def reduce_mask(img, priority_mask, perturbation, detect_func, augs, n=10,
 
 
 def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10, 
-                      beta=1, include_error_as_positive=False, use_scores=False):
+                      beta=1, include_error_as_positive=False, use_scores=False,
+                      spsa=False):
     """
     Use Randomized Gradient-Free estimation to compute a gradient.
     
@@ -163,7 +164,11 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10,
     :beta: float; smoothing parameter setting size of random shifts to perturbation
     :include_error_as_positive: bool; whether to count -1s from the detect function
         as a positive detection
-    :use_scores:
+    :use_scores: bool; if True utilize soft instead of hard labels
+    :spsa: Use Simultaneous Perturbation for Stochastic Approximation to estimate gradient, which
+        is a different approach than the Nesterov estimator. See An Overview of the Simultaneous 
+        Perturbation Method for Efficient Optimization by Spall for details. In this implementation I am
+        NOT doing the full symmetrized two-point version that Spall defined but rather a one-point estimator.
         
     Returns gradient as a (C,H,W) torch Tensor
     """
@@ -176,8 +181,13 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10,
     us = []
     u_trs = []
     for _ in range(q):
-        u = torch.randn(pert.shape).type(torch.FloatTensor)*mask_resized[:C,:,:]
-        u = u/torch.norm(u)
+        if spsa:
+            # sample from Rademacher distribution
+            u = torch.tensor(np.random.choice([-1,1], size=pert.shape)).type(torch.FloatTensor)*mask_resized[:C,:,:]
+            u = u/torch.norm(u)
+        else:
+            u = torch.randn(pert.shape).type(torch.FloatTensor)*mask_resized[:C,:,:]
+            u = u/torch.norm(u)
 
         u_est = estimate_transform_robustness(detect_func, augs, img, 
                                               mask=mask, 
@@ -189,7 +199,10 @@ def estimate_gradient(img, mask, pert, augs, detect_func, tr_estimate, q=10,
         
     gradient = torch.zeros_like(pert)
     for u,tr in zip(us, u_trs):
-        gradient += (tr - tr_estimate)*u/(beta*q)
+        if spsa:
+            gradient += (tr - tr_estimate)/(beta*q*u)
+        else:
+            gradient += (tr - tr_estimate)*u/(beta*q)
         
     return gradient
 
@@ -252,8 +265,8 @@ class BlackBoxPatchTrainer():
     """
     
     def __init__(self, img, initial_mask, final_mask, detect_func, logdir,
-                 num_augments=100, q=10, beta=1, subset_frac=0, aug_params={}, tr_thresh=0.25,
-                 reduce_steps=10,
+                 num_augments=100, q=10, beta=1, subset_frac=0, spsa=False,
+                 aug_params={}, tr_thresh=0.25, reduce_steps=10,
                  eval_augments=1000, perturbation=None, mask_thresh=0.99, use_scores=False,
                  num_boost_iters=1, include_error_as_positive=False,
                  extra_params={}, fixed_augs=None, reduce_mask=True,
@@ -268,6 +281,8 @@ class BlackBoxPatchTrainer():
         :q: int; number of random vectors to use for RGF
         :beta: float; RGF smoothing parameter
         :subset_frac: float;
+        :spsa: bool; if True, use Spall's Simultaneous Perturbation Stochastic Approximation method instead 
+            of the RGF method used in the GRAPHITE paper
         :aug_params: dict; any non-default options to pass to
             _augment.generate_aug_params()
         :tr_thresh:  float; transform robustness threshold to aim for 
@@ -324,7 +339,7 @@ class BlackBoxPatchTrainer():
                       "num_boost_iters":num_boost_iters,
                       "include_error_as_positive":include_error_as_positive,
                       "reduce_mask":reduce_mask, "subset_frac":subset_frac,
-                      "use_scores":use_scores}
+                      "use_scores":use_scores, "spsa":spsa}
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
         # record hyperparams for all posterity
@@ -444,7 +459,8 @@ class BlackBoxPatchTrainer():
                                      q=self.params["q"], 
                                      beta=self.params["beta"],
                                      include_error_as_positive=self.params["include_error_as_positive"],
-                                     use_scores=self.params["use_scores"])
+                                     use_scores=self.params["use_scores"],
+                                     spsa=self.params["spsa"])
         self.query_counter += self.params["num_augments"]*self.params["q"]
         self.writer.add_scalar("gradient_l2_norm", np.sqrt(np.sum(gradient.numpy()**2)), global_step=self.query_counter)
         return gradient
