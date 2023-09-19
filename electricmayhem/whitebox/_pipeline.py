@@ -33,7 +33,9 @@ class PipelineBase(torch.nn.Module):
         return yaml.dump(self.params, default_flow_style=False)
     
     def log_params_to_mlflow(self):
-        mlflow.log_params(_flatten_dict(self.params))
+        # string-ified loss function can be too long for MLFlow so don't log it
+        p = {p:self.params[p] for p in self.params if p != "loss"}
+        mlflow.log_params(_flatten_dict(p))
         
     def forward(self, x, control=False, evaluate=False, **kwargs):
         return x
@@ -148,9 +150,11 @@ class Pipeline(PipelineBase):
         :logdir: string; path to directory for saving tensorboard logs
         :mlflow_uri: string; URI of MLFlow server
         :experiment_name: string; name to use for MLflow experiment
-        :description:
-        :tags:
+        :description: string; markdown-formatted description for MLFlow run
+        :tags: MLFlow tags
+        :extra_params: dict containing exogenous parameters
         """
+        self.params["extra"] = extra_params
         if logdir is not None:
             self.logdir = logdir
             self.writer = torch.utils.tensorboard.SummaryWriter(logdir)
@@ -286,16 +290,16 @@ class Pipeline(PipelineBase):
             
         self.params["loss"] = inspect.getsource(self.loss)
         
-    def evaluate(self, batch_size=None, num_eval_steps=None):
+    def evaluate(self, batch_size, num_eval_steps):
         """
         Run a set of evaluation batches and log results.
         """
-        p = self.params["training"]
+        #p = self.params["training"]
         patch_params = self.patch_params
-        if batch_size is None:
-            batch_size = p["batch_size"]
-        if num_eval_steps is None:
-            num_eval_steps = p["num_eval_steps"]
+        #if batch_size is None:
+        #    batch_size = p["batch_size"]
+        #if num_eval_steps is None:
+        #    num_eval_steps = p["num_eval_steps"]
             
         # stack into a batch of patches
         if self._single_patch:
@@ -353,7 +357,7 @@ class Pipeline(PipelineBase):
                 
         
     def train(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000, num_eval_steps=10, 
-              accumulate=1, lr_decay=None, profile=0, **kwargs):
+              accumulate=1, lr_decay='cosine', profile=0, **kwargs):
         """
         Patch training loop. Expects that you've already called initialize_patch_params() and
         set_loss().
@@ -366,7 +370,9 @@ class Pipeline(PipelineBase):
         :num_eval_steps: int; number of evaluation batches to run
         :accumulate: int; how many batches to accumulate gradients across before updating patch
         :lr_decay: None or "cosine"
-        :profile:
+        :profile: int; if above zero, run pytorch profiler this many steps.
+        :kwargs: additional training parameters to save. at least one of the terms in your
+            loss function should have a weight here.
         """
         # warn the user if they didn't pass any keys from the loss dict
         if hasattr(self, "_lossdictkeys"):
@@ -377,6 +383,8 @@ class Pipeline(PipelineBase):
                     "learning_rate":learning_rate, "num_steps":num_steps,
                     "eval_every":eval_every, "num_eval_steps":num_eval_steps,
                     "accumulate":accumulate, "lr_decay":lr_decay}
+        for k in kwargs:
+            trainparams[k] = kwargs[k]
         
         self.params["training"] = trainparams
         # dump experiment as YAML to log directory
@@ -427,7 +435,7 @@ class Pipeline(PipelineBase):
             
             # if this is an evaluate step- run evaluation
             if ((i+1)%eval_every == 0)&(eval_every > 0):
-                self.evaluate()
+                self.evaluate(batch_size, num_eval_steps)
                 
             # if we're profiling, update the profiler
             if self._profiling:
