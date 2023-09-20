@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 import torch
+import io
 
 from electricmayhem._augment import augment_image, compose
 
@@ -66,3 +67,19 @@ def save(i, filepath, mask=None, perturbation=None):
         
     img = Image.fromarray((i.permute(1,2,0).numpy()*255).astype(np.uint8))
     img.save(filepath)
+    
+    
+def _plt_figure_to_image(fig):
+    """
+    Convert a matplotlib figure to a PIL Image
+    
+    You can use this to generate an animated GIF from a bunch of figures;
+    convert all to PIL images and run
+    
+    figs[0].save('giftest.gif',
+               save_all=True, append_images=figs[1:], optimize=False, duration=40, loop=0)
+    """
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png')
+    buf.seek(0)
+    return Image.open(buf)
