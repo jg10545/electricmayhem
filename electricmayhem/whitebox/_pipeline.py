@@ -357,7 +357,7 @@ class Pipeline(PipelineBase):
                 
         
     def train(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000, num_eval_steps=10, 
-              accumulate=1, lr_decay='cosine', profile=0, **kwargs):
+              accumulate=1, lr_decay='cosine', profile=0, progressbar=True, **kwargs):
         """
         Patch training loop. Expects that you've already called initialize_patch_params() and
         set_loss().
@@ -371,6 +371,7 @@ class Pipeline(PipelineBase):
         :accumulate: int; how many batches to accumulate gradients across before updating patch
         :lr_decay: None or "cosine"
         :profile: int; if above zero, run pytorch profiler this many steps.
+        :progressbar: bool; if True, use tqdm to monitor progress
         :kwargs: additional training parameters to save. at least one of the terms in your
             loss function should have a weight here.
         """
@@ -399,7 +400,13 @@ class Pipeline(PipelineBase):
         # make a tensor to hold the gradients
         gradient = torch.zeros_like(patch_params)
         
-        for i in tqdm(range(num_steps)):
+        # construct the iterator separately so we have an option to
+        # disable progress bar
+        loop = range(num_steps)
+        if progressbar:
+            loop = tqdm(loop)
+            
+        for i in loop:
             # stack into a batch of patches
             if self._single_patch:
                 patchbatch = torch.stack([patch_params for _ in range(batch_size)], 0)
@@ -483,7 +490,8 @@ class Pipeline(PipelineBase):
         self.client = _create_ax_client(objective, minimize=minimize, **params)
         
         def _evaluate_trial(p):
-            self.train(batch_size, num_steps, eval_every=-1, lr_decay=lr_decay, **p)
+            self.train(batch_size, num_steps, eval_every=-1, lr_decay=lr_decay, 
+                       progressbar=False, **p)
             self.evaluate(batch_size, num_eval_steps)
             result_mean = np.mean(self.results[objective])
             sem = _bootstrap_std(self.results[objective])

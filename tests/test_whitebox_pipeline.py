@@ -166,6 +166,29 @@ def test_pipeline_training_loop_runs():
                          eval_every, num_eval_steps, mainloss=1)
     assert out.shape == shape
     
+def test_pipeline_training_loop_runs_progress_bar_disabled():
+    batch_size = 2
+    step_size = 1e-2
+    num_steps = 5
+    eval_every = 1000
+    num_eval_steps = 1
+    def myloss(outputs, patchparam):
+        outdict = {}
+        outputs = outputs.reshape(outputs.shape[0], -1)
+        outdict["mainloss"] = torch.mean(outputs, 1)
+        return outdict    
+    
+
+    shape = (3,5,7)
+    step = _create.PatchResizer((11,13))
+    pipeline = _pipeline.Pipeline(step)
+    pipeline.initialize_patch_params(shape)
+    pipeline.set_loss(myloss)
+    out = pipeline.train(batch_size, num_steps, step_size, 
+                         eval_every, num_eval_steps, mainloss=1,
+                         progressbar=False)
+    assert out.shape == shape
+    
     
 def test_pipeline_get_last_sample_as_dict():
     augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
