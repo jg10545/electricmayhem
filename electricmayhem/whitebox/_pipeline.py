@@ -61,6 +61,10 @@ class PipelineBase(torch.nn.Module):
         """
         return f"**{self.name}**"
 
+    def run_diagnostics(self, x, writer, step):
+        """
+        """
+        pass
         
     
     
