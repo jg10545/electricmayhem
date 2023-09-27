@@ -61,6 +61,10 @@ class PipelineBase(torch.nn.Module):
         """
         return f"**{self.name}**"
 
+    def log_vizualizations(self, x, writer, step):
+        """
+        """
+        pass
         
     
     
@@ -290,6 +294,20 @@ class Pipeline(PipelineBase):
             
         self.params["loss"] = inspect.getsource(self.loss)
         
+        
+    def log_vizualizations(self, *args, **kwargs):
+        """
+        Wraps the log_vizualizations method in each of the pipeline
+        stages.
+        """
+        with torch.no_grad():
+            x = self.patch_params.unsqueeze(0)
+            # run through each stage, running diagnostics on the
+            # interim steps
+            for s in self.steps:
+                s.log_vizualizations(x, self.writer, self.global_step)
+                x = s(x)
+        
     def evaluate(self, batch_size, num_eval_steps):
         """
         Run a set of evaluation batches and log results.
@@ -344,20 +362,22 @@ class Pipeline(PipelineBase):
         meanresults = {f"eval_{k}":np.mean(results[k]) for k in results if "_control" not in k}
         self._log_scalars(**meanresults)
         
+        
         # record metrics to mlflow
         if self._logging_to_mlflow:
             mlflow.log_metrics(meanresults, step=self.global_step)
         
+        self.log_vizualizations()
         # if patch_params has the shape of an image we should just log it as an image
-        if len(patch_params.shape) == 3:
-            if patch_params.shape[0] == 3:
-                self._log_images(patch_params=patch_params)
-            elif patch_params.shape[0] == 1:
-                self._log_images(patch_params=torch.concat([patch_params for _ in range(3)], 0))
+        #if len(patch_params.shape) == 3:
+        #    if patch_params.shape[0] == 3:
+        #        self._log_images(patch_params=patch_params)
+        #    elif patch_params.shape[0] == 1:
+        #        self._log_images(patch_params=torch.concat([patch_params for _ in range(3)], 0))
                 
         
     def train(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000, num_eval_steps=10, 
-              accumulate=1, lr_decay='cosine', profile=0, **kwargs):
+              accumulate=1, lr_decay='cosine', profile=0, progressbar=True, **kwargs):
         """
         Patch training loop. Expects that you've already called initialize_patch_params() and
         set_loss().
@@ -371,6 +391,7 @@ class Pipeline(PipelineBase):
         :accumulate: int; how many batches to accumulate gradients across before updating patch
         :lr_decay: None or "cosine"
         :profile: int; if above zero, run pytorch profiler this many steps.
+        :progressbar: bool; if True, use tqdm to monitor progress
         :kwargs: additional training parameters to save. at least one of the terms in your
             loss function should have a weight here.
         """
@@ -399,7 +420,13 @@ class Pipeline(PipelineBase):
         # make a tensor to hold the gradients
         gradient = torch.zeros_like(patch_params)
         
-        for i in tqdm(range(num_steps)):
+        # construct the iterator separately so we have an option to
+        # disable progress bar
+        loop = range(num_steps)
+        if progressbar:
+            loop = tqdm(loop)
+            
+        for i in loop:
             # stack into a batch of patches
             if self._single_patch:
                 patchbatch = torch.stack([patch_params for _ in range(batch_size)], 0)
@@ -472,22 +499,66 @@ class Pipeline(PipelineBase):
         
     def __del__(self):
         if self._logging_to_mlflow: mlflow.end_run()
+        
+    def __getitem__(self, i):
+        return self.steps[i]
+    
+    def __len__(self):
+        return len(self.steps)
     
     def optimize(self, objective, logdir, patch_shape, N, num_steps, 
                  batch_size, num_eval_steps=10, mlflow_uri=None, experiment_name=None, 
                       extra_params={}, minimize=True, lr_decay="cosine",
                       **params):
         """
-        foo
+        Use a Gaussian Process to optimize hyperparameters for self.train().
+        
+        :objective: string; name of objective to use for black-box optimization.
+            Should be one of the keys from your loss dictionary.
+        :logdir: string; top-level directory trials will be saved under
+        :patch_shape: tuple; shape of patch parameter to initialize. should look
+            like what you pass to initialize_patch_params().
+        :N: int; number of trials to run.
+        :num_steps: int; budget in number of steps per trial
+        :batch_size: int; batch size for training and eval
+        :num_eval_steps: int; number of evaluation batches to run after each trial
+        :mlflow_uri: string; location of MLFlow server
+        :experiment_name: string; MLFlow experiment
+        :extra_params: dict; exogenous parameters to log to MLFlow
+        :minimize: bool; whether we're minimizing or maximizing the objective.
+        :lr_decay: string or None; what learning rate decay schedule type to use.
+        :params: dictionary of parameters you'd pass to train; including learning_rate,
+            accumulate, and loss function weights. Specify each value in one of three
+            ways:
+                -scalar value: the optimizer will leave this value fixed
+                -tuple (low, high): optimizer will vary this value on a linear scale
+                -tuple (low, high, "log"): optimizer will vary this value on
+                    a log scale
+                -tuple (low, high, "int"): optimizer will vary this value but
+                    only choose integers
+                    
+            for example, 
+            params = {
+                    "learning_rate":(1e-5,1e-1,"log"),
+                    "accumulate":(1,5,"int"),
+                    "lossdict_thingy_1":1.0,
+                    "lossdict_thingy_2":(0,1)
+                }
+                    
         """
-        self.client = _create_ax_client(objective, minimize=minimize, **params)
+        # results are suffixed with "_patch" or "_delta"; the difference is 
+        # useful for diagnostics but shouldn't matter for optimization so we'll
+        # default to the patch one.
+        ob = objective+"_patch"
+        self.client = _create_ax_client(ob, minimize=minimize, **params)
         
         def _evaluate_trial(p):
-            self.train(batch_size, num_steps, eval_every=-1, lr_decay=lr_decay, **p)
+            self.train(batch_size, num_steps, eval_every=-1, lr_decay=lr_decay, 
+                       progressbar=False, **p)
             self.evaluate(batch_size, num_eval_steps)
-            result_mean = np.mean(self.results[objective])
-            sem = _bootstrap_std(self.results[objective])
-            return {objective:(result_mean, sem)}
+            result_mean = np.mean(self.results[ob])
+            sem = _bootstrap_std(self.results[ob])
+            return {ob:(result_mean, sem)}
         
         # for each trial
         for i in tqdm(range(N)):

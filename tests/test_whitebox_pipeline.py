@@ -6,6 +6,12 @@ import os
 
 from electricmayhem.whitebox import _pipeline, _aug, _create
 
+augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
+augdict2 = {"ColorJiggle":{"contrast":0.1, "p":1}}
+
+aug1 = _aug.KorniaAugmentationPipeline(augdict1)
+aug2 = _aug.KorniaAugmentationPipeline(augdict2)
+
 def test_pipelinebase_apply():
     base = _pipeline.PipelineBase(a="foo", b="bar")
     testinput = torch.zeros((3,13,17))
@@ -36,30 +42,27 @@ def test_modelwrapper():
     
     
 def test_pipeline_manual_creation():
-    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
-    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":1}}
-    
-    aug1 = _aug.KorniaAugmentationPipeline(augdict1)
-    aug2 = _aug.KorniaAugmentationPipeline(augdict2)
-    
     pipe = _pipeline.Pipeline(aug1, aug2)
     inpt = torch.tensor(np.random.uniform(0, 1, (1,3,32,32)).astype(np.float32))
     # test apply
     outpt = pipe(inpt)
     assert inpt.shape == outpt.shape
     
-def test_pipeline_dunderscore_creation():
-    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
-    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":1}}
-    
-    aug1 = _aug.KorniaAugmentationPipeline(augdict1)
-    aug2 = _aug.KorniaAugmentationPipeline(augdict2)
-    
+def test_pipeline_dunderscore_creation():    
     pipe = aug1 + aug2
     inpt = torch.tensor(np.random.uniform(0, 1, (1,3,32,32)).astype(np.float32))
     # test apply
     outpt = pipe(inpt)
     assert inpt.shape == outpt.shape
+    
+def test_pipeline_len():    
+    pipe = aug1 + aug2
+    assert len(pipe) == 2
+    
+
+def test_pipeline_getitem():    
+    pipe = aug1 + aug2
+    assert isinstance(pipe[1], _aug.KorniaAugmentationPipeline)
     
 def test_pipeline_creation_with_model():
     class Model(torch.nn.Module):
@@ -70,11 +73,6 @@ def test_pipeline_creation_with_model():
         def forward(self, x):
             return self.conv1(x)
     mod = Model().eval()
-    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
-    augdict2 = {"ColorJiggle":{"contrast":0.1, "p":1}}
-    
-    aug1 = _aug.KorniaAugmentationPipeline(augdict1)
-    aug2 = _aug.KorniaAugmentationPipeline(augdict2)
     
     pipe = aug1 + aug2 + mod
     assert len(pipe.steps) == 3
@@ -166,13 +164,31 @@ def test_pipeline_training_loop_runs():
                          eval_every, num_eval_steps, mainloss=1)
     assert out.shape == shape
     
+def test_pipeline_training_loop_runs_progress_bar_disabled():
+    batch_size = 2
+    step_size = 1e-2
+    num_steps = 5
+    eval_every = 1000
+    num_eval_steps = 1
+    def myloss(outputs, patchparam):
+        outdict = {}
+        outputs = outputs.reshape(outputs.shape[0], -1)
+        outdict["mainloss"] = torch.mean(outputs, 1)
+        return outdict    
+    
+
+    shape = (3,5,7)
+    step = _create.PatchResizer((11,13))
+    pipeline = _pipeline.Pipeline(step)
+    pipeline.initialize_patch_params(shape)
+    pipeline.set_loss(myloss)
+    out = pipeline.train(batch_size, num_steps, step_size, 
+                         eval_every, num_eval_steps, mainloss=1,
+                         progressbar=False)
+    assert out.shape == shape
+    
     
 def test_pipeline_get_last_sample_as_dict():
-    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
-    augdict2 = {"ColorJiggle":{"brightness":0.1, "p":1}}
-    
-    aug1 = _aug.KorniaAugmentationPipeline(augdict1)
-    aug2 = _aug.KorniaAugmentationPipeline(augdict2)
     
     pipe = aug1 + aug2
     batch_size = 7
