@@ -45,6 +45,15 @@ class PatchResizer(PipelineBase):
         """
         return {}
     
+    def log_vizualizations(self, x, writer, step):
+        """
+        """
+        img = self(x)[0]
+        # check to make sure this is an RGB image
+        if x.shape[0] == 3:
+            writer.add_image("resized_patch", img, global_step=step)
+        
+    
     
 class PatchStacker(PipelineBase):
     """
@@ -80,3 +89,11 @@ class PatchStacker(PipelineBase):
         Return last sample as a JSON-serializable dict
         """
         return {}
+    
+    def log_vizualizations(self, x, writer, step):
+        """
+        """
+        img = self(x)[0]
+        # check to make sure this is an RGB image
+        if img.shape[0] == 3:
+            writer.add_image("stacked_patch", img, global_step=step)
