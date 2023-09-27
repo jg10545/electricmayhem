@@ -61,7 +61,7 @@ class PipelineBase(torch.nn.Module):
         """
         return f"**{self.name}**"
 
-    def run_diagnostics(self, x, writer, step):
+    def log_vizualizations(self, x, writer, step):
         """
         """
         pass
@@ -294,6 +294,20 @@ class Pipeline(PipelineBase):
             
         self.params["loss"] = inspect.getsource(self.loss)
         
+        
+    def log_vizualizations(self, *args, **kwargs):
+        """
+        Wraps the log_vizualizations method in each of the pipeline
+        stages.
+        """
+        with torch.no_grad():
+            x = self.patch_params.unsqueeze(0)
+            # run through each stage, running diagnostics on the
+            # interim steps
+            for s in self.steps:
+                s.log_vizualizations(x, self.writer, self.global_step)
+                x = s(x)
+        
     def evaluate(self, batch_size, num_eval_steps):
         """
         Run a set of evaluation batches and log results.
@@ -348,16 +362,18 @@ class Pipeline(PipelineBase):
         meanresults = {f"eval_{k}":np.mean(results[k]) for k in results if "_control" not in k}
         self._log_scalars(**meanresults)
         
+        
         # record metrics to mlflow
         if self._logging_to_mlflow:
             mlflow.log_metrics(meanresults, step=self.global_step)
         
+        self.log_vizualizations()
         # if patch_params has the shape of an image we should just log it as an image
-        if len(patch_params.shape) == 3:
-            if patch_params.shape[0] == 3:
-                self._log_images(patch_params=patch_params)
-            elif patch_params.shape[0] == 1:
-                self._log_images(patch_params=torch.concat([patch_params for _ in range(3)], 0))
+        #if len(patch_params.shape) == 3:
+        #    if patch_params.shape[0] == 3:
+        #        self._log_images(patch_params=patch_params)
+        #    elif patch_params.shape[0] == 1:
+        #        self._log_images(patch_params=torch.concat([patch_params for _ in range(3)], 0))
                 
         
     def train(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000, num_eval_steps=10, 
