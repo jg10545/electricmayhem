@@ -12,81 +12,55 @@ import ax.modelbridge.cross_validation
 import ax.modelbridge.generation_strategy 
 import ax.modelbridge.registry 
 
-from noise import pnoise2
-from ._graphite import BlackBoxPatchTrainer, estimate_transform_robustness
-#import mask
-from electricmayhem import _augment
-
-def normalize(vec):
-    vmax = np.amax(vec)
-    vmin  = np.amin(vec)
-    return (vec - vmin) / (vmax - vmin)
+from electricmayhem import _perlin, _augment
+from ._graphite import estimate_transform_robustness
 
 
-def perlin(H,W, period_y, period_x, octave, freq_sine, lacunarity=2, phase=0):
+def sigmoid(x):
+    return 1/(1+np.exp(-x))
+
+
+def g(XX, YY, H, W, K, a_sq, F0, w0, x0=0, y0=0):
     """
-    Wrapper for the noise.pnoise2() perlin noise generator.
-    
-    :H: int; height of output array
-    :W: int; width of output array
-    :period_y: float; RELATIVE spatial period in y direction. Will be scaled by H to get it in pixel coordinates
-    :period_x: float; RELATIVE spatial period in x direction. Will be scaled by W to get it in pixel coordinates
-    :octave: positive integer; number of iterations
-    :freq_sine: float; frequency of sine function to put noise through
-    :lacunarity: float; frequency increase at each octave
-    
-    Returns a 2D array
+    for a single wavelet
     """
-    # convert period from relative pixel coords to absolute.
-    period_y *= H
-    period_x *= W
-    freq_sine *= (H+W/2)
-    # Perlin noise
-    noise = np.empty((1,H,W), dtype = np.float32)
-    for x in range(W):
-        for y in range(H):
-            noise[0,y,x] = pnoise2(x/period_x, y/period_y, octaves=octave, lacunarity=lacunarity)
-            
-    # Sine function color map
-    noise = normalize(noise)
-    noise = np.sin(noise * freq_sine * np.pi + phase)
-    return normalize(noise)
+    return K*np.exp(-np.pi*a_sq*((XX-x0)**2 + (YY-y0)**2))*np.cos(2*np.pi*F0*((XX-x0)*np.cos(w0)/W+(YY-y0)*np.sin(w0)/W))
 
-def _get_patch_outer_box_from_mask(mask):
-    mask_numpy = mask.permute(1,2,0).numpy()
-    # round up to a 2D array
-    mask_numpy = mask_numpy.max(-1)
-    H,W = mask_numpy.shape
+
+def _generate_wavelet_noise_image(H, W, num_wavelets, params):
+    """
     
-    # INFER LEFT, TOP, X, AND Y
-    y_range = np.arange(H)[mask_numpy.max(1).astype(bool)]
-    x_range = np.arange(W)[mask_numpy.max(0).astype(bool)]
-    top = y_range[0]
-    left = x_range[0]
-    y = y_range[-1] - y_range[0] + 1
-    x = x_range[-1] - x_range[0] + 1
-    return {"top":top, "left":left, "height":y, "width":x}
+    """
+    img = np.zeros((H,W))
+    XX,YY = np.meshgrid(np.arange(W), np.arange(H))
+    a_sq = 1./(H*W)
+    
+    for n in range(num_wavelets):
+        img += g(XX, YY, H, W, 1, a_sq,
+                 params[f"F0_{n}"],
+                 params[f"w0_{n}"],
+                 params[f"x0_{n}"],
+                 params[f"y0_{n}"])
+        
+    return img
 
 
 
-
-class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
+class BayesianWaveletNoisePatchTrainer(_perlin.BayesianPerlinNoisePatchTrainer):
     """
     Black box patch trainer that attempts to generate an adversarial pattern
-    using Perlin noise. Noise parameters are optimized using a Gaussian Process.
+    using wavelet noise. Noise parameters are optimized using a Gaussian Process.
     """
     
     def __init__(self, img, final_mask, detect_func, logdir,
                  num_augments=100, aug_params={}, 
                  eval_augments=1000, 
-                 tune_lacunarity=True, 
+                 num_wavelets=5,
                  num_sobol=5,
-                 gpkg=False,
-                 max_freq=1,
                  include_error_as_positive=False,
                  use_scores=False,
                  extra_params={}, fixed_augs=None,
-                 mlflow_uri=None, experiment_name="perlin_noise", eval_func=None,
+                 mlflow_uri=None, experiment_name="wavelet_noise", eval_func=None,
                  load_from_json_file=None):
         """
         :img: torch.Tensor in (C,H,W) format representing the image being modified
@@ -97,13 +71,9 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         :aug_params: dict; any non-default options to pass to
             _augment.generate_aug_params()
         :eval_augments: int or list of aug params. Augmentations to use at the end of every epoch to evaluate performance
-        :tune_lacunarity: bool; if True include lacunarity in optimization. If False,
-            fix lacunarity=2
+        :num_wavelets: int; how many wavelets to superpose
         :num_sobol: int; number of Sobol sampling steps before switching to Gaussian
             process
-        :gpkg: bool; if True, use Knowledge Gradient instead of Expected Improvement
-            for acquisition function
-        :max_freq: float; maximum value for freq_sine parameter
         :include_error_as_positive: bool; whether to count -1s from the detect function as a positive detection ONLY for boosting, not for mask reduction
         :use_scores: incorporate scores instead of hard labels (training only)
         :extra_params: dictionary of other parameters you'd like recorded
@@ -124,22 +94,17 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         self.mask_thresh = 0.99
         self.fixed_augs = fixed_augs
         self.eval_func = eval_func
-        self.max_freq = max_freq
         
         self.img = img
         #self.initial_mask = initial_mask
         self.final_mask = final_mask
         #self.priority_mask = mask.generate_priority_mask(initial_mask, final_mask)
         self.detect_func = detect_func
-        self.pert_box = _get_patch_outer_box_from_mask(final_mask)
-        self._perlin_params = {"H":self.pert_box["height"],
+        self.pert_box = _perlin._get_patch_outer_box_from_mask(final_mask)
+        self._wavelet_params = {"H":self.pert_box["height"],
                                "W":self.pert_box["width"], 
-                               "period_y":1, 
-                               "period_x":1, 
-                               "octave":2, 
-                               "freq_sine":1, 
-                               "lacunarity":2}
-        self.last_p_val = self._perlin_params
+                               "num_wavelets":num_wavelets}
+        #self.last_p_val = self._perlin_params
         
         if isinstance(eval_augments, int):
             eval_augments = [_augment.generate_aug_params(**aug_params) for _ in range(eval_augments)]
@@ -152,10 +117,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         if load_from_json_file is not None:
             self.client = AxClient.load_from_json_file(load_from_json_file)
         else:
-            if gpkg:
-                model = ax.modelbridge.registry.Models.GPKG
-            else:
-                model = ax.modelbridge.registry.Models.GPEI
+            model = ax.modelbridge.registry.Models.GPEI
             gs = ax.modelbridge.generation_strategy.GenerationStrategy(
                 steps=[
                     # Quasi-random initialization step
@@ -167,14 +129,15 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                     ax.modelbridge.generation_strategy.GenerationStep(
                         model=model,
                         num_trials=-1, 
-                        #model_kwargs={"surrogate": Surrogate(SimpleCustomGP)},
                         ),
                     ]
                 )
             
             self.client = AxClient(generation_strategy=gs,
                                    verbose_logging=False)
-            self.params = self._build_params(tune_lacunarity)
+            self.params = self._build_params(self.pert_box["height"], 
+                                             self.pert_box["width"], 
+                                             num_wavelets)
             self.client.create_experiment(
                 name=experiment_name,
                 parameters=self.params,
@@ -184,10 +147,8 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         self.aug_params = aug_params
         self.params = {"num_augments":num_augments,
                       "include_error_as_positive":include_error_as_positive,
-                      "tune_lacunarity":tune_lacunarity,
+                      "num_wavelets":num_wavelets,
                       "num_sobol":num_sobol,
-                      "gpkg":gpkg,
-                      "max_freq":max_freq,
                       "use_scores":use_scores}
         self.extra_params = extra_params
         self._configure_mlflow(mlflow_uri, experiment_name)
@@ -196,45 +157,43 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
                    "extra_params":self.extra_params},
                   open(os.path.join(logdir, "config.yml"), "w"))
         
-    def _build_params(self, tune_lacunarity=True, tune_phase=False):
+    def _build_params(self, H, W, num_wavelets):
         # period_y, period_x, octave, freq_sine
         params = [
-            {"name":"period_x",
+            {"name":"scale",
              "type":"range",
              "value_type":"float",
-             "bounds":[0.01,1.] 
+             "log_scale":True,
+             "bounds":[0.5,5.] 
                 },
-            {"name":"period_y",
-             "type":"range",
-             "value_type":"float",
-             "bounds":[0.01,1.] 
-               },
+            ]
+        
+        for n in range(num_wavelets):
+            waveparams = [
+                {"name":f"F0_{n}",
+                 "type":"range",
+                 "value_type":"float",
+                 "log_scale":True,
+                 "bounds":[0.1,10]                    
+                    },
+                {"name":f"w0_{n}",
+                 "type":"range",
+                 "value_type":"float",
+                 "bounds":[0.,2*np.pi]                    
+                    },
+                {"name":f"x_{n}",
+                 "type":"range",
+                 "value_type":"float",
+                 "bounds":[0., W]                
+                    },
+                {"name":f"y_{n}",
+                 "type":"range",
+                 "value_type":"float",
+                 "bounds":[0., H]                 
+                    },
+                ]
+            params += waveparams
             
-            {"name":"octave",
-             "type":"range",
-             "value_type":"int",
-             "bounds":[1,4]#[1,8]
-             },
-            {"name":"freq_sine",
-             "type":"range",
-             "value_type":"float",
-             "bounds":[0.01, self.max_freq] 
-                }
-        ]
-        if tune_lacunarity:
-            params.append(
-            {"name":"lacunarity",
-             "type":"range",
-             "value_type":"float",
-             "bounds":[1.5,2.5]
-                })
-        if tune_phase:
-            params.append(
-            {"name":"phase",
-             "type":"range",
-             "value_type":"float",
-             "bounds":[-3.14, 3.14]
-                })
         return params
         
     def _generate_perturbation(self, **kwargs):
@@ -244,17 +203,23 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         b = self.pert_box
         if len(kwargs) > 0:
             p = kwargs
-        else:
+        elif hasattr(self, "last_p_val"):
             p = self.last_p_val
+        else:
+            return torch.tensor(np.zeros((b["height"], b["width"])))
         perl_dict = {}
         for k in self._perlin_params:
             if k in p:
                 perl_dict[k] = p[k]
             else:
                 perl_dict[k] = self._perlin_params[k]
-        noise = perlin(**perl_dict)  
+        #noise = perlin(**perl_dict)  
+        noise = _generate_wavelet_noise_image(b["height"], b["width"], 
+                                              self.params["num_wavelets"], 
+                                              p)
         perturbation = np.zeros((1, self.img.shape[1], self.img.shape[2]))
         perturbation[:,b["top"]:b["top"]+b["height"],b["left"]:b["left"]+b["width"]] += noise
+        perturbation = sigmoid(p["scale"]*perturbation)
         return torch.Tensor(perturbation)
         
         
@@ -271,8 +236,9 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         """
         
         """
-        for k in p:
-            self.writer.add_scalar(k, p[k], global_step=self.query_counter)
+        #for k in p:
+        #    self.writer.add_scalar(k, p[k], global_step=self.query_counter)
+        self.writer.add_scalar("scale", p["scale"], global_step=self.query_counter)
         self.last_p_val = p
         # get the new perturbation
         self.perturbation = self._generate_perturbation(**p)
