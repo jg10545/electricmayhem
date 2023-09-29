@@ -164,16 +164,18 @@ class BayesianWaveletNoisePatchTrainer(_perlin.BayesianPerlinNoisePatchTrainer):
              "type":"range",
              "value_type":"float",
              "log_scale":True,
-             "bounds":[0.5,5.] 
+             "bounds":[0.5,10.] 
                 },
             ]
+        print("NO SCALE")
+        params = []
         
         for n in range(num_wavelets):
             waveparams = [
                 {"name":f"F0_{n}",
                  "type":"range",
                  "value_type":"float",
-                 "log_scale":True,
+                 #"log_scale":True,
                  "bounds":[0.1,25.]                    
                     },
                 {"name":f"w0_{n}",
@@ -220,7 +222,8 @@ class BayesianWaveletNoisePatchTrainer(_perlin.BayesianPerlinNoisePatchTrainer):
         
         perturbation = np.zeros((1, self.img.shape[1], self.img.shape[2]))
         perturbation[:,b["top"]:b["top"]+b["height"],b["left"]:b["left"]+b["width"]] += noise
-        perturbation = sigmoid(p["scale"]*perturbation)
+        #perturbation = sigmoid(p["scale"]*perturbation)
+        perturbation = _perlin.normalize(sigmoid(perturbation))
         return torch.Tensor(perturbation)#.unsqueeze(0)
         
         
@@ -239,7 +242,7 @@ class BayesianWaveletNoisePatchTrainer(_perlin.BayesianPerlinNoisePatchTrainer):
         """
         #for k in p:
         #    self.writer.add_scalar(k, p[k], global_step=self.query_counter)
-        self.writer.add_scalar("scale", p["scale"], global_step=self.query_counter)
+        #self.writer.add_scalar("scale", p["scale"], global_step=self.query_counter)
         self.last_p_val = p
         # get the new perturbation
         self.perturbation = self._generate_perturbation(**p)
