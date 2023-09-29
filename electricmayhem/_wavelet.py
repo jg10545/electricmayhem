@@ -174,22 +174,22 @@ class BayesianWaveletNoisePatchTrainer(_perlin.BayesianPerlinNoisePatchTrainer):
                  "type":"range",
                  "value_type":"float",
                  "log_scale":True,
-                 "bounds":[0.1,10]                    
+                 "bounds":[0.1,25.]                    
                     },
                 {"name":f"w0_{n}",
                  "type":"range",
                  "value_type":"float",
                  "bounds":[0.,2*np.pi]                    
                     },
-                {"name":f"x_{n}",
+                {"name":f"x0_{n}",
                  "type":"range",
                  "value_type":"float",
-                 "bounds":[0., W]                
+                 "bounds":[0., float(W)]                
                     },
-                {"name":f"y_{n}",
+                {"name":f"y0_{n}",
                  "type":"range",
                  "value_type":"float",
-                 "bounds":[0., H]                 
+                 "bounds":[0., float(H)]                 
                     },
                 ]
             params += waveparams
@@ -206,21 +206,22 @@ class BayesianWaveletNoisePatchTrainer(_perlin.BayesianPerlinNoisePatchTrainer):
         elif hasattr(self, "last_p_val"):
             p = self.last_p_val
         else:
-            return torch.tensor(np.zeros((b["height"], b["width"])))
+            return torch.tensor(np.zeros((1,b["height"], b["width"])))
         perl_dict = {}
-        for k in self._perlin_params:
+        for k in self._wavelet_params:
             if k in p:
                 perl_dict[k] = p[k]
             else:
-                perl_dict[k] = self._perlin_params[k]
+                perl_dict[k] = self._wavelet_params[k]
         #noise = perlin(**perl_dict)  
         noise = _generate_wavelet_noise_image(b["height"], b["width"], 
                                               self.params["num_wavelets"], 
                                               p)
+        
         perturbation = np.zeros((1, self.img.shape[1], self.img.shape[2]))
         perturbation[:,b["top"]:b["top"]+b["height"],b["left"]:b["left"]+b["width"]] += noise
         perturbation = sigmoid(p["scale"]*perturbation)
-        return torch.Tensor(perturbation)
+        return torch.Tensor(perturbation)#.unsqueeze(0)
         
         
     def _get_img_with_perturbation(self, **kwargs):
@@ -267,85 +268,7 @@ class BayesianWaveletNoisePatchTrainer(_perlin.BayesianPerlinNoisePatchTrainer):
         return d
     
         
-    def evaluate(self, use_best=False):
-        """
-        Run a suite of evaluation tests on the test augmentations.
-        """
-        if use_best:
-            ind, p, _ = self.client.get_best_trial()
-            self.perturbation = self._generate_perturbation(**p)
         
-        tr_dict, outcomes, raw = estimate_transform_robustness(self.detect_func, 
-                                                          self.eval_augments,
-                                                          self.img,
-                                                          self._get_mask(),
-                                                          self.perturbation,
-                                                          return_outcomes=True,
-                                                          include_error_as_positive=self.params["include_error_as_positive"])
-        
-        self.writer.add_scalar("eval_transform_robustness", tr_dict["tr"],
-                               global_step=self.query_counter)
-        self.writer.add_scalar("eval_crash_frac", tr_dict["crash_frac"],
-                               global_step=self.query_counter)
-        
-        self.log_metrics_to_mlflow({"eval_transform_robustness":tr_dict["tr"]})
-        # store results in memory too
-        self.tr_dict = tr_dict
-            
-        # visual check for correlations in transform robustness across augmentation params
-        coldict = {-1:'k', 1:'b', 0:'r'}
-        fig, ax = plt.subplots(nrows=1, ncols=1)
-        ax.scatter([a["scale"] for a in self.eval_augments],
-                   [a["gamma"] for a in self.eval_augments],
-                   s=[2+2*a["blur"] for a in self.eval_augments],
-                   c=[coldict[o] for o in outcomes],
-                  alpha=0.5)
-        ax.set_xlabel("scale", fontsize=14)
-        ax.set_ylabel("gamma", fontsize=14)
-        
-        self.writer.add_figure("evaluation_augmentations", fig, global_step=self.query_counter)
-        
-        if self.eval_func is not None:
-            self.eval_func(self.writer, self.query_counter, 
-                           img=self.img, mask=self._get_mask(),
-                           perturbation=self.perturbation,
-                           augs=self.eval_augments,
-                           tr_dict=tr_dict, outcomes=outcomes, raw=raw,
-                           include_error_as_positive=self.params["include_error_as_positive"])
-        
-
-        
-        
-    def _run_one_epoch(self, lrs=None, budget=None):
-        parameters, trial_index = self.client.get_next_trial()
-        self.client.complete_trial(trial_index=trial_index, 
-                                   raw_data=self._run_trial(parameters))
-
-
-    def contour_plot(self):
-        """
-        
-        """
-        ax.utils.notebook.plotting.init_notebook_plotting(offline=True)
-        ax.utils.notebook.plotting.render(
-            ax.plot.contour.interact_contour(
-                model=self.client.generation_strategy.model,
-                metric_name="transform_robustness")
-            )
-        
-        
-    def crossvalidation_plot(self):
-        """
-        
-        """
-        ax.utils.notebook.plotting.init_notebook_plotting(offline=True)
-        cv_results = ax.modelbridge.cross_validation.cross_validate(
-            model=self.client.generation_strategy.model)
-        ax.utils.notebook.plotting.render(
-            ax.plot.diagnostic.interact_cross_validation(
-                cv_results
-            )
-        )
         
     
                    
