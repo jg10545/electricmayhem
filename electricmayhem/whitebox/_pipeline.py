@@ -460,9 +460,10 @@ class Pipeline(PipelineBase):
                 self.patch_params = patch_params.clone().detach()
                 
             
-            # if this is an evaluate step- run evaluation
+            # if this is an evaluate step- run evaluation and save params
             if ((i+1)%eval_every == 0)&(eval_every > 0):
                 self.evaluate(batch_size, num_eval_steps)
+                self.save_patch_params()
                 
             # if we're profiling, update the profiler
             if self._profiling:
@@ -506,6 +507,14 @@ class Pipeline(PipelineBase):
     def __len__(self):
         return len(self.steps)
     
+    def save_patch_params(self, path=None):
+        """
+        
+        """
+        if path is None:
+            path = os.path.join(self.logdir, "patch_params.pt")
+        torch.save(self.patch_params, path)
+    
     def optimize(self, objective, logdir, patch_shape, N, num_steps, 
                  batch_size, num_eval_steps=10, mlflow_uri=None, experiment_name=None, 
                       extra_params={}, minimize=True, lr_decay="cosine",
@@ -546,10 +555,7 @@ class Pipeline(PipelineBase):
                 }
                     
         """
-        # results are suffixed with "_patch" or "_delta"; the difference is 
-        # useful for diagnostics but shouldn't matter for optimization so we'll
-        # default to the patch one.
-        ob = objective+"_patch"
+        ob = objective+"_delta"
         self.client = _create_ax_client(ob, minimize=minimize, **params)
         
         def _evaluate_trial(p):
