@@ -117,3 +117,11 @@ class KorniaAugmentationPipeline(PipelineBase):
     
     def get_description(self):
         return f"**{self.name}:** {', '.join(self.params['ordering'])}"
+    
+    def log_vizualizations(self, x, writer, step):
+        """
+        """
+        img = self(x)[0]
+        # check to make sure this is an RGB image
+        if img.shape[0] == 3:
+            writer.add_image("implanted_patch", img, global_step=step)
