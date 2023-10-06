@@ -33,9 +33,10 @@ class PipelineBase(torch.nn.Module):
         return yaml.dump(self.params, default_flow_style=False)
     
     def log_params_to_mlflow(self):
-        # string-ified loss function can be too long for MLFlow so don't log it
-        p = {p:self.params[p] for p in self.params if p != "loss"}
-        mlflow.log_params(_flatten_dict(p))
+        p = _flatten_dict(self.params)
+        # mlflow has a limit of 500 characters for params. 
+        p = {k:p[k] for k in p if len(str(p[k])) < 500}
+        mlflow.log_params(p)
         
     def forward(self, x, control=False, evaluate=False, **kwargs):
         return x
@@ -288,7 +289,7 @@ class Pipeline(PipelineBase):
             assert isinstance(lossdict, dict), "this loss function doesn't appear to generate a dictionary"
             for k in lossdict:
                 assert isinstance(lossdict[k], torch.Tensor), f"loss function output {k} doesn't appear to be a Tensor"
-                assert lossdict[k].shape == (test_patch_shape[0],), f"loss function output {k} doesn't appear to return the correct shape"
+                assert lossdict[k].shape == (test_patch_shape[0],), f"loss function output {k} doesn't appear to return the correct shape; returned {lossdict[k].shape}"
             # record loss dictionary keys
             self._lossdictkeys = list(lossdict.keys())
             

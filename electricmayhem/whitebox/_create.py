@@ -6,8 +6,46 @@ import logging
 from ._pipeline import PipelineBase
 
 
+class PatchSaver(PipelineBase):
+    """
+    Pass-through for a patch that'll log it to tensorboard
+    """
+    name = "PatchSaver"
+    
+    def __init__(self):
+        super().__init__()
+        
+        self.params = {}
+        self.lastsample = {}
+        
+    
+    def forward(self, patches, control=False, evaluate=False, **kwargs):
+        """
+        Implant a batch of patches in a batch of images
+        
+        :patches: torch Tensor; stack of patches
+        :control: no effect on this function
+        :kwargs: no effect on this function
+        """
+        return patches
+    
+    
+    def get_last_sample_as_dict(self):
+        """
+        Return last sample as a JSON-serializable dict
+        """
+        return {}
+    
+    def log_vizualizations(self, x, writer, step):
+        """
+        """
+        img = self(x)[0]
+        # check to make sure this is an RGB image
+        if img.shape[0] == 3:
+            writer.add_image("patch", img, global_step=step)
 
-class PatchResizer(PipelineBase):
+
+class PatchResizer(PatchSaver):
     """
     Class for resizing a batch of patches to a fixed size. Wraps
     kornia.geometry.
@@ -38,20 +76,12 @@ class PatchResizer(PipelineBase):
         return kornia.geometry.resize(patches, self.size, 
                                       interpolation=self.params["interpolation"])
     
-    
-    def get_last_sample_as_dict(self):
+    def get_description(self):
         """
-        Return last sample as a JSON-serializable dict
+        Return a markdown-formatted one-line string describing the pipeline step. Used for
+        auto-populating a description for MLFlow.
         """
-        return {}
-    
-    def log_vizualizations(self, x, writer, step):
-        """
-        """
-        img = self(x)[0]
-        # check to make sure this is an RGB image
-        if x.shape[0] == 3:
-            writer.add_image("resized_patch", img, global_step=step)
+        return f"**{self.name}:** resize to {self.size}"
         
     
     
@@ -83,17 +113,53 @@ class PatchStacker(PipelineBase):
         # dimension 0 is batch dimension; dimension 1 is channels
         return torch.concat([patches for _ in range(self.params["num_channels"])], 1)
     
+    def get_description(self):
+        """
+        Return a markdown-formatted one-line string describing the pipeline step. Used for
+        auto-populating a description for MLFlow.
+        """
+        return f"**{self.name}:** stack to {self.params['num_channels']} channels"
     
-    def get_last_sample_as_dict(self):
-        """
-        Return last sample as a JSON-serializable dict
-        """
-        return {}
     
-    def log_vizualizations(self, x, writer, step):
+class PatchTiler(PatchSaver):
+    """
+    Class for tiling a batch of tiny patches to a fixed size. 
+    """
+    name = "PatchTiler"
+    
+    def __init__(self, size):
         """
+        :size: length-2 tuple giving target size (H,W)
         """
-        img = self(x)[0]
-        # check to make sure this is an RGB image
-        if img.shape[0] == 3:
-            writer.add_image("stacked_patch", img, global_step=step)
+        super().__init__()
+        assert len(size) == 2, "expected a length-2 tuple (H,W) for the size"
+        self.size = size
+        
+        self.params = {"size":list(size)}
+        self.lastsample = {}
+        
+    
+    def forward(self, patches, control=False, evaluate=False, **kwargs):
+        """
+        Implant a batch of patches in a batch of images
+        
+        :patches: torch Tensor; stack of patches
+        :control: no effect on this function
+        :kwargs: no effect on this function
+        """
+        H,W = self.size
+        # figure out how many times to tile along vertical direction
+        numtiles_H = H//patches.shape[2] + 1
+        patchcolumn = torch.concat([patches for _ in range(numtiles_H)],2)[:,:,:H,:]
+        # same basic computation for horizontal
+        numtiles_W = W//patches.shape[3] + 1
+        output = torch.concat([patchcolumn for _ in range(numtiles_W)], 3)[:,:,:,:W]
+        return output
+    
+    def get_description(self):
+        """
+        Return a markdown-formatted one-line string describing the pipeline step. Used for
+        auto-populating a description for MLFlow.
+        """
+        return f"**{self.name}:** tile to {self.size}"
+        
