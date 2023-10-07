@@ -28,6 +28,7 @@ class PipelineBase(torch.nn.Module):
     def __init__(self, **kwargs):
         super(PipelineBase, self).__init__()
         self.params = kwargs
+        self._logviz = True
         
     def to_yaml(self):
         return yaml.dump(self.params, default_flow_style=False)
@@ -313,13 +314,8 @@ class Pipeline(PipelineBase):
         """
         Run a set of evaluation batches and log results.
         """
-        #p = self.params["training"]
         patch_params = self.patch_params
-        #if batch_size is None:
-        #    batch_size = p["batch_size"]
-        #if num_eval_steps is None:
-        #    num_eval_steps = p["num_eval_steps"]
-            
+        
         # stack into a batch of patches
         if self._single_patch:
             patchbatch = torch.stack([patch_params for _ in range(batch_size)], 0)
@@ -369,12 +365,6 @@ class Pipeline(PipelineBase):
             mlflow.log_metrics(meanresults, step=self.global_step)
         
         self.log_vizualizations()
-        # if patch_params has the shape of an image we should just log it as an image
-        #if len(patch_params.shape) == 3:
-        #    if patch_params.shape[0] == 3:
-        #        self._log_images(patch_params=patch_params)
-        #    elif patch_params.shape[0] == 1:
-        #        self._log_images(patch_params=torch.concat([patch_params for _ in range(3)], 0))
                 
         
     def train(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000, num_eval_steps=10, 

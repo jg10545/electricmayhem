@@ -23,12 +23,14 @@ class KorniaAugmentationPipeline(PipelineBase):
     """
     name = "KorniaAugmentationPipeline"
     
-    def __init__(self, augmentations, ordering=None):
+    def __init__(self, augmentations, ordering=None, logviz=True):
         """
         :augmentations: dict mapping augmentation names (as they appear in the 
             kornia API) to dictionaries of keyword arguments for that augmentation
         :ordering: list of augmentation names, specifying the order in which they
             should be applied.
+        :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
+            is called.
         """
         super(KorniaAugmentationPipeline, self).__init__()
         # initialize the kornia augmentations
@@ -49,6 +51,7 @@ class KorniaAugmentationPipeline(PipelineBase):
         # and record parameters
         self.params = augmentations
         self.params["ordering"] = ordering
+        self._logviz = logviz
         
         
     def forward(self, x, control=False, evaluate=False, params=None, **kwargs):
@@ -121,7 +124,8 @@ class KorniaAugmentationPipeline(PipelineBase):
     def log_vizualizations(self, x, writer, step):
         """
         """
-        img = self(x)[0]
-        # check to make sure this is an RGB image
-        if img.shape[0] == 3:
-            writer.add_image("implanted_patch", img, global_step=step)
+        if self._logviz:
+            img = self(x)[0]
+            # check to make sure this is an RGB image
+            if img.shape[0] == 3:
+                writer.add_image("augmented_image", img, global_step=step)

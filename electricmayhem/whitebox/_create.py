@@ -12,11 +12,16 @@ class PatchSaver(PipelineBase):
     """
     name = "PatchSaver"
     
-    def __init__(self):
+    def __init__(self, logviz=True):
+        """
+        :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
+            is called."
+        """
         super().__init__()
         
         self.params = {}
         self.lastsample = {}
+        self._logviz = logviz
         
     
     def forward(self, patches, control=False, evaluate=False, **kwargs):
@@ -39,10 +44,11 @@ class PatchSaver(PipelineBase):
     def log_vizualizations(self, x, writer, step):
         """
         """
-        img = self(x)[0]
-        # check to make sure this is an RGB image
-        if img.shape[0] == 3:
-            writer.add_image("patch", img, global_step=step)
+        if self._logviz:
+            img = self(x)[0]
+            # check to make sure this is an RGB image
+            if img.shape[0] == 3:
+                writer.add_image(f"{self.name}_patch", img, global_step=step)
 
 
 class PatchResizer(PatchSaver):
@@ -52,10 +58,12 @@ class PatchResizer(PatchSaver):
     """
     name = "PatchResizer"
     
-    def __init__(self, size, interpolation="bilinear"):
+    def __init__(self, size, interpolation="bilinear", logviz=True):
         """
         :size: length-2 tuple giving target size (H,W)
         :interpolation: string; 'bilinear', 'nearest', 'linear', 'bicubic', 'trilinear', or 'area'
+        :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
+            is called.
         """
         super().__init__()
         assert len(size) == 2, "expected a length-2 tuple (H,W) for the size"
@@ -63,6 +71,7 @@ class PatchResizer(PatchSaver):
         
         self.params = {"size":list(size), "interpolation":interpolation}
         self.lastsample = {}
+        self._logviz = logviz
         
     
     def forward(self, patches, control=False, evaluate=False, **kwargs):
@@ -85,21 +94,24 @@ class PatchResizer(PatchSaver):
         
     
     
-class PatchStacker(PipelineBase):
+class PatchStacker(PatchSaver):
     """
     Turn a 1-channel patch into a 3-channel patch
     """
     name = "PatchStacker"
     
-    def __init__(self, num_channels=3):
+    def __init__(self, num_channels=3, logviz=True):
         """
         :size: length-2 tuple giving target size (H,W)
         :interpolation: string; 'bilinear', 'nearest', 'linear', 'bicubic', 'trilinear', or 'area'
+        :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
+            is called.
         """
         super().__init__()
         
         self.params = {"num_channels":num_channels}
         self.lastsample = {}
+        self._logviz = logviz
         
     
     def forward(self, patches, control=False, evaluate=False, **kwargs):
@@ -127,9 +139,11 @@ class PatchTiler(PatchSaver):
     """
     name = "PatchTiler"
     
-    def __init__(self, size):
+    def __init__(self, size, logviz=True):
         """
         :size: length-2 tuple giving target size (H,W)
+        :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
+            is called.
         """
         super().__init__()
         assert len(size) == 2, "expected a length-2 tuple (H,W) for the size"
@@ -137,6 +151,7 @@ class PatchTiler(PatchSaver):
         
         self.params = {"size":list(size)}
         self.lastsample = {}
+        self._logviz = logviz
         
     
     def forward(self, patches, control=False, evaluate=False, **kwargs):
