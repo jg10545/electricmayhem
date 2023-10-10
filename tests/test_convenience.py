@@ -13,4 +13,4 @@ def test_plt_figure_to_image():
     plt.ion()
     img = _convenience._plt_figure_to_image(fig)
     assert isinstance(img, Image.Image)
-    assert np.array(img).shape == (480,640,4)
+    assert np.array(img).shape == (413, 547, 4)

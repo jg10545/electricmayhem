@@ -80,6 +80,6 @@ def _plt_figure_to_image(fig):
                save_all=True, append_images=figs[1:], optimize=False, duration=40, loop=0)
     """
     buf = io.BytesIO()
-    fig.savefig(buf, format='png')
+    fig.savefig(buf, format='png', bbox_inches='tight')
     buf.seek(0)
     return Image.open(buf)
