@@ -63,7 +63,7 @@ class PipelineBase(torch.nn.Module):
         """
         return f"**{self.name}**"
 
-    def log_vizualizations(self, x, writer, step):
+    def log_vizualizations(self, x, x_control, writer, step):
         """
         """
         pass
@@ -304,11 +304,13 @@ class Pipeline(PipelineBase):
         """
         with torch.no_grad():
             x = self.patch_params.unsqueeze(0)
+            x_control = self.patch_params.clone().unsqueeze(0)
             # run through each stage, running diagnostics on the
             # interim steps
             for s in self.steps:
-                s.log_vizualizations(x, self.writer, self.global_step)
-                x = s(x)
+                s.log_vizualizations(x, x_control, self.writer, self.global_step)
+                x = s(x, evaluate=True)
+                x_control = s(x_control, control=True, evaluate=True)
         
     def evaluate(self, batch_size, num_eval_steps):
         """
@@ -500,7 +502,7 @@ class Pipeline(PipelineBase):
     
     def save_patch_params(self, path=None):
         """
-        
+        Use torch.save to record self.patch_params to file
         """
         if path is None:
             path = os.path.join(self.logdir, "patch_params.pt")
