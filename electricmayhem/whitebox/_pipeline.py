@@ -369,7 +369,7 @@ class Pipeline(PipelineBase):
         self.log_vizualizations()
                 
         
-    def train(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000, num_eval_steps=10, 
+    def train_patch(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000, num_eval_steps=10, 
               accumulate=1, lr_decay='cosine', profile=0, progressbar=True, **kwargs):
         """
         Patch training loop. Expects that you've already called initialize_patch_params() and
@@ -478,6 +478,7 @@ class Pipeline(PipelineBase):
         """
         Use ipywidgets to visualize eval results within a notebook
         """
+        assert hasattr(self, "df"), "you gotta train a patch first for this to work bro"
         import ipywidgets
         def scatter(x, y, c):
             plt.cla()
@@ -552,7 +553,7 @@ class Pipeline(PipelineBase):
         self.client = _create_ax_client(ob, minimize=minimize, **params)
         
         def _evaluate_trial(p):
-            self.train(batch_size, num_steps, eval_every=-1, lr_decay=lr_decay, 
+            self.train_patch(batch_size, num_steps, eval_every=-1, lr_decay=lr_decay, 
                        progressbar=False, **p)
             self.evaluate(batch_size, num_eval_steps)
             result_mean = np.mean(self.results[ob])
