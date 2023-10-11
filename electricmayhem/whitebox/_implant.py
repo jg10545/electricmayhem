@@ -142,7 +142,7 @@ class RectanglePatchImplanter(PipelineBase):
             params = self.lastsample
         # sample parameters if necessary
         #self.sample(patches.shape[0], control=control, **params)
-        self.sample(patches.shape[0], **params)
+        self.sample(patches.shape[0], evaluate=evaluate, **params)
         s = self.lastsample
         if self.params["scale"][1] > self.params["scale"][0]:
             patchlist = [kornia.geometry.rescale(patches[i].unsqueeze(0), (s["scale"][i], s["scale"][i])).squeeze(0) 
