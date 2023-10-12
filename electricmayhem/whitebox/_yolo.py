@@ -11,6 +11,8 @@ from electricmayhem._convenience import _plt_figure_to_image
 def xywh2xyxy(x):
     """
     convert boxes from [x,y,w,h] to [left, upper, right, lower]
+    
+    x should be an (N,4) array 
     """
     y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
     y[:,0] = x[:,0] - x[:,2]/2 # left x
@@ -21,6 +23,9 @@ def xywh2xyxy(x):
 
 
 def IoU(box1, box2):
+    """
+    compute intersection-over-union for two boxes
+    """
     left1, top1, right1, bottom1 = box1
     left2, top2, right2, bottom2 = box2
     
@@ -46,20 +51,24 @@ def IoU(box1, box2):
         return float(intersection)/union
         
 
-def plot_detections(image, detections, classnames=None, thresh=0.1, iouthresh=0.5):
+def plot_detections(image, detections, k, classnames=None, thresh=0.1, iouthresh=0.5):
     """
-    visualize the detections from the first element of a batch.
+    visualize the detections from one element of a batch.
     
     Detections should have format (x1, y1, x2, y2, objectness, class1....classN)
     
     :image: (N,C,H,W) pytorch tensor
     :detections: (N,M,5+num_classes) pytorch tensor of detections. model will only
         output this if it's in .eval() mode
+    :k: which batch index to pull from
+    :classnames: optional; list of class names for display
+    :thresh: minimum objectness score for plotting
+    :iousthresh: minimum IoU threshold for non-maximal suppression
     """
     # pull first image as a numpy array
-    im = image[0].permute(1,2,0).detach().cpu().numpy() # should be (H,W,C)
+    im = image[k].permute(1,2,0).detach().cpu().numpy() # should be (H,W,C)
     # find relevant subset of detections- first image in batch
-    detections = detections[0].detach().cpu().numpy() # (M,5+num_classes)
+    detections = detections[k].detach().cpu().numpy() # (M,5+num_classes)
     # then above threshold
     detections = detections[detections[:,4] >= thresh]
     boxes = xywh2xyxy(detections[:,:4])
@@ -104,8 +113,28 @@ def plot_detections(image, detections, classnames=None, thresh=0.1, iouthresh=0.
                 c = classnames[int(classes[i])]
             label = f"({scores[i]:.2f}) {c}"
             ax.text(boxes[i,0], boxes[i,1], label, color=color)
+            indices_plotted.append(i)
         
     return fig
+
+
+def _plot_detection_pair_to_array(im1, dets1, im2, dets2, k, classnames=None, 
+                         thresh=0.1, iouthresh=0.5):
+    """
+    Wrapper for plot_detections that plots a pair of images, converts to a
+    numpy array, and concatenates them
+    """
+    fig1 = plot_detections(im1, dets1, k, classnames=classnames,
+                          thresh=thresh, iouthresh=iouthresh)
+    fig2 = plot_detections(im2, dets2, k, classnames=classnames,
+                                  thresh=thresh, iouthresh=iouthresh)
+    
+    fig_arr1 = np.array(_plt_figure_to_image(fig1))
+    fig_arr2 = np.array(_plt_figure_to_image(fig2))
+    combined = np.concatenate([fig_arr1, fig_arr2], 1)
+    plt.close(fig1)
+    plt.close(fig2)
+    return combined
 
 
 
@@ -134,27 +163,25 @@ class YOLOWrapper(ModelWrapper):
         
     def log_vizualizations(self, x, x_control, writer, step):
         """
+        Log a batch of image pairs (control and with patch), showing model
+        detections.
         """
         if self._logviz:
-            detects = self(x[:1])[0]
-            detects_control = self(x_control[:1])[0]
-            
+            fig_arrays = []
+            detects = self(x)
+            detects_control = self(x_control)[0]
             plt.ioff()
-            fig = plot_detections(x, detects, classnames=self.classnames,
-                                  thresh=self.thresh, iouthresh=self.iouthresh)
-            fig_control = plot_detections(x_control, detects_control,
-                                          classnames=self.classnames,
-                                          thresh=self.thresh, iouthresh=self.iouthresh)
-            
-            fig_arr = np.array(_plt_figure_to_image(fig))
-            fig_control_arr = np.array(_plt_figure_to_image(fig_control))
-            combined = np.concatenate([fig_control_arr, fig_arr], 1)
-            plt.close(fig)
-            plt.close(fig_control)
+            for i in range(x.shape[0]):
+                fig_arrays.append(
+                    _plot_detection_pair_to_array(x_control, detects_control, 
+                                                  x, detects, i,
+                                                  classnames=self.classnames,
+                                                  thresh=self.thresh,
+                                                  iouthresh=self.iouthresh)
+                    )
             plt.ion()
-            
-            # check to make sure this is an RGB image
-            writer.add_image("detections", combined[:,:,:3], global_step=step,
-                             dataformats='HWC')
+            fig_arrays = np.stack(fig_arrays, 0)
+            writer.add_images("detections", fig_arrays[:,:,:,:3], global_step=step,
+                             dataformats='NHWC')
         
     
