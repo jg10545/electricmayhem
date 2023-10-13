@@ -297,14 +297,14 @@ class Pipeline(PipelineBase):
         self.params["loss"] = inspect.getsource(self.loss)
         
         
-    def log_vizualizations(self, *args, **kwargs):
+    def log_vizualizations(self, patchbatch, *args, **kwargs):
         """
         Wraps the log_vizualizations method in each of the pipeline
         stages.
         """
         with torch.no_grad():
-            x = self.patch_params.unsqueeze(0)
-            x_control = self.patch_params.clone().unsqueeze(0)
+            x = patchbatch 
+            x_control = patchbatch.clone()
             # run through each stage, running diagnostics on the
             # interim steps
             for s in self.steps:
@@ -366,7 +366,7 @@ class Pipeline(PipelineBase):
         if self._logging_to_mlflow:
             mlflow.log_metrics(meanresults, step=self.global_step)
         
-        self.log_vizualizations()
+        self.log_vizualizations(patchbatch)
                 
         
     def train_patch(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000, num_eval_steps=10, 
