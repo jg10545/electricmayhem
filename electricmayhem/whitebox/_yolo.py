@@ -168,7 +168,7 @@ class YOLOWrapper(ModelWrapper):
         """
         if self._logviz:
             fig_arrays = []
-            detects = self(x)
+            detects = self(x)[0]
             detects_control = self(x_control)[0]
             plt.ioff()
             for i in range(x.shape[0]):
