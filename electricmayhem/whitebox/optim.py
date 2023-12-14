@@ -37,7 +37,7 @@ class MIFGSM(torch.optim.Optimizer):
     Note that this formulates the MI-FGSM optimizer for gradient descent as
     opposed to the ascent form in the paper.
     """
-    def __init__(self, params, lr=1e-3, mu=1.):
+    def __init__(self, params, lr=1e-3, mu=0.9):
         if lr <= 0.:
             raise ValueError(f"invalid learning rate {lr}")
         defaults={"lr":lr, "mu":mu}
