@@ -55,6 +55,15 @@ def _create_ax_client(objective, minimize=True, **params):
                     assert False, f"I don't know what to do with {par[2]}"
             else:
                 assert False, "I don't know what's even going on here"
+        elif isinstance(par, list):
+            sampled_params.append(
+                    {
+                        "name":p,
+                        "type":"choice",
+                        "values":par,
+                        "is_ordered":False
+                    })
+            
         else:
             # add static param
             sampled_params.append({
