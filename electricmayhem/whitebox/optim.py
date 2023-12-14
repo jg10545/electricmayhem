@@ -1,5 +1,6 @@
 import torch
 
+
 class BIM(torch.optim.Optimizer):
     """
     Class for the Basic Iterative Method, or iterative FGSM, from "Adversarial
@@ -80,3 +81,38 @@ class MIFGSM(torch.optim.Optimizer):
                 # note that we're doing gradient descent here rather than gradient ascent as
                 # described in the paper
                 p.data -= group["lr"]*state["momentum_buffer"].data.sign()
+                
+                
+_OPTIMIZER_DICT = {
+    "adam":torch.optim.Adam,
+    "sgd":torch.optim.SGD,
+    "bim":BIM,
+    "migfsm":MIFGSM
+}
+
+
+def _get_optimizer_and_scheduler(optimizer, params, lr, decay="none", steps=None):
+    """
+    Macro to initialize an optimizer and scheduler.
+
+    :optimizer: string; which optimizer to use. adam, sgd, bim, or mifgsm.
+    :params: iterable of params
+    :lr: float; initial learning rate
+    :decay: string; learning rate decay type. none, cosine, or exponential
+    :steps: int; number of training steps 
+
+    Returns
+    :opt: pytorch optimizer object
+    :scheduler: pytorch scheduler object
+    """
+    opt = _OPTIMIZER_DICT[optimizer](params, lr)
+
+    if decay == "none":
+        scheduler = torch.optim.lr_scheduler.ConstantLR(opt, factor=1)
+    elif decay == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
+    elif decay == "exponential":
+        # compute gamma such that the LR decays by 3 orders of magnitude
+        gamma = (1e-3)**(1./steps)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(opt, gamma)
+    return opt, scheduler
