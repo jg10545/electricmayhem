@@ -14,6 +14,7 @@ import inspect
 from ._util import _dict_of_tensors_to_dict_of_arrays, _concat_dicts_of_arrays
 from ._util import _flatten_dict, _mlflow_description, _bootstrap_std
 from ._opt import _create_ax_client
+from .optim import _get_optimizer_and_scheduler
 
 class PipelineBase(torch.nn.Module):
     """
@@ -369,8 +370,9 @@ class Pipeline(PipelineBase):
         self.log_vizualizations(patchbatch)
                 
         
-    def train_patch(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000, num_eval_steps=10, 
-              accumulate=1, lr_decay='cosine', profile=0, progressbar=True, **kwargs):
+    def train_patch(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000,
+                    num_eval_steps=10, accumulate=1, lr_decay='cosine', 
+                    optimizer="bim", profile=0, progressbar=True, **kwargs):
         """
         Patch training loop. Expects that you've already called initialize_patch_params() and
         set_loss().
@@ -396,22 +398,28 @@ class Pipeline(PipelineBase):
         trainparams = {"batch_size":batch_size,
                     "learning_rate":learning_rate, "num_steps":num_steps,
                     "eval_every":eval_every, "num_eval_steps":num_eval_steps,
-                    "accumulate":accumulate, "lr_decay":lr_decay}
+                    "accumulate":accumulate, "lr_decay":lr_decay, 
+                    "optimizer":optimizer}
         for k in kwargs:
             trainparams[k] = kwargs[k]
         
         self.params["training"] = trainparams
         # dump experiment as YAML to log directory
         self.save_yaml()
-        self.log_params_to_mlflow()
+        if self._logging_to_mlflow: self.log_params_to_mlflow()
             
         if profile > 0:
             prof = self._get_profiler(active=profile)
         
         # copy patch and turn on gradients
         patch_params = self.patch_params.clone().detach().requires_grad_(True)
+        # initialize optimizer and scheduler
+        optimizer, scheduler = _get_optimizer_and_scheduler(optimizer, [patch_params],
+                                                            learning_rate,
+                                                            decay=lr_decay,
+                                                            steps=int(num_steps/accumulate))
         # make a tensor to hold the gradients
-        gradient = torch.zeros_like(patch_params)
+        #gradient = torch.zeros_like(patch_params)
         
         # construct the iterator separately so we have an option to
         # disable progress bar
@@ -437,20 +445,27 @@ class Pipeline(PipelineBase):
                 meanloss = torch.mean(lossdict[k])
                 record[k] = meanloss
                 if k in kwargs:
-                    loss += kwargs[k]*meanloss
+                    #loss += kwargs[k]*meanloss
+                    loss += kwargs[k]*meanloss/accumulate
             # save metrics to tensorboard
             self._log_scalars(mlflow_metric=False, **record)
             
             # estimate gradients
-            gradient += torch.autograd.grad(loss, patch_params)[0]/accumulate
-            self._log_scalars(gradient_norm = torch.mean(gradient**2))
+            loss.backward()
+            #gradient += torch.autograd.grad(loss, patch_params)[0]/accumulate
+            #self._log_scalars(gradient_norm = torch.mean(gradient**2))
             
             # if this is an update step- update patch, clamp to unit interval
             if (i+1)%accumulate == 0:
-                patch_params = patch_params.detach() - self._get_learning_rate()*gradient.sign()
-                patch_params = patch_params.clamp(0,1).detach().requires_grad_(True)
-                gradient = torch.zeros_like(patch_params)
-                self.patch_params = patch_params.clone().detach()
+                optimizer.step()
+                scheduler.step()
+                self._log_scalars(learning_rate=scheduler.get_last_lr()[0])
+                with torch.no_grad():
+                    patch_params.clamp_(0,1)
+                #patch_params = patch_params.detach() - self._get_learning_rate()*gradient.sign()
+                #patch_params = patch_params.clamp(0,1).detach().requires_grad_(True)
+                #gradient = torch.zeros_like(patch_params)
+                #self.patch_params = patch_params.clone().detach()
                 
             
             # if this is an evaluate step- run evaluation and save params

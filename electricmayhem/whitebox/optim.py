@@ -87,7 +87,7 @@ _OPTIMIZER_DICT = {
     "adam":torch.optim.Adam,
     "sgd":torch.optim.SGD,
     "bim":BIM,
-    "migfsm":MIFGSM
+    "mifgsm":MIFGSM
 }
 
 
