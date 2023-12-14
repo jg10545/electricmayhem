@@ -14,6 +14,7 @@ import inspect
 from ._util import _dict_of_tensors_to_dict_of_arrays, _concat_dicts_of_arrays
 from ._util import _flatten_dict, _mlflow_description, _bootstrap_std
 from ._opt import _create_ax_client
+from .optim import _get_optimizer_and_scheduler
 
 class PipelineBase(torch.nn.Module):
     """
@@ -369,8 +370,10 @@ class Pipeline(PipelineBase):
         self.log_vizualizations(patchbatch)
                 
         
-    def train_patch(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000, num_eval_steps=10, 
-              accumulate=1, lr_decay='cosine', profile=0, progressbar=True, **kwargs):
+    def train_patch(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000,
+                    num_eval_steps=10, accumulate=1, lr_decay='cosine', 
+                    optimizer="bim", profile=0, progressbar=True, 
+                    clamp_to=(0,1), **kwargs):
         """
         Patch training loop. Expects that you've already called initialize_patch_params() and
         set_loss().
@@ -385,6 +388,7 @@ class Pipeline(PipelineBase):
         :lr_decay: None or "cosine"
         :profile: int; if above zero, run pytorch profiler this many steps.
         :progressbar: bool; if True, use tqdm to monitor progress
+        :clamp_to: int or None; range to clip patch parameters to
         :kwargs: additional training parameters to save. at least one of the terms in your
             loss function should have a weight here.
         """
@@ -396,22 +400,26 @@ class Pipeline(PipelineBase):
         trainparams = {"batch_size":batch_size,
                     "learning_rate":learning_rate, "num_steps":num_steps,
                     "eval_every":eval_every, "num_eval_steps":num_eval_steps,
-                    "accumulate":accumulate, "lr_decay":lr_decay}
+                    "accumulate":accumulate, "lr_decay":lr_decay, 
+                    "optimizer":optimizer}
         for k in kwargs:
             trainparams[k] = kwargs[k]
         
         self.params["training"] = trainparams
         # dump experiment as YAML to log directory
         self.save_yaml()
-        self.log_params_to_mlflow()
+        if self._logging_to_mlflow: self.log_params_to_mlflow()
             
         if profile > 0:
             prof = self._get_profiler(active=profile)
         
         # copy patch and turn on gradients
         patch_params = self.patch_params.clone().detach().requires_grad_(True)
-        # make a tensor to hold the gradients
-        gradient = torch.zeros_like(patch_params)
+        # initialize optimizer and scheduler
+        optimizer, scheduler = _get_optimizer_and_scheduler(optimizer, [patch_params],
+                                                            learning_rate,
+                                                            decay=lr_decay,
+                                                            steps=int(num_steps/accumulate))
         
         # construct the iterator separately so we have an option to
         # disable progress bar
@@ -437,20 +445,22 @@ class Pipeline(PipelineBase):
                 meanloss = torch.mean(lossdict[k])
                 record[k] = meanloss
                 if k in kwargs:
-                    loss += kwargs[k]*meanloss
+                    #loss += kwargs[k]*meanloss
+                    loss += kwargs[k]*meanloss/accumulate
             # save metrics to tensorboard
             self._log_scalars(mlflow_metric=False, **record)
             
             # estimate gradients
-            gradient += torch.autograd.grad(loss, patch_params)[0]/accumulate
-            self._log_scalars(gradient_norm = torch.mean(gradient**2))
+            loss.backward()
             
             # if this is an update step- update patch, clamp to unit interval
             if (i+1)%accumulate == 0:
-                patch_params = patch_params.detach() - self._get_learning_rate()*gradient.sign()
-                patch_params = patch_params.clamp(0,1).detach().requires_grad_(True)
-                gradient = torch.zeros_like(patch_params)
-                self.patch_params = patch_params.clone().detach()
+                optimizer.step()
+                scheduler.step()
+                self._log_scalars(learning_rate=scheduler.get_last_lr()[0])
+                if clamp_to is not None:
+                    with torch.no_grad():
+                        patch_params.clamp_(clamp_to[0], clamp_to[1])
                 
             
             # if this is an evaluate step- run evaluation and save params
@@ -511,8 +521,7 @@ class Pipeline(PipelineBase):
     
     def optimize(self, objective, logdir, patch_shape, N, num_steps, 
                  batch_size, num_eval_steps=10, mlflow_uri=None, experiment_name=None, 
-                      extra_params={}, minimize=True, lr_decay="cosine",
-                      **params):
+                      extra_params={}, minimize=True, clamp_to=(0,1), **params):
         """
         Use a Gaussian Process to optimize hyperparameters for self.train().
         
@@ -529,9 +538,11 @@ class Pipeline(PipelineBase):
         :experiment_name: string; MLFlow experiment
         :extra_params: dict; exogenous parameters to log to MLFlow
         :minimize: bool; whether we're minimizing or maximizing the objective.
-        :lr_decay: string or None; what learning rate decay schedule type to use.
+        :lr_decay: string what learning rate decay schedule type to use.
+        :optimizer: string; 'bim', 'adam', 'sgd', or 'mifgsm'
+        :clamp_to: tuple or None; limits to clamp patch params to
         :params: dictionary of parameters you'd pass to train; including learning_rate,
-            accumulate, and loss function weights. Specify each value in one of three
+            accumulate, and loss function weights. Specify each value in one of four
             ways:
                 -scalar value: the optimizer will leave this value fixed
                 -tuple (low, high): optimizer will vary this value on a linear scale
@@ -539,13 +550,16 @@ class Pipeline(PipelineBase):
                     a log scale
                 -tuple (low, high, "int"): optimizer will vary this value but
                     only choose integers
+                -for categorical options- a string or list of strings
                     
             for example, 
             params = {
                     "learning_rate":(1e-5,1e-1,"log"),
                     "accumulate":(1,5,"int"),
                     "lossdict_thingy_1":1.0,
-                    "lossdict_thingy_2":(0,1)
+                    "lossdict_thingy_2":(0,1),
+                    "optimizer":["bim", "mifgsm"],
+                    "lr_decay":["cosine", "exponential", "none"]
                 }
                     
         """
@@ -553,8 +567,9 @@ class Pipeline(PipelineBase):
         self.client = _create_ax_client(ob, minimize=minimize, **params)
         
         def _evaluate_trial(p):
-            self.train_patch(batch_size, num_steps, eval_every=-1, lr_decay=lr_decay, 
-                       progressbar=False, **p)
+            self.train_patch(batch_size, num_steps, eval_every=-1, 
+                       progressbar=False,
+                       clamp_to=clamp_to, **p)
             self.evaluate(batch_size, num_eval_steps)
             result_mean = np.mean(self.results[ob])
             sem = _bootstrap_std(self.results[ob])
