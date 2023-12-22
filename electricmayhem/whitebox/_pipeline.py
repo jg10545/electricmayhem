@@ -396,6 +396,13 @@ class Pipeline(PipelineBase):
         if hasattr(self, "_lossdictkeys"):
             if len(set(self._lossdictkeys)&set(kwargs.keys())) == 0:
                 logging.warning("no weights given for any terms in your loss dictionary")
+            # warn the user if they passed a keyword argument that doesn't 
+            # match anything in params or the lossdict. i wasted a bunch 
+            # of time once when i was doing hyperparameter optimization 
+            # and fat-fingered one of the loss terms.
+            for k in kwargs:
+                if k not in self._lossdictkeys:
+                    logging.warning(f"param {k} not in loss dict keys; was that on purpose?")
         # record the training parameters
         trainparams = {"batch_size":batch_size,
                     "learning_rate":learning_rate, "num_steps":num_steps,

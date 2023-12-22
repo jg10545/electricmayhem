@@ -95,3 +95,12 @@ class NPSCalculator(torch.nn.Module):
         printability_array = np.float32(printability_array)
         pa = torch.from_numpy(printability_array) 
         return pa
+
+
+def compute_total_variation_loss(img):      
+    """
+    
+    """
+    tv_h = torch.sum((img[:,:,1:,:] - img[:,:,:-1,:]).pow(2))
+    tv_w = torch.sum((img[:,:,:,1:] - img[:,:,:,:-1]).pow(2))
+    return tv_h + tv_w

@@ -61,7 +61,7 @@ def _create_ax_client(objective, minimize=True, **params):
                         "name":p,
                         "type":"choice",
                         "values":par,
-                        "is_ordered":False
+                        "is_ordered":False,
                     })
             
         else:
