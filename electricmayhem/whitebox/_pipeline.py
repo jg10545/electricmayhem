@@ -369,7 +369,7 @@ class Pipeline(PipelineBase):
         # record metrics to mlflow
         if self._logging_to_mlflow:
             mlflow.log_metrics(meanresults, step=self.global_step)
-            mlflow.log_artifact(saveto, "eval_results.csv")
+            mlflow.log_artifact(saveto)#, "eval_results.csv")
         
         self.log_vizualizations(patchbatch)
                 
