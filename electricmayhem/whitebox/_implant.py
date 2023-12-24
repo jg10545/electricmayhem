@@ -56,6 +56,19 @@ class RectanglePatchImplanter(PipelineBase):
         
         assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
         
+    def get_min_dimensions(self):
+        """
+        Find the minimum height and width of any training/eval box
+        """
+        minheight = 1e6
+        minwidth = 1e6
+        
+        for boxes in self.boxes+self.eval_boxes:
+            for b in boxes:
+                minheight = min(minheight, b[3]-b[1])
+                minwidth = min(minwidth, b[2]-b[0])
+        return {"minheight":minheight, "minwidth":minwidth}
+        
     def sample(self, n, evaluate=False, **kwargs):
         """
         Sample implantation parameters for batch size n, overwriting with

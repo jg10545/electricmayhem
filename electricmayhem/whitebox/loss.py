@@ -95,3 +95,35 @@ class NPSCalculator(torch.nn.Module):
         printability_array = np.float32(printability_array)
         pa = torch.from_numpy(printability_array) 
         return pa
+
+
+def total_variation_loss(img):      
+    """
+    Compute the mean squared difference between adjacent pixels
+    
+    :img: torch.Tensor; batch of images in channel-first format
+    """
+    tv_h = torch.mean((img[:,:,1:,:] - img[:,:,:-1,:]).pow(2))
+    tv_w = torch.mean((img[:,:,:,1:] - img[:,:,:,:-1]).pow(2))
+    return 0.5*(tv_h + tv_w)
+
+
+def saliency_loss(img):
+    """
+    Saliency loss as defined in "Towards a Robust Adversarial Patch Attack Against
+    Unmanned Aerial Vehicles Object Detection" by Shrestha et al.
+    
+    This loss nominally comes from research on psycho-physical color metrics and
+    is intended to bias the image toward less perceptually vibrant colors.
+    
+    :img: torch.Tensor; batch of images in channel-first format
+    """
+    r = img[:,0,:,:]
+    g = img[:,1,:,:]
+    b = img[:,2,:,:]
+    
+    rg = r-g
+    yb = 0.5*(r+g)-b
+    
+    return torch.sqrt(torch.var(rg)+torch.var(yb)) + \
+        0.3*torch.sqrt(torch.mean(rg)**2 + torch.sqrt(torch.mean(yb)**2))
