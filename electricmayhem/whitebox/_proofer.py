@@ -67,6 +67,15 @@ class SoftProofer(PipelineBase):
                                                 "RGB", "RGB",
                                                 renderingIntent=rendering_intent,
                                                 proofRenderingIntent=rendering_intent)
+    def get_description(self):
+        """
+        Return a markdown-formatted one-line string describing the pipeline step. Used for
+        auto-populating a description for MLFlow.
+        """
+        intents = ["perceptual", "relative colorimetric", "saturation",
+                   "absolute colorimetric"]
+        return f"**SoftProofer:** rendering intent `{intents[self.params['rendering_intent']]}`"
+    
     def softproof(self, x):
         """
         Use PIL to soft-proof a batch of tensors
