@@ -98,5 +98,5 @@ class SoftProofer(PipelineBase):
         proofed = self.softproof(x)
         writer.add_image("proofed_patch", proofed[0], global_step=step, dataformats='CHW')
         # how much did proofing change the patch?
-        rms_diff = np.sqrt(np.mean((proofed-x)**2))
+        rms_diff = np.sqrt(np.mean((proofed.numpy()-x.numpy())**2))
         writer.add_scalar("proofed_patch_rms_change", rms_diff, global_step=step)

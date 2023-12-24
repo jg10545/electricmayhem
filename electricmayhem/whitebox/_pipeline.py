@@ -530,6 +530,8 @@ class Pipeline(PipelineBase):
         if path is None:
             path = os.path.join(self.logdir, "patch_params.pt")
         torch.save(self.patch_params, path)
+        if self._logging_to_mlflow:
+            mlflow.log_artifact(path, "patch_params.pt")
     
     def optimize(self, objective, logdir, patch_shape, N, num_steps, 
                  batch_size, num_eval_steps=10, mlflow_uri=None, experiment_name=None, 

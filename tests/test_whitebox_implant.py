@@ -76,6 +76,13 @@ def test_rectanglepatchimplanter_apply_color_patch():
     assert isinstance(implanted, torch.Tensor)
     assert implanted.squeeze(0).shape == torch.tensor(testtensor).permute(2,0,1).shape
     
+def test_rectanglepatchimplanter_get_min_dimensions():
+    imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]})
+    mindims = imp.get_min_dimensions()
+    assert isinstance(mindims, dict)
+    assert mindims["minheight"] == 90
+    assert mindims["minwidth"] == 90
+    
 def test_rectanglepatchimplanter_apply_bw_patch():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]})
     implanted = imp(bwpatch.unsqueeze(0))
