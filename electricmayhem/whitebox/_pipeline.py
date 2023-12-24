@@ -57,6 +57,12 @@ class PipelineBase(torch.nn.Module):
             
         return Pipeline(self,y)
     
+    def _log_image_to_mlflow(self, img, filename):
+        if len(img.shape) == 3:
+            # convert from channel-first to channel-last
+            img = img.permute(1,2,0).detach().cpu().numpy()
+            mlflow.log_image(img, filename)
+    
     def get_description(self):
         """
         Return a markdown-formatted one-line string describing the pipeline step. Used for
@@ -243,12 +249,7 @@ class Pipeline(PipelineBase):
             for k in kwargs:
                 self.writer.add_image(k, kwargs[k], global_step=self.global_step)
         
-    def _log_image_to_mlflow(self, img, filename):
-        if self._logging_to_mlflow:
-            if len(img.shape) == 3:
-                # convert from channel-first to channel-last
-                img = img.permute(1,2,0).detach().cpu().numpy()
-                mlflow.log_image(img, filename)
+
 
     def _log_scalars(self, mlflow_metric=False, **kwargs):
         """
@@ -355,7 +356,9 @@ class Pipeline(PipelineBase):
         for r in results:
             samples[r] = results[r]
         self.df = pd.DataFrame(samples)
-        self.df.to_csv(os.path.join(self.logdir, "eval_results.csv"), index=False)
+        saveto = os.path.join(self.logdir, "eval_results.csv")
+        self.df.to_csv(saveto, index=False)
+            
         # record distributions
         self._log_histograms(**{f"eval_{k}_distribution":results[k] for k in results if "_control" not in k})
         # record averages
@@ -366,6 +369,7 @@ class Pipeline(PipelineBase):
         # record metrics to mlflow
         if self._logging_to_mlflow:
             mlflow.log_metrics(meanresults, step=self.global_step)
+            mlflow.log_artifact(saveto, "eval_results.csv")
         
         self.log_vizualizations(patchbatch)
                 
@@ -396,6 +400,13 @@ class Pipeline(PipelineBase):
         if hasattr(self, "_lossdictkeys"):
             if len(set(self._lossdictkeys)&set(kwargs.keys())) == 0:
                 logging.warning("no weights given for any terms in your loss dictionary")
+            # warn the user if they passed a keyword argument that doesn't 
+            # match anything in params or the lossdict. i wasted a bunch 
+            # of time once when i was doing hyperparameter optimization 
+            # and fat-fingered one of the loss terms.
+            for k in kwargs:
+                if k not in self._lossdictkeys:
+                    logging.warning(f"param '{k}' not in loss dict keys; was that on purpose?")
         # record the training parameters
         trainparams = {"batch_size":batch_size,
                     "learning_rate":learning_rate, "num_steps":num_steps,
@@ -481,7 +492,8 @@ class Pipeline(PipelineBase):
         # finished training- save a copy of the patch tensor
         self.patch_params = patch_params.clone().detach()
         # wrap up mlflow logging
-        self._log_image_to_mlflow(patch_params, "patch.png")
+        if self._logging_to_mlflow:
+            self._log_image_to_mlflow(patch_params, "patch.png")
         return self.patch_params
     
     def visualize_eval_results(self):
@@ -518,6 +530,8 @@ class Pipeline(PipelineBase):
         if path is None:
             path = os.path.join(self.logdir, "patch_params.pt")
         torch.save(self.patch_params, path)
+        if self._logging_to_mlflow:
+            mlflow.log_artifact(path, "patch_params.pt")
     
     def optimize(self, objective, logdir, patch_shape, N, num_steps, 
                  batch_size, num_eval_steps=10, mlflow_uri=None, experiment_name=None, 
