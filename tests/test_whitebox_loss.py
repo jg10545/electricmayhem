@@ -21,9 +21,22 @@ def test_printability_loss():
     # make sure this doesn't throw an error
     torch.sum(elementwise_loss).backward()
     
-def test_total_variation_loss():
+def test_total_variation_loss_zero_case():
     test_tensor_batch = torch.zeros((1,3,23,17), dtype=torch.float32)
-    tvloss = loss.compute_total_variation_loss(test_tensor_batch)
+    tvloss = loss.total_variation_loss(test_tensor_batch)
     assert isinstance(tvloss, torch.Tensor)
     assert tvloss.shape == ()
     assert tvloss.numpy().max() == 0
+    
+def test_total_variation_loss_nonzero_case():
+    test_tensor_batch = torch.tensor(np.random.uniform(0, 1, size=(1,3,23,17)))
+    tvloss = loss.total_variation_loss(test_tensor_batch)
+    assert isinstance(tvloss, torch.Tensor)
+    assert tvloss.shape == ()
+    assert tvloss.numpy().max() > 0
+    
+def test_saliency_loss_returns_correct_shape():
+    test_tensor_batch = torch.tensor(np.random.uniform(0, 1, size=(1,3,23,17)))
+    sal_loss = loss.saliency_loss(test_tensor_batch)
+    assert isinstance(sal_loss, torch.Tensor)
+    assert sal_loss.shape == ()
