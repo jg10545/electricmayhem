@@ -369,7 +369,7 @@ class Pipeline(PipelineBase):
         # record metrics to mlflow
         if self._logging_to_mlflow:
             mlflow.log_metrics(meanresults, step=self.global_step)
-            mlflow.log_artifact(saveto, "eval_results.csv")
+            mlflow.log_artifact(saveto)#, "eval_results.csv")
         
         self.log_vizualizations(patchbatch)
                 
@@ -500,6 +500,7 @@ class Pipeline(PipelineBase):
         """
         Use ipywidgets to visualize eval results within a notebook
         """
+        logging.WARN("gonna deprecate this function. use electricmayhem.whitebox.viz.eval_result_interactive() instead.")
         assert hasattr(self, "df"), "you gotta train a patch first for this to work bro"
         import ipywidgets
         def scatter(x, y, c):
