@@ -154,7 +154,6 @@ class RectanglePatchImplanter(PipelineBase):
         if control:
             params = self.lastsample
         # sample parameters if necessary
-        #self.sample(patches.shape[0], control=control, **params)
         self.sample(patches.shape[0], evaluate=evaluate, **params)
         s = self.lastsample
         if self.params["scale"][1] > self.params["scale"][0]:

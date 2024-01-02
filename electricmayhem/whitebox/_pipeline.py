@@ -500,6 +500,7 @@ class Pipeline(PipelineBase):
         """
         Use ipywidgets to visualize eval results within a notebook
         """
+        logging.WARN("gonna deprecate this function. use electricmayhem.whitebox.viz.eval_result_interactive() instead.")
         assert hasattr(self, "df"), "you gotta train a patch first for this to work bro"
         import ipywidgets
         def scatter(x, y, c):
