@@ -122,3 +122,29 @@ def test_rectanglepatchimplanter_get_last_sample_as_dict():
     assert isinstance(sampdict, dict)
     # check to make sure we can turn it into a json
     assert isinstance(json.dumps(sampdict), str)
+    
+def test_rectanglepatchimplanter_get_last_sample_as_dict_with_eval_targets():
+    imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]},
+                                  eval_imagedict={"ev_im1":testtensor2},
+                                  eval_boxdict={"ev_im1":[box]})
+    implanted = imp(torch.stack([colorpatch]*10, 0))
+    
+    sampdict = imp.get_last_sample_as_dict()
+    assert isinstance(sampdict, dict)
+    # check to make sure we can turn it into a json
+    assert isinstance(json.dumps(sampdict), str)
+    for s in sampdict["image"]:
+        assert s == "im1"
+        
+def test_rectanglepatchimplanter_get_last_sample_as_dict_evaluate_mode():
+    imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]},
+                                  eval_imagedict={"ev_im1":testtensor2},
+                                  eval_boxdict={"ev_im1":[box]})
+    implanted = imp(torch.stack([colorpatch]*10, 0), evaluate=True)
+    
+    sampdict = imp.get_last_sample_as_dict()
+    assert isinstance(sampdict, dict)
+    # check to make sure we can turn it into a json
+    assert isinstance(json.dumps(sampdict), str)
+    for s in sampdict["image"]:
+        assert s == "ev_im1"
