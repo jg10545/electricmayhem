@@ -77,9 +77,11 @@ class RectanglePatchImplanter(PipelineBase):
         if evaluate:
             images = self.eval_images
             boxes = self.eval_boxes
+            self._eval_last = True
         else:
             images = self.images
             boxes = self.boxes
+            self._eval_last = False
         
         sampdict = {k:kwargs[k] for k in kwargs}
         if "scale" not in kwargs:
@@ -223,12 +225,16 @@ class RectanglePatchImplanter(PipelineBase):
         """
         Return last sample as a JSON-serializable dict
         """
+        if self._eval_last:
+            imgkeys = self.eval_imgkeys
+        else:
+            imgkeys = self.imgkeys
         outdict = {}
         for k in self.lastsample:
             if k == "image":
-                outdict["image"] = [self.imgkeys[i] for i in self.lastsample["image"].cpu().detach().numpy()]
-        else:
-            outdict[k] = [float(i) for i in self.lastsample[k].cpu().detach().numpy()]
+                outdict["image"] = [imgkeys[i] for i in self.lastsample["image"].cpu().detach().numpy()]
+            else:
+                outdict[k] = [float(i) for i in self.lastsample[k].cpu().detach().numpy()]
         return outdict
     
     def get_description(self):
