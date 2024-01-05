@@ -389,7 +389,7 @@ class Pipeline(PipelineBase):
         :eval_every: int; how many steps before running self.evaluate()
         :num_eval_steps: int; number of evaluation batches to run
         :accumulate: int; how many batches to accumulate gradients across before updating patch
-        :lr_decay: None or "cosine"
+        :lr_decay: "none", "cosine", "exponential", or "plateau"
         :profile: int; if above zero, run pytorch profiler this many steps.
         :progressbar: bool; if True, use tqdm to monitor progress
         :clamp_to: int or None; range to clip patch parameters to
@@ -467,7 +467,10 @@ class Pipeline(PipelineBase):
             # if this is an update step- update patch, clamp to unit interval
             if (i+1)%accumulate == 0:
                 optimizer.step()
-                scheduler.step()
+                if lr_decay == "plateau":
+                    scheduler.step(loss)
+                else:
+                    scheduler.step()
                 self._log_scalars(learning_rate=scheduler.get_last_lr()[0])
                 if clamp_to is not None:
                     with torch.no_grad():
@@ -553,7 +556,8 @@ class Pipeline(PipelineBase):
         :experiment_name: string; MLFlow experiment
         :extra_params: dict; exogenous parameters to log to MLFlow
         :minimize: bool; whether we're minimizing or maximizing the objective.
-        :lr_decay: string what learning rate decay schedule type to use.
+        :lr_decay: string what learning rate decay schedule type to use. "none",
+            "cosine", "exponential", or "plateau"
         :optimizer: string; 'bim', 'adam', 'sgd', or 'mifgsm'
         :clamp_to: tuple or None; limits to clamp patch params to
         :params: dictionary of parameters you'd pass to train; including learning_rate,

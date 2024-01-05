@@ -1,5 +1,5 @@
 import torch
-
+import logging
 
 class BIM(torch.optim.Optimizer):
     """
@@ -166,7 +166,7 @@ def _get_optimizer_and_scheduler(optimizer, params, lr, decay="none", steps=None
     :optimizer: string; which optimizer to use. adam, sgd, bim, or mifgsm.
     :params: iterable of params
     :lr: float; initial learning rate
-    :decay: string; learning rate decay type. none, cosine, or exponential
+    :decay: string; learning rate decay type. none, cosine, exponential, or plateau
     :steps: int; number of training steps 
 
     Returns
@@ -174,6 +174,8 @@ def _get_optimizer_and_scheduler(optimizer, params, lr, decay="none", steps=None
     :scheduler: pytorch scheduler object
     """
     opt = _OPTIMIZER_DICT[optimizer](params, lr)
+    if opt == "nifgsm":
+        logging.warning("THIS NIFGSM IMPLEMENTATION IS AN EARLY PROTOTYPE YOU PROBABLY SHOULDNT ACTUALLY USE FOR ANYTHING")
 
     if decay == "none":
         scheduler = torch.optim.lr_scheduler.ConstantLR(opt, factor=1)
@@ -183,4 +185,8 @@ def _get_optimizer_and_scheduler(optimizer, params, lr, decay="none", steps=None
         # compute gamma such that the LR decays by 3 orders of magnitude
         gamma = (1e-3)**(1./steps)
         scheduler = torch.optim.lr_scheduler.ExponentialLR(opt, gamma)
+    elif decay == "plateau":
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode='min',
+                                                               factor=0.1,
+                                                               patience=100)
     return opt, scheduler
