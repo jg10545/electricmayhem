@@ -471,7 +471,8 @@ class Pipeline(PipelineBase):
                     scheduler.step(loss)
                 else:
                     scheduler.step()
-                self._log_scalars(learning_rate=scheduler.get_last_lr()[0])
+                #self._log_scalars(learning_rate=scheduler.get_last_lr()[0])
+                self._log_scalars(learning_rate=optimizer.param_groups[0]["lr"])
                 if clamp_to is not None:
                     with torch.no_grad():
                         patch_params.clamp_(clamp_to[0], clamp_to[1])

@@ -85,9 +85,9 @@ def convert_v4_to_v5_format(output, H, W):
                             (box_dims[:,:,:,1]*H+box_dims[:,:,:,3]*H)/2,
                             box_dims[:,:,:,2]*W-box_dims[:,:,:,0]*W,
                             box_dims[:,:,:,3]*H-box_dims[:,:,:,1]*H,
-                            ])
+                            ], -1)
     return [torch.concatenate([box_dims[:,:,0,:],
-                               max_score.unsqueeze(0),
+                               max_score.unsqueeze(-1),
                                confs], -1)]
     
 
