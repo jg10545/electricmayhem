@@ -50,6 +50,46 @@ def IoU(box1, box2):
     else:
         return float(intersection)/union
         
+    
+def convert_v4_to_v5_format(output, H, W):
+    """
+    Convert the outputs of a v4 model to v5 format. In the example
+    code I've been working with, v4 outputs a list of two tensors:
+        output[0] is [batch_size, num_boxes, 1, 4]
+        output[1] is [batch_size, num_boxes, num_classes]
+        
+    v5 outputs a different list:
+        output[0] is [batch_size, num_boxes, 5+num_classes]
+        output[1] is a list of raw outputs from each detection head
+        
+    The box formats are also different- v4 appears to be xyxy normalized
+    to the unit interval, while v5 outputs xywh in pixel coordinates.
+    
+    Note that v4 has no separate objectness score. we'll use the max value
+    from class scores for that column.
+    
+    Inputs
+    :output: list of two tensors output by a v4 model
+    :H: int; image height in pixels
+    :W: int; image width in pixels
+    
+    Outputs a list containing a single tensor in the format of the first v5 output
+    """
+    box_array = output[0]
+    confs = output[1]
+    
+    max_score, max_score_index = torch.max(confs, -1)
+    # convert box dims to other coordinate system
+    box_dims = box_array.type(torch.float32)
+    box_dims = torch.stack([(box_dims[:,:,:,0]*W+box_dims[:,:,:,2]*W)/2,
+                            (box_dims[:,:,:,1]*H+box_dims[:,:,:,3]*H)/2,
+                            box_dims[:,:,:,2]*W-box_dims[:,:,:,0]*W,
+                            box_dims[:,:,:,3]*H-box_dims[:,:,:,1]*H,
+                            ], -1)
+    return [torch.concatenate([box_dims[:,:,0,:],
+                               max_score.unsqueeze(-1),
+                               confs], -1)]
+    
 
 def plot_detections(image, detections, k, classnames=None, thresh=0.1, iouthresh=0.5):
     """
@@ -146,7 +186,8 @@ class YOLOWrapper(ModelWrapper):
     """
     name = "ModelWrapper"
     
-    def __init__(self, model, logviz=True, classnames=None, thresh=0.1, iouthresh=0.5):
+    def __init__(self, model, logviz=True, classnames=None, thresh=0.1, iouthresh=0.5,
+                 v4=False):
         """
         :model: pytorch YOLO model in eval mode
         :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
@@ -154,12 +195,22 @@ class YOLOWrapper(ModelWrapper):
         :classnames: list of output category names
         :thresh: objectness score threshold for plotting
         :iouthresh: IoU threshold for non maximal suppression during plotting
+        :v4: bool; if True outputs are expected in VOLOv4 format instead of v5
         """
         super().__init__(model)
         self._logviz = logviz
         self.classnames = classnames
         self.thresh = thresh
         self.iouthresh = iouthresh
+        self.params = {"v4":v4}
+        
+    def forward(self, x, control=False, evaluate=False, **kwargs):
+        outputs = self.model(x)
+        
+        if self.params["v4"]:
+            outputs = convert_v4_to_v5_format(outputs, x.shape[2], x.shape[3])
+
+        return outputs
         
     def log_vizualizations(self, x, x_control, writer, step):
         """

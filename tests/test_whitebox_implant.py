@@ -4,6 +4,7 @@ import matplotlib
 import json
 
 from electricmayhem.whitebox._implant import RectanglePatchImplanter
+from electricmayhem.whitebox._implant import FixedRatioRectanglePatchImplanter
 
 
 testtensor = np.random.randint(0, 255, size=(128,128,3))
@@ -90,6 +91,13 @@ def test_rectanglepatchimplanter_apply_bw_patch():
     assert implanted.squeeze(0).shape == torch.tensor(testtensor).permute(2,0,1).shape
     
 
+def test_rectanglepatchimplanter_apply_bw_patch_no_scaling():
+    imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]},
+                                  scale=(1.,1.))
+    implanted = imp(bwpatch.unsqueeze(0))
+    assert isinstance(implanted, torch.Tensor)
+    assert implanted.squeeze(0).shape == torch.tensor(testtensor).permute(2,0,1).shape
+
 def test_rectanglepatchimplanter_call_color_patch_batch():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]})
     implanted = imp(torch.stack([colorpatch,colorpatch], 0))
@@ -122,3 +130,50 @@ def test_rectanglepatchimplanter_get_last_sample_as_dict():
     assert isinstance(sampdict, dict)
     # check to make sure we can turn it into a json
     assert isinstance(json.dumps(sampdict), str)
+    
+def test_rectanglepatchimplanter_get_last_sample_as_dict_with_eval_targets():
+    imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]},
+                                  eval_imagedict={"ev_im1":testtensor2},
+                                  eval_boxdict={"ev_im1":[box]})
+    implanted = imp(torch.stack([colorpatch]*10, 0))
+    
+    sampdict = imp.get_last_sample_as_dict()
+    assert isinstance(sampdict, dict)
+    # check to make sure we can turn it into a json
+    assert isinstance(json.dumps(sampdict), str)
+    for s in sampdict["image"]:
+        assert s == "im1"
+        
+def test_rectanglepatchimplanter_get_last_sample_as_dict_evaluate_mode():
+    imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]},
+                                  eval_imagedict={"ev_im1":testtensor2},
+                                  eval_boxdict={"ev_im1":[box]})
+    implanted = imp(torch.stack([colorpatch]*10, 0), evaluate=True)
+    
+    sampdict = imp.get_last_sample_as_dict()
+    assert isinstance(sampdict, dict)
+    # check to make sure we can turn it into a json
+    assert isinstance(json.dumps(sampdict), str)
+    for s in sampdict["image"]:
+        assert s == "ev_im1"
+        
+        
+
+def test_fixedratiorectanglepatchimplanter_train_and_eval_images():
+    imp = FixedRatioRectanglePatchImplanter({"im1":testtensor, "im2":testtensor}, 
+                                  {"im1":[box], "im2":[box]}, 
+                                  eval_imagedict={"im3":testtensor2, "im4":testtensor2},
+                                  eval_boxdict={"im3":[box], "im4":[box]}, 
+                                  frac=0.5)
+    # run a training image through
+    implanted = imp(colorpatch.unsqueeze(0))
+    # do it again without the patch
+    unimplanted = imp(colorpatch.unsqueeze(0), control=True)
+    assert (unimplanted.squeeze(0) == imp.images[0]).all()
+    assert not (unimplanted.squeeze(0) == imp.eval_images[0]).all()
+    # run an eval image through
+    implanted = imp(colorpatch.unsqueeze(0), evaluate=True)
+    # do it again without the patch
+    unimplanted = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
+    assert not (unimplanted.squeeze(0) == imp.images[0]).all()
+    assert (unimplanted.squeeze(0) == imp.eval_images[0]).all()

@@ -161,6 +161,8 @@ class RectanglePatchImplanter(PipelineBase):
         if self.params["scale"][1] > self.params["scale"][0]:
             patchlist = [kornia.geometry.rescale(patches[i].unsqueeze(0), (s["scale"][i], s["scale"][i])).squeeze(0) 
                                   for i in range(patches.shape[0])]
+        else:
+            patchlist = [patches[i] for i in range(patches.shape[0])]
             
         # figure out offset of patches
         bs = len(s["box"])
@@ -239,4 +241,148 @@ class RectanglePatchImplanter(PipelineBase):
     
     def get_description(self):
         return f"**{self.name}:** {len(self.imgkeys)} training and {len(self.eval_imgkeys)} eval images"
+        
+    
+    
+    
+    
+    
+    
+
+class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
+    """
+    Variation on RectanglePatchImplanter that scales the patch to a fixed
+    size with respect to each target box.
+    
+    """
+    name = "FixedRatioRectanglePatchImplanter"
+    
+    def __init__(self, imagedict, boxdict, eval_imagedict=None,
+                 eval_boxdict=None, frac=0.5, scale_by_width=True):
+        """
+        :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
+        :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
+            {"img1":[[xmin1, ymin1, xmax1, ymax1], [xmin2, ymin2, xmax2, ymax2]]}
+        :eval_imagedict: separate dictionary of images to evaluate on
+        :eval_boxdict: separate dictionary of lists of bounding boxes for evaluation
+        :frac: float; relative size
+        :scale_by_width: bool; whether to use the box width or height for scaling
+        """
+        super(RectanglePatchImplanter, self).__init__()
+        # save training image/box information
+        self.imgkeys = list(imagedict.keys())
+        self.images = torch.nn.ParameterList([_img_to_tensor(imagedict[k]) for k in self.imgkeys])
+        self.boxes = [boxdict[k] for k in self.imgkeys]
+        
+        # save eval image/box information
+        if eval_imagedict is None:
+            eval_imagedict = imagedict
+            eval_boxdict = boxdict
+            
+        self.eval_imgkeys = list(eval_imagedict.keys())
+        self.eval_images = torch.nn.ParameterList([_img_to_tensor(eval_imagedict[k]) for k in
+                                                   self.eval_imgkeys])
+        self.eval_boxes = [eval_boxdict[k] for k in self.eval_imgkeys]
+            
+        
+        
+        self.params = {"frac":frac, "imgkeys":self.imgkeys,
+                       "eval_imgkeys":self.eval_imgkeys, 
+                       "scale_by_width":scale_by_width}
+        self.lastsample = {}
+        
+        assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
+        
+        
+    def sample(self, n, evaluate=False, **kwargs):
+        """
+        Sample implantation parameters for batch size n, overwriting with
+        kwargs if necessary.
+        """
+        if evaluate:
+            images = self.eval_images
+            boxes = self.eval_boxes
+            self._eval_last = True
+        else:
+            images = self.images
+            boxes = self.boxes
+            self._eval_last = False
+        
+        sampdict = {k:kwargs[k] for k in kwargs}
+        #if "scale" not in kwargs:
+        #    sampdict["scale"] = torch.FloatTensor(n).uniform_(self.params["scale"][0], self.params["scale"][1])
+        if "image" not in kwargs:
+            sampdict["image"] = torch.randint(low=0, high=len(images), size=[n])
+        if "box" not in kwargs:
+            i = torch.tensor([torch.randint(low=0, high=len(boxes[j]), size=[]) for j in sampdict["image"]])
+            sampdict["box"] = i
+        if "offset_frac_x" not in kwargs:
+            sampdict["offset_frac_x"] = torch.rand([n])
+        if "offset_frac_y" not in kwargs:
+            sampdict["offset_frac_y"] = torch.rand([n])
+            
+        self.lastsample = sampdict
+        
+    
+    def forward(self, patches, control=False, evaluate=False, params={}, **kwargs):
+        """
+        Implant a batch of patches in a batch of images
+        
+        :patches: torch Tensor; stack of patches
+        :control: if True, leave the patches off (for diagnostics)
+        :params: dictionary of params to override random sampling
+        :kwargs: passed to self.sample()
+        """
+        if evaluate:
+            images = self.eval_images
+            boxes = self.eval_boxes
+        else:
+            images = self.images
+            boxes = self.boxes
+        
+        if control:
+            params = self.lastsample
+        # sample parameters if necessary
+        self.sample(patches.shape[0], evaluate=evaluate, **params)
+        s = self.lastsample
+        
+        patchlist = [patches[i] for i in range(patches.shape[0])]
+        patchlist= []
+            
+        # figure out offset of patches
+        bs = len(s["box"])
+        dx = torch.zeros(bs)
+        dy = torch.zeros(bs)
+        boxx = torch.zeros(bs)
+        boxy = torch.zeros(bs)
+        # for each image in the batch
+        for i in range(bs):
+            box = boxes[s["image"][i]][s["box"][i]]
+            box_width = box[2] - box[0]
+            box_height = box[3] - box[1]
+            # gotta rescale the patch
+            C,H,W = patches[i].shape
+            if self.params["scale_by_width"]:
+                factor = self.params["frac"]*box_width/W
+            else:
+                factor = self.params["frac"]*box_height/H
+            patchlist.append(
+                kornia.geometry.transform.rescale(patches[i].unsqueeze(0), 
+                                                  factor).squeeze(0))
+            
+            dy[i] = box[3] - box[1] - patchlist[i].shape[1]
+            dx[i] = box[2] - box[0] - patchlist[i].shape[2]
+            boxx[i] = box[0]
+            boxy[i] = box[1]
+            
+        offset_y = (dy*s["offset_frac_y"] + boxy).type(torch.IntTensor)
+        offset_x = (dx*s["offset_frac_x"] + boxx).type(torch.IntTensor)
+        images = [images[i] for i in s["image"]]
+        
+        if control:
+            return torch.stack(images,0)
+        
+        return self._implant_patch(images, patchlist, offset_x, offset_y)
+    
+    
         
