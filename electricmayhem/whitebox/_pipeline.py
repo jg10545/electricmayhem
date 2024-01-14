@@ -314,17 +314,18 @@ class Pipeline(PipelineBase):
                 x = s(x, evaluate=True)
                 x_control = s(x_control, control=True, evaluate=True)
         
-    def evaluate(self, batch_size, num_eval_steps):
+    def evaluate(self, batch_size, num_eval_steps, patchbatch=None):
         """
         Run a set of evaluation batches and log results.
         """
-        patch_params = self.patch_params
+        if patchbatch is None:
+            patch_params = self.patch_params
         
-        # stack into a batch of patches
-        if self._single_patch:
-            patchbatch = torch.stack([patch_params for _ in range(batch_size)], 0)
-        else:
-            patchbatch = patch_params
+            # stack into a batch of patches
+            if self._single_patch:
+                patchbatch = torch.stack([patch_params for _ in range(batch_size)], 0)
+            else:
+                patchbatch = patch_params
             
         # store loss function outputs for each eval batch
         results = []
@@ -480,7 +481,7 @@ class Pipeline(PipelineBase):
             
             # if this is an evaluate step- run evaluation and save params
             if ((i+1)%eval_every == 0)&(eval_every > 0):
-                self.evaluate(batch_size, num_eval_steps)
+                self.evaluate(batch_size, num_eval_steps, patchbatch)
                 self.save_patch_params()
                 
             # if we're profiling, update the profiler
