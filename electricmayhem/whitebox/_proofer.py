@@ -111,5 +111,5 @@ class SoftProofer(PipelineBase):
         rms_diff = np.sqrt(np.mean((proofed.numpy()-x.numpy())**2))
         writer.add_scalar("proofed_patch_rms_change", rms_diff, global_step=step)
         
-        if _logging_to_mlflow:
+        if logging_to_mlflow:
             mlflow.log_metric("proofed_patch_rms_change", rms_diff, step=step)
