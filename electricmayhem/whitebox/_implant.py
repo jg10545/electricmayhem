@@ -258,7 +258,7 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
     name = "FixedRatioRectanglePatchImplanter"
     
     def __init__(self, imagedict, boxdict, eval_imagedict=None,
-                 eval_boxdict=None, frac=0.5, scale_by_width=True):
+                 eval_boxdict=None, frac=0.5, scale_by="min"):
         """
         :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
         :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
@@ -266,7 +266,8 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
         :eval_imagedict: separate dictionary of images to evaluate on
         :eval_boxdict: separate dictionary of lists of bounding boxes for evaluation
         :frac: float; relative size
-        :scale_by_width: bool; whether to use the box width or height for scaling
+        :scale_by: str; whether to use the "height", "width", of the box, or "min" 
+            of the two for scaling
         """
         super(RectanglePatchImplanter, self).__init__()
         # save training image/box information
@@ -288,7 +289,7 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
         
         self.params = {"frac":frac, "imgkeys":self.imgkeys,
                        "eval_imgkeys":self.eval_imgkeys, 
-                       "scale_by_width":scale_by_width}
+                       "scale_by":scale_by}
         self.lastsample = {}
         
         assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
@@ -309,8 +310,7 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
             self._eval_last = False
         
         sampdict = {k:kwargs[k] for k in kwargs}
-        #if "scale" not in kwargs:
-        #    sampdict["scale"] = torch.FloatTensor(n).uniform_(self.params["scale"][0], self.params["scale"][1])
+
         if "image" not in kwargs:
             sampdict["image"] = torch.randint(low=0, high=len(images), size=[n])
         if "box" not in kwargs:
@@ -362,7 +362,14 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
             box_height = box[3] - box[1]
             # gotta rescale the patch
             C,H,W = patches[i].shape
-            if self.params["scale_by_width"]:
+            # figure out which axis to scale by
+            scale_by = self.params["scale_by"]
+            if scale_by == "min":
+                if box_width < box_height:
+                    scale_by = "width"
+                else:
+                    scale_by = "height"
+            if scale_by == "width":
                 factor = self.params["frac"]*box_width/W
             else:
                 factor = self.params["frac"]*box_height/H
