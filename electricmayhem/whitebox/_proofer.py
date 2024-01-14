@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from PIL import Image, ImageCms
+import mlflow
 
 from electricmayhem.whitebox._pipeline import PipelineBase
 
@@ -99,7 +100,7 @@ class SoftProofer(PipelineBase):
     def get_last_sample_as_dict(self):
         return {}
         
-    def log_vizualizations(self, x, x_control, writer, step):
+    def log_vizualizations(self, x, x_control, writer, step, logging_to_mlflow=False):
         """
         For this pipeline stage- just compute visualizations on the first element in the batch
         """
@@ -109,3 +110,6 @@ class SoftProofer(PipelineBase):
         # how much did proofing change the patch?
         rms_diff = np.sqrt(np.mean((proofed.numpy()-x.numpy())**2))
         writer.add_scalar("proofed_patch_rms_change", rms_diff, global_step=step)
+        
+        if _logging_to_mlflow:
+            mlflow.log_metric("proofed_patch_rms_change", rms_diff, step=step)

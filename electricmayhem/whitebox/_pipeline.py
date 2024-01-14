@@ -70,7 +70,7 @@ class PipelineBase(torch.nn.Module):
         """
         return f"**{self.name}**"
 
-    def log_vizualizations(self, x, x_control, writer, step):
+    def log_vizualizations(self, x, x_control, writer, step, logging_to_mlflow=False):
         """
         """
         pass
@@ -310,7 +310,8 @@ class Pipeline(PipelineBase):
             # run through each stage, running diagnostics on the
             # interim steps
             for s in self.steps:
-                s.log_vizualizations(x, x_control, self.writer, self.global_step)
+                s.log_vizualizations(x, x_control, self.writer, self.global_step,
+                                     logging_to_mlflow=self._logging_to_mlflow)
                 x = s(x, evaluate=True)
                 x_control = s(x_control, control=True, evaluate=True)
         
