@@ -212,7 +212,7 @@ class YOLOWrapper(ModelWrapper):
 
         return outputs
         
-    def log_vizualizations(self, x, x_control, writer, step):
+    def log_vizualizations(self, x, x_control, writer, step, logging_to_mlflow=False):
         """
         Log a batch of image pairs (control and with patch), showing model
         detections.
