@@ -121,7 +121,7 @@ class KorniaAugmentationPipeline(PipelineBase):
     def get_description(self):
         return f"**{self.name}:** {', '.join(self.params['ordering'])}"
     
-    def log_vizualizations(self, x, x_control, writer, step, _logging_to_mlflow=False):
+    def log_vizualizations(self, x, x_control, writer, step, logging_to_mlflow=False):
         """
         """
         if self._logviz:

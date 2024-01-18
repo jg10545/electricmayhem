@@ -41,7 +41,7 @@ class PatchSaver(PipelineBase):
         """
         return {}
     
-    def log_vizualizations(self, x, x_control, writer, step):
+    def log_vizualizations(self, x, x_control, writer, step, logging_to_mlflow=False):
         """
         """
         if self._logviz:

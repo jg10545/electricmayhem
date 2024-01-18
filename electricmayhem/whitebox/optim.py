@@ -183,7 +183,7 @@ def _get_optimizer_and_scheduler(optimizer, params, lr, decay="none", steps=None
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
     elif decay == "exponential":
         # compute gamma such that the LR decays by 3 orders of magnitude
-        gamma = (1e-3)**(1./steps)
+        gamma = (1e-3)**(1./max(steps,1)) # max() to prevent error when steps=0
         scheduler = torch.optim.lr_scheduler.ExponentialLR(opt, gamma)
     elif decay == "plateau":
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode='min',
