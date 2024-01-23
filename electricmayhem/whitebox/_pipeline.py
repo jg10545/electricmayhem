@@ -122,7 +122,7 @@ class Pipeline(PipelineBase):
             
     def forward(self, x, control=False, evaluate=False, **kwargs):
         for a in self.steps:
-            x = a(x, control=control, evaluate=False, **kwargs)
+            x = a(x, control=control, evaluate=evaluate, **kwargs)
         return x
     
     def __add__(self, y):
