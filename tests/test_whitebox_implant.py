@@ -71,6 +71,16 @@ def test_rectanglepatchimplanter_sample():
         assert isinstance(imp.lastsample[k], torch.Tensor)
         assert len(imp.lastsample[k]) == 3
         
+def test_rectanglepatchimplanter_sample_with_fixed_offset():
+    imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]},
+                                  offset_frac_x=0.5, offset_frac_y=0.25)
+    imp.sample(3)
+    
+    for i in range(3):
+        assert imp.lastsample["offset_frac_x"][i] == 0.5
+        assert imp.lastsample["offset_frac_y"][i] == 0.25
+    
+        
 def test_rectanglepatchimplanter_apply_color_patch():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]})
     implanted = imp(colorpatch.unsqueeze(0))
@@ -215,3 +225,14 @@ def test_fixedratiorectanglepatchimplanter_train_and_eval_images_scale_by_width(
     unimplanted = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
     assert not (unimplanted.squeeze(0) == imp.images[0]).all()
     assert (unimplanted.squeeze(0) == imp.eval_images[0]).all()
+    
+
+def test_fixedratiorectanglepatchimplanter_sample_with_fixed_offset():
+    imp = FixedRatioRectanglePatchImplanter({"im1":testtensor}, {"im1":[box]},
+                                  offset_frac_x=0.5, offset_frac_y=0.25)
+    imp.sample(3)
+    
+    for i in range(3):
+        assert imp.lastsample["offset_frac_x"][i] == 0.5
+        assert imp.lastsample["offset_frac_y"][i] == 0.25
+    
