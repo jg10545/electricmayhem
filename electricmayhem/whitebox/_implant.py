@@ -23,7 +23,8 @@ class RectanglePatchImplanter(PipelineBase):
     name = "RectanglePatchImplanter"
     
     def __init__(self, imagedict, boxdict, eval_imagedict=None,
-                 eval_boxdict=None, scale=(0.75,1.25)):
+                 eval_boxdict=None, scale=(0.75,1.25), offset_frac_x=None,
+                 offset_frac_y=None):
         """
         :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
         :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
@@ -31,6 +32,8 @@ class RectanglePatchImplanter(PipelineBase):
         :eval_imagedict: separate dictionary of images to evaluate on
         :eval_boxdict: separate dictionary of lists of bounding boxes for evaluation
         :scale: tuple of floats; range of scaling factors
+        :offset_frac_x: None or float between 0 and 1- optionally specify a relative x position within the target box for the patch.
+        :offset_frac_y: None or float between 0 and 1- optionally specify a relative y position within the target box for the patch.
         """
         super(RectanglePatchImplanter, self).__init__()
         # save training image/box information
@@ -51,7 +54,9 @@ class RectanglePatchImplanter(PipelineBase):
         
         
         self.params = {"scale":list(scale), "imgkeys":self.imgkeys,
-                       "eval_imgkeys":self.eval_imgkeys}
+                       "eval_imgkeys":self.eval_imgkeys,
+                       "offset_frac_x":offset_frac_x,
+                       "offset_frac_y":offset_frac_y}
         self.lastsample = {}
         
         assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
@@ -74,6 +79,8 @@ class RectanglePatchImplanter(PipelineBase):
         Sample implantation parameters for batch size n, overwriting with
         kwargs if necessary.
         """
+        p = self.params
+        
         if evaluate:
             images = self.eval_images
             boxes = self.eval_boxes
@@ -85,16 +92,22 @@ class RectanglePatchImplanter(PipelineBase):
         
         sampdict = {k:kwargs[k] for k in kwargs}
         if "scale" not in kwargs:
-            sampdict["scale"] = torch.FloatTensor(n).uniform_(self.params["scale"][0], self.params["scale"][1])
+            sampdict["scale"] = torch.FloatTensor(n).uniform_(p["scale"][0], p["scale"][1])
         if "image" not in kwargs:
             sampdict["image"] = torch.randint(low=0, high=len(images), size=[n])
         if "box" not in kwargs:
             i = torch.tensor([torch.randint(low=0, high=len(boxes[j]), size=[]) for j in sampdict["image"]])
             sampdict["box"] = i
         if "offset_frac_x" not in kwargs:
-            sampdict["offset_frac_x"] = torch.rand([n])
+            if p["offset_frac_x"] is None:
+                sampdict["offset_frac_x"] = torch.rand([n])
+            else:
+                sampdict["offset_frac_x"] = torch.tensor(n*[p["offset_frac_x"]])
         if "offset_frac_y" not in kwargs:
-            sampdict["offset_frac_y"] = torch.rand([n])
+            if p["offset_frac_y"] is None:
+                sampdict["offset_frac_y"] = torch.rand([n])
+            else:
+                sampdict["offset_frac_y"] = torch.tensor(n*[p["offset_frac_y"]])
             
         self.lastsample = sampdict
         
@@ -258,7 +271,8 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
     name = "FixedRatioRectanglePatchImplanter"
     
     def __init__(self, imagedict, boxdict, eval_imagedict=None,
-                 eval_boxdict=None, frac=0.5, scale_by="min"):
+                 eval_boxdict=None, frac=0.5, scale_by="min",
+                 offset_frac_x=None, offset_frac_y=None):
         """
         :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
         :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
@@ -268,6 +282,8 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
         :frac: float; relative size
         :scale_by: str; whether to use the "height", "width", of the box, or "min" 
             of the two for scaling
+        :offset_frac_x: None or float between 0 and 1- optionally specify a relative x position within the target box for the patch.
+        :offset_frac_y: None or float between 0 and 1- optionally specify a relative y position within the target box for the patch.
         """
         super(RectanglePatchImplanter, self).__init__()
         # save training image/box information
@@ -289,7 +305,9 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
         
         self.params = {"frac":frac, "imgkeys":self.imgkeys,
                        "eval_imgkeys":self.eval_imgkeys, 
-                       "scale_by":scale_by}
+                       "scale_by":scale_by,
+                       "offset_frac_x":offset_frac_x,
+                       "offset_frac_y":offset_frac_y}
         self.lastsample = {}
         
         assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
@@ -300,6 +318,8 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
         Sample implantation parameters for batch size n, overwriting with
         kwargs if necessary.
         """
+        p = self.params
+        
         if evaluate:
             images = self.eval_images
             boxes = self.eval_boxes
@@ -310,16 +330,21 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
             self._eval_last = False
         
         sampdict = {k:kwargs[k] for k in kwargs}
-
         if "image" not in kwargs:
             sampdict["image"] = torch.randint(low=0, high=len(images), size=[n])
         if "box" not in kwargs:
             i = torch.tensor([torch.randint(low=0, high=len(boxes[j]), size=[]) for j in sampdict["image"]])
             sampdict["box"] = i
         if "offset_frac_x" not in kwargs:
-            sampdict["offset_frac_x"] = torch.rand([n])
+            if p["offset_frac_x"] is None:
+                sampdict["offset_frac_x"] = torch.rand([n])
+            else:
+                sampdict["offset_frac_x"] = torch.tensor(n*[p["offset_frac_x"]])
         if "offset_frac_y" not in kwargs:
-            sampdict["offset_frac_y"] = torch.rand([n])
+            if p["offset_frac_y"] is None:
+                sampdict["offset_frac_y"] = torch.rand([n])
+            else:
+                sampdict["offset_frac_y"] = torch.tensor(n*[p["offset_frac_y"]])
             
         self.lastsample = sampdict
         
