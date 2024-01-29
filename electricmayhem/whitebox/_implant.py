@@ -417,4 +417,139 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
         return self._implant_patch(images, patchlist, offset_x, offset_y)
     
     
+    
+
+
+class ScaleToBoxRectanglePatchImplanter(RectanglePatchImplanter):
+    """
+    Rectangle patch implanter that resizes the patch to fit the box. Assume 
+    all images are the same dimensions.
+    
+    If eval_imagedict and eval_boxdict aren't passed, evaluation will be done
+    one training images/boxes.
+    """
+    name = "ScaleToBoxRectanglePatchImplanter"
+    
+    def __init__(self, imagedict, boxdict, eval_imagedict=None,
+                 eval_boxdict=None):
+        """
+        :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
+        :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
+            {"img1":[[xmin1, ymin1, xmax1, ymax1], [xmin2, ymin2, xmax2, ymax2]]}
+        :eval_imagedict: separate dictionary of images to evaluate on
+        :eval_boxdict: separate dictionary of lists of bounding boxes for evaluation
+        """
+        super(RectanglePatchImplanter, self).__init__()
+        # save training image/box information
+        self.imgkeys = list(imagedict.keys())
+        self.images = torch.nn.ParameterList([_img_to_tensor(imagedict[k]) for k in self.imgkeys])
+        self.boxes = [boxdict[k] for k in self.imgkeys]
+        
+        # save eval image/box information
+        if eval_imagedict is None:
+            eval_imagedict = imagedict
+            eval_boxdict = boxdict
+            
+        self.eval_imgkeys = list(eval_imagedict.keys())
+        self.eval_images = torch.nn.ParameterList([_img_to_tensor(eval_imagedict[k]) for k in
+                                                   self.eval_imgkeys])
+        self.eval_boxes = [eval_boxdict[k] for k in self.eval_imgkeys]
+            
+        
+        
+        self.params = {"imgkeys":self.imgkeys,
+                       "eval_imgkeys":self.eval_imgkeys}
+        self.lastsample = {}
+        
+        assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
+        
+        
+    def sample(self, n, evaluate=False, **kwargs):
+        """
+        Sample implantation parameters for batch size n, overwriting with
+        kwargs if necessary.
+        """
+        if evaluate:
+            images = self.eval_images
+            boxes = self.eval_boxes
+            self._eval_last = True
+        else:
+            images = self.images
+            boxes = self.boxes
+            self._eval_last = False
+        
+        sampdict = {k:kwargs[k] for k in kwargs}
+        if "image" not in kwargs:
+            sampdict["image"] = torch.randint(low=0, high=len(images), size=[n])
+        if "box" not in kwargs:
+            i = torch.tensor([torch.randint(low=0, high=len(boxes[j]), size=[]) for j in sampdict["image"]])
+            sampdict["box"] = i
+            
+        self.lastsample = sampdict
+        
+    
+    def forward(self, patches, control=False, evaluate=False, params={}, **kwargs):
+        """
+        Implant a batch of patches in a batch of images
+        
+        :patches: torch Tensor; stack of patches
+        :control: if True, leave the patches off (for diagnostics)
+        :params: dictionary of params to override random sampling
+        :kwargs: passed to self.sample()
+        """
+        if evaluate:
+            images = self.eval_images
+            boxes = self.eval_boxes
+        else:
+            images = self.images
+            boxes = self.boxes
+        
+        if control:
+            params = self.lastsample
+        # sample parameters if necessary
+        self.sample(patches.shape[0], evaluate=evaluate, **params)
+        s = self.lastsample
+        
+        #if self.params["scale"][1] > self.params["scale"][0]:
+        #    patchlist = [kornia.geometry.rescale(patches[i].unsqueeze(0), (s["scale"][i], s["scale"][i])).squeeze(0) 
+        #                          for i in range(patches.shape[0])]
+        #else:
+        #    patchlist = [patches[i] for i in range(patches.shape[0])]
+            
+        patchlist = []
+            
+        # figure out offset of patches
+        bs = len(s["box"])
+        dx = torch.zeros(bs)
+        dy = torch.zeros(bs)
+        boxx = torch.zeros(bs)
+        boxy = torch.zeros(bs)
+        for i in range(bs):
+            box = boxes[s["image"][i]][s["box"][i]]
+            box_h = box[3] - box[1]
+            box_w = box[2] - box[0]
+            patchlist.append(
+                kornia.geometry.resize(patches[i].unsqueeze(0),
+                                        (box_h, box_w)).squeeze(0)
+                )
+            boxx[i] = box[0]
+            boxy[i] = box[1]
+            
+        offset_y = (dy + boxy).type(torch.IntTensor)
+        offset_x = (dx + boxx).type(torch.IntTensor)
+        images = [images[i] for i in s["image"]]
+        
+        if control:
+            return torch.stack(images,0)
+        
+        return self._implant_patch(images, patchlist, offset_x, offset_y)
+    
+    def validate(self, patch):
+        """
+        we don't actually need to check box sizes since we're rescaling
+        """
+        logging.warning("nothing to validate here")
+    
+    
+    
         
