@@ -5,6 +5,7 @@ import json
 
 from electricmayhem.whitebox._implant import RectanglePatchImplanter
 from electricmayhem.whitebox._implant import FixedRatioRectanglePatchImplanter
+from electricmayhem.whitebox._implant import ScaleToBoxRectanglePatchImplanter
 
 
 testtensor = np.random.randint(0, 255, size=(128,128,3))
@@ -235,4 +236,24 @@ def test_fixedratiorectanglepatchimplanter_sample_with_fixed_offset():
     for i in range(3):
         assert imp.lastsample["offset_frac_x"][i] == 0.5
         assert imp.lastsample["offset_frac_y"][i] == 0.25
+    
+    
+def test_scaletoboxrectanglepatchimplanter_train_and_eval_images():
+    imp = ScaleToBoxRectanglePatchImplanter({"im1":testtensor, "im2":testtensor}, 
+                                  {"im1":[box], "im2":[box]}, 
+                                  eval_imagedict={"im3":testtensor2, "im4":testtensor2},
+                                  eval_boxdict={"im3":[box], "im4":[box]})
+    
+    # run a training image through
+    implanted = imp(colorpatch.unsqueeze(0))
+    # do it again without the patch
+    unimplanted = imp(colorpatch.unsqueeze(0), control=True)
+    assert (unimplanted.squeeze(0) == imp.images[0]).all()
+    assert not (unimplanted.squeeze(0) == imp.eval_images[0]).all()
+    # run an eval image through
+    implanted = imp(colorpatch.unsqueeze(0), evaluate=True)
+    # do it again without the patch
+    unimplanted = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
+    assert not (unimplanted.squeeze(0) == imp.images[0]).all()
+    assert (unimplanted.squeeze(0) == imp.eval_images[0]).all()
     
