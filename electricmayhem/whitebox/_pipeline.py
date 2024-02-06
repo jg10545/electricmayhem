@@ -83,15 +83,53 @@ class ModelWrapper(PipelineBase):
     """
     name = "ModelWrapper"
     
-    def __init__(self, model):
+    def __init__(self, model, eval_model=None):
+        """
+        :model: pytorch model or list/dict of models, in eval mode
+        :eval_model: optional model or list/dict of models to use in eval steps
+        """
         super().__init__()
-        self.model = model
+        # wrap the model container if necessary
+        self.model, self.wraptype = self._wrap(model)
+        # wrap eval model container if necessary
+        if eval_model is not None:
+            self.eval_model, self.eval_wraptype = self._wrap(eval_model)
+        else:
+            self.eval_model = self.model
+            self.eval_wraptype = self.wraptype
+        
         self.params = {}
         if model.training:
             logging.warn("model appears to be set to train mode. was this intentional?")
+            
+    def _wrap(self, x):
+        """
+        Wrap a container object if necessary
+        """
+        wraptype = "model"
+        if isinstance(x, list):
+            x = torch.nn.ModuleList(x)
+            wraptype = "list"
+        elif isinstance(x, dict):
+            x = torch.nn.ModuleDict(x)
+            wraptype = "dict"
+        return x, wraptype
+    
+    def _call_wrapped(self, model, x):
+        if isinstance(model, torch.nn.ModuleList):
+            return [m(x) for m in model]
+        elif isinstance(model, torch.nn.ModuleDict):
+            return {m:model[m](x) for m in model}
+        else:
+            return model(x)
         
     def forward(self, x, control=False, evaluate=False, **kwargs):
-        return self.model(x)
+        if evaluate:
+            model = self.eval_model
+        else:
+            model = self.model
+            
+        return self._call_wrapped(model, x)
     
     def get_last_sample_as_dict(self):
         """

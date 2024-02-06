@@ -186,53 +186,136 @@ class YOLOWrapper(ModelWrapper):
     """
     name = "ModelWrapper"
     
-    def __init__(self, model, logviz=True, classnames=None, thresh=0.1, iouthresh=0.5,
-                 v4=False):
+    def __init__(self, model, eval_model=None, logviz=True, classnames=None, 
+                 thresh=0.1, iouthresh=0.5, v4=False):
         """
-        :model: pytorch YOLO model in eval mode
+        :model: pytorch model or list/dict of models, in eval mode
+        :eval_model: optional model or list/dict of models to use in eval steps
         :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
             is called.
-        :classnames: list of output category names
+        :classnames: list of output category names. if models with different output
+            categories are being used, pass a dictionary mapping model name to list
+            of category names
         :thresh: objectness score threshold for plotting
         :iouthresh: IoU threshold for non maximal suppression during plotting
         :v4: bool; if True outputs are expected in VOLOv4 format instead of v5
         """
-        super().__init__(model)
+        super().__init__(model, eval_model)
         self._logviz = logviz
         self.classnames = classnames
         self.thresh = thresh
         self.iouthresh = iouthresh
         self.params = {"v4":v4}
         
-    def forward(self, x, control=False, evaluate=False, **kwargs):
-        outputs = self.model(x)
+    def _convert_v4_to_v5_if_you_can(self, x, H, W):
+        """
+        only convert format from the non-official v4 codebase outputs if
+        necessary
+        """
+        if len(x) == 2:
+            if len(x[0].shape) == 4:
+                if x[0].shape[2] == 1:
+                    if x[0].shape[3] == 4:
+                        return convert_v4_to_v5_format(x, H, W)
+        return x
         
+        
+    def forward(self, x, control=False, evaluate=False, **kwargs):
+        H, W = x.shape[2], x.shape[3]
+        # if this is an evaluation step, check to see if we should run
+        # the image through different models
+        if evaluate:
+            model = self.eval_model
+            wraptype = self.eval_wraptype
+        else:
+            model = self.model
+            wraptype = self.wraptype
+            
+        outputs = self._call_wrapped(model,x)
+        
+        # for the non-official v4 format, we might need to convert the results.
+        # but in case we're mixing different formats- only run the conversion function
+        # on the outputs that appear to be in that format.
         if self.params["v4"]:
-            outputs = convert_v4_to_v5_format(outputs, x.shape[2], x.shape[3])
+            if wraptype == "list":
+                outputs = [self._convert_v4_to_v5_if_you_can(o,H,W) for o in outputs]
+            elif wraptype == "dict":
+                outputs = {o:self._convert_v4_to_v5_if_you_can(outputs[o],H,W)
+                           for o in outputs}
+            else:
+                outputs = self._convert_v4_to_v5_if_you_can(outputs,H,W)
 
         return outputs
+    
+    def _vizualize_and_log_one_model_detection(self, x, x_control, 
+                                               detects, detects_control, 
+                                               writer, step, classnames,
+                                               suffix=None,
+                                               logging_to_mlflow=False):
+        fig_arrays = []
+        plt.ioff()
+        for i in range(x.shape[0]):
+            fig_arrays.append(
+                _plot_detection_pair_to_array(x_control[0], detects_control, 
+                                              x[0], detects, i,
+                                              classnames=classnames,
+                                              thresh=self.thresh,
+                                              iouthresh=self.iouthresh)
+                )
+        plt.ion()
+        if suffix is None:
+            logname = "detections"
+        else:
+            logname = f"detections_{suffix}"
+        fig_arrays = np.stack(fig_arrays, 0)
+        writer.add_images(logname, fig_arrays[:,:,:,:3], global_step=step,
+                         dataformats='NHWC')
+        
+        
+        
         
     def log_vizualizations(self, x, x_control, writer, step, logging_to_mlflow=False):
         """
         Log a batch of image pairs (control and with patch), showing model
         detections.
-        """
-        if self._logviz:
-            fig_arrays = []
-            detects = self(x)[0]
-            detects_control = self(x_control)[0]
-            plt.ioff()
-            for i in range(x.shape[0]):
-                fig_arrays.append(
-                    _plot_detection_pair_to_array(x_control, detects_control, 
-                                                  x, detects, i,
-                                                  classnames=self.classnames,
-                                                  thresh=self.thresh,
-                                                  iouthresh=self.iouthresh)
-                    )
-            plt.ion()
-            fig_arrays = np.stack(fig_arrays, 0)
-            writer.add_images("detections", fig_arrays[:,:,:,:3], global_step=step,
-                             dataformats='NHWC')
         
+        This function manages eval outputs that could include multiple models,
+        with or without model names specified. It wraps
+        _visualize_and_log_one_model_detection() which handles building and logging
+        each individual figure.
+        """
+        # skip everything if we're not logging visualizations
+        if self._logviz:
+            # run images with and without patch through the model(s)
+            detects = self(x, evaluate=True)
+            detects_control = self(x_control, evaluate=True, control=True)
+            # now log the viz separately for each model. if there's just one model:
+            if self.eval_wraptype == "model":
+                self._vizualize_and_log_one_model_detection(x, x_control, detects,
+                                                       detects_control, writer, 
+                                                       step, self.classnames,
+                                                       logging_to_mlflow=logging_to_mlflow)
+            # or a list of models- indicate each model by its list index
+            elif self.eval_wraptype == "list":
+                for i in range(len(detects)):
+                    self._vizualize_and_log_one_model_detection(x, x_control, detects[i],
+                                                           detects_control[i], writer, 
+                                                           step, self.classnames,
+                                                           suffix=i,
+                                                           logging_to_mlflow=logging_to_mlflow)
+            
+            # or a dict of models
+            elif self.eval_wraptype == "dict":
+                for k in detects:
+                    if isinstance(self.classnames, list):
+                        classnames = self.classnames
+                    elif isinstance(self.classnames, dict):
+                        classnames = self.classnames[k]
+                    else:
+                        classnames = None
+                    self._vizualize_and_log_one_model_detection(x, x_control, detects[k],
+                                                           detects_control[k], writer, 
+                                                           step, classnames,
+                                                           suffix=k,
+                                                           logging_to_mlflow=logging_to_mlflow)
     
