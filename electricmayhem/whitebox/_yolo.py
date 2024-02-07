@@ -227,11 +227,12 @@ class YOLOWrapper(ModelWrapper):
         if evaluate:
             model = self.eval_model
             wraptype = self.eval_wraptype
+            with torch.no_grad():
+                outputs = self._call_wrapped(model,x)
         else:
             model = self.model
             wraptype = self.wraptype
-            
-        outputs = self._call_wrapped(model,x)
+            outputs = self._call_wrapped(model,x)
         
         # for the non-official v4 format, we might need to convert the results.
         # but in case we're mixing different formats- only run the conversion function
@@ -252,12 +253,13 @@ class YOLOWrapper(ModelWrapper):
                                                writer, step, classnames,
                                                suffix=None,
                                                logging_to_mlflow=False):
+        
         fig_arrays = []
         plt.ioff()
         for i in range(x.shape[0]):
             fig_arrays.append(
-                _plot_detection_pair_to_array(x_control[0], detects_control, 
-                                              x[0], detects, i,
+                _plot_detection_pair_to_array(x_control, detects_control, 
+                                              x, detects, i,
                                               classnames=classnames,
                                               thresh=self.thresh,
                                               iouthresh=self.iouthresh)
@@ -291,15 +293,15 @@ class YOLOWrapper(ModelWrapper):
             detects_control = self(x_control, evaluate=True, control=True)
             # now log the viz separately for each model. if there's just one model:
             if self.eval_wraptype == "model":
-                self._vizualize_and_log_one_model_detection(x, x_control, detects,
-                                                       detects_control, writer, 
+                self._vizualize_and_log_one_model_detection(x, x_control, detects[0],
+                                                       detects_control[0], writer, 
                                                        step, self.classnames,
                                                        logging_to_mlflow=logging_to_mlflow)
             # or a list of models- indicate each model by its list index
             elif self.eval_wraptype == "list":
                 for i in range(len(detects)):
-                    self._vizualize_and_log_one_model_detection(x, x_control, detects[i],
-                                                           detects_control[i], writer, 
+                    self._vizualize_and_log_one_model_detection(x, x_control, detects[i][0],
+                                                           detects_control[i][0], writer, 
                                                            step, self.classnames,
                                                            suffix=i,
                                                            logging_to_mlflow=logging_to_mlflow)
@@ -313,8 +315,8 @@ class YOLOWrapper(ModelWrapper):
                         classnames = self.classnames[k]
                     else:
                         classnames = None
-                    self._vizualize_and_log_one_model_detection(x, x_control, detects[k],
-                                                           detects_control[k], writer, 
+                    self._vizualize_and_log_one_model_detection(x, x_control, detects[k][0],
+                                                           detects_control[k][0], writer, 
                                                            step, classnames,
                                                            suffix=k,
                                                            logging_to_mlflow=logging_to_mlflow)

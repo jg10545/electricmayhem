@@ -99,8 +99,8 @@ class ModelWrapper(PipelineBase):
             self.eval_wraptype = self.wraptype
         
         self.params = {}
-        if model.training:
-            logging.warn("model appears to be set to train mode. was this intentional?")
+        #if model.training:
+        #    logging.warn("model appears to be set to train mode. was this intentional?")
             
     def _wrap(self, x):
         """
