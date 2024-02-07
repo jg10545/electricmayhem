@@ -5,6 +5,7 @@ import pytest
 import os
 
 from electricmayhem.whitebox import _pipeline, _aug, _create
+from .modelgenerators import *
 
 augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
 augdict2 = {"ColorJiggle":{"contrast":0.1, "p":1}}
@@ -39,7 +40,38 @@ def test_modelwrapper():
     mod = Model().eval()
     wrapper = _pipeline.ModelWrapper(mod)
     assert isinstance(wrapper.to_yaml(), str)
+    assert isinstance(wrapper.get_last_sample_as_dict(), dict)
     
+    
+def test_modelwrapper_multiple_models():
+    train_model = DummyConvNet(3)
+    eval_model = DummyConvNet(5)
+    
+    wrapper = _pipeline.ModelWrapper(train_model, eval_model=eval_model)
+    x = torch.tensor(np.random.uniform(0, 1, (1,3,28,28)).astype(np.float32))
+    
+    y_train = wrapper(x)
+    y_eval = wrapper(x, evaluate=True)
+    
+    assert y_train.shape == (1,3)
+    assert y_eval.shape == (1,5)
+    
+   
+def test_modelwrapper_multiple_models_in_dictionary():
+    train_model = DummyConvNet(3)
+    eval_model = DummyConvNet(5)
+    
+    wrapper = _pipeline.ModelWrapper(train_model, eval_model={"trainmodel":train_model,
+                                                              "evalmodel":eval_model})
+    x = torch.tensor(np.random.uniform(0, 1, (1,3,28,28)).astype(np.float32))
+    
+    y_train = wrapper(x)
+    y_eval = wrapper(x, evaluate=True)
+    
+    assert y_train.shape == (1,3)
+    assert isinstance(y_eval, dict)
+    assert y_eval["trainmodel"].shape == (1,3)
+    assert y_eval["evalmodel"].shape == (1,5)
     
 def test_pipeline_manual_creation():
     pipe = _pipeline.Pipeline(aug1, aug2)
@@ -162,7 +194,61 @@ def test_pipeline_training_loop_runs():
     pipeline.set_loss(myloss)
     out = pipeline.train_patch(batch_size, num_steps, step_size, 
                          eval_every, num_eval_steps, mainloss=1)
+    assert isinstance(pipeline._get_learning_rate(), float)
     assert out.shape == shape
+    
+
+  
+def test_pipeline_training_loop_with_logging(tmp_path_factory):
+    logdir = str(tmp_path_factory.mktemp("pipeline_logs"))
+    batch_size = 2
+    step_size = 1e-2
+    num_steps = 5
+    eval_every = 4
+    num_eval_steps = 1
+    def myloss(outputs, patchparam):
+        outdict = {}
+        outputs = outputs.reshape(outputs.shape[0], -1)
+        outdict["mainloss"] = torch.mean(outputs, 1)
+        return outdict    
+    
+
+    shape = (3,5,7)
+    step = _create.PatchResizer((11,13))
+    pipeline = _pipeline.Pipeline(step)
+    pipeline.initialize_patch_params(shape)
+    pipeline.set_loss(myloss)
+    pipeline.set_logging(logdir)
+    out = pipeline.train_patch(batch_size, num_steps, step_size, 
+                         eval_every, num_eval_steps, mainloss=1)
+    pipeline.evaluate(batch_size, num_steps)
+    assert out.shape == shape
+    
+    
+def test_pipeline_training_loop_with_profiling(tmp_path_factory):
+    logdir = str(tmp_path_factory.mktemp("pipeline_logs_with_profile"))
+    batch_size = 2
+    step_size = 1e-2
+    num_steps = 5
+    eval_every = 4
+    num_eval_steps = 1
+    def myloss(outputs, patchparam):
+        outdict = {}
+        outputs = outputs.reshape(outputs.shape[0], -1)
+        outdict["mainloss"] = torch.mean(outputs, 1)
+        return outdict    
+    
+
+    shape = (3,5,7)
+    step = _create.PatchResizer((11,13))
+    pipeline = _pipeline.Pipeline(step)
+    pipeline.initialize_patch_params(shape)
+    pipeline.set_loss(myloss)
+    pipeline.set_logging(logdir)
+    out = pipeline.train_patch(batch_size, num_steps, step_size, 
+                         eval_every, num_eval_steps, mainloss=1, profile=2)
+    pipeline.evaluate(batch_size, num_steps)
+    assert out.shape == shape    
     
     
 def test_pipeline_training_loop_runs_mifgsm_optimizer():
@@ -188,8 +274,9 @@ def test_pipeline_training_loop_runs_mifgsm_optimizer():
 
     out = pipeline.train_patch(batch_size, num_steps, step_size, 
                          eval_every, num_eval_steps, mainloss=1,
-                         optimizer="mifgsm")
+                         optimizer="mifgsm", lr_decay="cosine")
     assert out.shape == shape
+    assert isinstance(pipeline._get_learning_rate(), float)
     
 def test_pipeline_training_loop_runs_adam_optimizer():
     #This is a pretty minimal test just to see
@@ -213,7 +300,7 @@ def test_pipeline_training_loop_runs_adam_optimizer():
     pipeline.set_loss(myloss)
     out = pipeline.train_patch(batch_size, num_steps, step_size, 
                          eval_every, num_eval_steps, mainloss=1,
-                         optimizer="adam")
+                         optimizer="adam", lr_decay="plateau")
     assert out.shape == shape
     
 def test_pipeline_training_loop_runs_lr_decay_exponential():
@@ -331,3 +418,32 @@ def test_pipeline_get_profiler(tmp_path_factory):
     pipe.set_logging(logdir=fn)
     prof = pipe._get_profiler()
     assert isinstance(prof, torch.profiler.profiler.profile)
+    
+    
+    
+def test_pipeline_optimize_runs_without_crashing(tmp_path_factory):
+    # a low bar but let's try to clear it
+    logdir = str(tmp_path_factory.mktemp("pipeline_optimize_logs"))
+    batch_size = 2
+    num_steps = 5
+    num_eval_steps = 1
+    N = 6
+    def myloss(outputs, patchparam):
+        outdict = {}
+        outputs = outputs.reshape(outputs.shape[0], -1)
+        outdict["mainloss"] = torch.mean(outputs, 1)
+        return outdict    
+    
+
+    shape = (3,5,7)
+    step = _create.PatchResizer((11,13))
+    pipeline = _pipeline.Pipeline(step)
+    pipeline.set_loss(myloss)
+    pipeline.optimize("mainloss", logdir, shape, N, num_steps,
+                      batch_size,
+                      num_eval_steps=num_eval_steps, 
+                      lr=(0.001, 0.01, "log"),
+                      accumulate=(1, 2, "int"),
+                      mainloss=(0.1,1.),
+                      lr_decay=["cosine", "exponential"],
+                      optimizer=["bim", "adam", "mifgsm"])

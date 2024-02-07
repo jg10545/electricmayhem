@@ -2,7 +2,8 @@ numpy
 torch
 kornia>=0.6.9
 dask
-tensorboard
+pandas
+sklearn
 matplotlib
 tqdm
 tensorboard

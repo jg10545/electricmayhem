@@ -3,7 +3,15 @@ import matplotlib
 import torch
 
 from electricmayhem.whitebox import _yolo
+from .modelgenerators import *
 
+
+
+def test_xywh2xyxy():
+    xywh = torch.tensor([[50, 100, 10, 20]])
+    xyxy = _yolo.xywh2xyxy(xywh)
+    for i,v in enumerate([45, 90, 55, 110]):
+        assert xyxy[0,i] == v
 
 def test_plot_detections():
     img_tensor = torch.tensor(np.random.uniform(0,1,size=(1,3,600,480)))
@@ -54,3 +62,159 @@ def test_IoU_no_overlap():
     box2 = [1000, 10, 1020, 30]
     iou = _yolo.IoU(box1, box2)
     assert iou == 0
+    
+    
+    
+def test_convert_v4_to_v5_correct_output_shape():
+    batch = 3
+    num_classes = 5
+    num_boxes = 7
+    H = 64
+    W = 64
+    v4_output = [torch.tensor(np.random.normal(0, 1, size=(batch,num_boxes ,1, 4))),
+                 torch.tensor(np.random.normal(0, 1, size=(batch,num_boxes,
+                                                           num_classes)))]
+    
+    v5_output = _yolo.convert_v4_to_v5_format(v4_output, H, W)
+    assert isinstance(v5_output, list)
+    assert v5_output[0].shape == (batch, num_boxes, 5+num_classes)
+    
+    
+    
+def test_yolowrapper_single_v5_model(tmp_path_factory):
+    num_classes = 7
+    num_boxes = 11
+    classnames = [str(i) for i in range(num_classes)]
+    model = DummyYOLO(num_boxes=num_boxes, num_classes=num_classes)
+    
+    yolo = _yolo.YOLOWrapper(model, classnames=classnames)
+    
+    x = torch.tensor(np.random.uniform(0, 1, size=(1,3,13,23)).astype(np.float32))
+    y = yolo(x)
+    assert y[0].shape == (x.shape[0], num_boxes, 5+num_classes)
+    
+    fn = str(tmp_path_factory.mktemp("logs"))
+    writer = torch.utils.tensorboard.SummaryWriter(fn)
+    yolo.log_vizualizations(x, x, writer, 0)
+    
+
+    
+def test_yolowrapper_single_v4_model(tmp_path_factory):
+    num_classes = 7
+    num_boxes = 11
+    classnames = [str(i) for i in range(num_classes)]
+    model = DummyYOLOv4(num_boxes=num_boxes, num_classes=num_classes)
+    
+    yolo = _yolo.YOLOWrapper(model, classnames=classnames, v4=True)
+    
+    x = torch.tensor(np.random.uniform(0, 1, size=(1,3,13,23)).astype(np.float32))
+    y = yolo(x)
+    assert y[0].shape == (x.shape[0], num_boxes, 5+num_classes)
+    
+    fn = str(tmp_path_factory.mktemp("logs"))
+    writer = torch.utils.tensorboard.SummaryWriter(fn)
+    yolo.log_vizualizations(x, x, writer, 0)
+    
+    
+
+    
+def test_yolowrapper_different_train_eval_models(tmp_path_factory):
+    num_classes = 7
+    num_boxes = 11
+    classnames = [str(i) for i in range(num_classes)]
+    model = DummyYOLOv4(num_boxes=num_boxes, num_classes=num_classes)
+    
+    num_classes_eval = 7
+    num_boxes_eval = 13
+    model_eval = DummyYOLO(num_boxes=num_boxes_eval, num_classes=num_classes_eval)
+    
+    yolo = _yolo.YOLOWrapper(model, classnames=classnames, v4=True,
+                             eval_model=model_eval)
+    
+    x = torch.tensor(np.random.uniform(0, 1, size=(1,3,13,23)).astype(np.float32))
+    y = yolo(x)
+    assert y[0].shape == (x.shape[0], num_boxes, 5+num_classes)
+    y_eval = yolo(x, evaluate=True)
+    assert y_eval[0].shape == (x.shape[0], num_boxes_eval, 5+num_classes_eval)
+    
+    fn = str(tmp_path_factory.mktemp("logs"))
+    writer = torch.utils.tensorboard.SummaryWriter(fn)
+    yolo.log_vizualizations(x, x, writer, 0)
+    
+    
+
+def test_yolowrapper_different_train_eval_model_lists(tmp_path_factory):
+    num_classes = 7
+    num_boxes_1 = 11
+    num_boxes_2 = 13
+    classnames = [str(i) for i in range(num_classes)]
+    model = [DummyYOLOv4(num_boxes=num_boxes_1, num_classes=num_classes),
+             DummyYOLOv4(num_boxes=num_boxes_2, num_classes=num_classes)]
+    
+    num_classes_eval = 7
+    num_boxes_eval_1 = 13
+    num_boxes_eval_2 = 17
+    num_boxes_eval_3 = 23
+    model_eval = [DummyYOLO(num_boxes=num_boxes_eval_1, num_classes=num_classes_eval),
+                  DummyYOLO(num_boxes=num_boxes_eval_2, num_classes=num_classes_eval),
+                  DummyYOLO(num_boxes=num_boxes_eval_3, num_classes=num_classes_eval)]
+    
+    yolo = _yolo.YOLOWrapper(model, classnames=classnames, v4=True,
+                             eval_model=model_eval)
+    
+    x = torch.tensor(np.random.uniform(0, 1, size=(1,3,13,23)).astype(np.float32))
+    y = yolo(x)
+    assert isinstance(y, list)
+    assert y[0][0].shape == (x.shape[0], num_boxes_1, 5+num_classes)
+    assert y[1][0].shape == (x.shape[0], num_boxes_2, 5+num_classes)
+    
+    y_eval = yolo(x, evaluate=True)
+    assert isinstance(y_eval, list)
+    assert y_eval[0][0].shape == (x.shape[0], num_boxes_eval_1, 5+num_classes_eval)
+    assert y_eval[1][0].shape == (x.shape[0], num_boxes_eval_2, 5+num_classes_eval)
+    assert y_eval[2][0].shape == (x.shape[0], num_boxes_eval_3, 5+num_classes_eval)
+    
+    fn = str(tmp_path_factory.mktemp("logs"))
+    writer = torch.utils.tensorboard.SummaryWriter(fn)
+    yolo.log_vizualizations(x, x, writer, 0)
+    
+    
+def test_yolowrapper_different_train_eval_model_dicts(tmp_path_factory):
+    num_classes = 7
+    num_boxes_1 = 11
+    num_boxes_2 = 13
+    # test option to pass different classnames for each model
+    classnames = {key:[str(i) for i in range(num_classes)] for key in
+                  ["foo", "bar"]}
+    model = {"foo":DummyYOLOv4(num_boxes=num_boxes_1, num_classes=num_classes),
+             "bar":DummyYOLOv4(num_boxes=num_boxes_2, num_classes=num_classes)}
+    
+    num_classes_eval = 12
+    num_boxes_eval_1 = 13
+    num_boxes_eval_2 = 17
+    num_boxes_eval_3 = 23
+    model_eval = {"a":DummyYOLO(num_boxes=num_boxes_eval_1, num_classes=num_classes_eval),
+                  "b":DummyYOLO(num_boxes=num_boxes_eval_2, num_classes=num_classes_eval),
+                  "c":DummyYOLO(num_boxes=num_boxes_eval_3, num_classes=num_classes_eval)}
+    for key in ["a", "b", "c"]:
+        classnames[key] = [str(i) for i in range(num_classes_eval)]
+    
+    yolo = _yolo.YOLOWrapper(model, classnames=classnames, v4=True,
+                             eval_model=model_eval)
+    
+    x = torch.tensor(np.random.uniform(0, 1, size=(1,3,13,23)).astype(np.float32))
+    y = yolo(x)
+    assert isinstance(y, dict)
+    assert y["foo"][0].shape == (x.shape[0], num_boxes_1, 5+num_classes)
+    assert y["bar"][0].shape == (x.shape[0], num_boxes_2, 5+num_classes)
+    
+    y_eval = yolo(x, evaluate=True)
+    assert isinstance(y_eval, dict)
+    assert y_eval["a"][0].shape == (x.shape[0], num_boxes_eval_1, 5+num_classes_eval)
+    assert y_eval["b"][0].shape == (x.shape[0], num_boxes_eval_2, 5+num_classes_eval)
+    assert y_eval["c"][0].shape == (x.shape[0], num_boxes_eval_3, 5+num_classes_eval)
+    
+    fn = str(tmp_path_factory.mktemp("logs"))
+    writer = torch.utils.tensorboard.SummaryWriter(fn)
+    yolo.log_vizualizations(x, x, writer, 0)
+    

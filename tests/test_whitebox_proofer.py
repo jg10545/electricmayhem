@@ -28,7 +28,7 @@ def test_tensor_batch_to_imgs_imgs_to_tensor_batch_is_identity_operation():
     assert t.shape == tprime.shape
     assert np.max((t.numpy() - tprime.numpy())**2) < 1e-3
 
-def test_softproofer():
+def test_softproofer(tmp_path_factory):
     target_profile = ImageCms.createProfile("XYZ")
     proofer = _proofer.SoftProofer(target_profile)
     test_tensor = torch.tensor(np.random.uniform(0, 1, size=(5,3,7,13)))
@@ -41,3 +41,7 @@ def test_softproofer():
     assert np.sum((test_tensor.numpy() - output_train.numpy())**2) < 1e-5
     assert isinstance(output_eval, torch.Tensor)
     assert test_tensor.shape == output_eval.shape
+    
+    fn = str(tmp_path_factory.mktemp("logs"))
+    writer = torch.utils.tensorboard.SummaryWriter(fn)
+    proofer.log_vizualizations(test_tensor, test_tensor, writer, 0)
