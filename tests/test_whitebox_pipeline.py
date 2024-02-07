@@ -204,7 +204,7 @@ def test_pipeline_training_loop_with_logging(tmp_path_factory):
     batch_size = 2
     step_size = 1e-2
     num_steps = 5
-    eval_every = 1000
+    eval_every = 4
     num_eval_steps = 1
     def myloss(outputs, patchparam):
         outdict = {}
@@ -223,6 +223,32 @@ def test_pipeline_training_loop_with_logging(tmp_path_factory):
                          eval_every, num_eval_steps, mainloss=1)
     pipeline.evaluate(batch_size, num_steps)
     assert out.shape == shape
+    
+    
+def test_pipeline_training_loop_with_profiling(tmp_path_factory):
+    logdir = str(tmp_path_factory.mktemp("pipeline_logs_with_profile"))
+    batch_size = 2
+    step_size = 1e-2
+    num_steps = 5
+    eval_every = 4
+    num_eval_steps = 1
+    def myloss(outputs, patchparam):
+        outdict = {}
+        outputs = outputs.reshape(outputs.shape[0], -1)
+        outdict["mainloss"] = torch.mean(outputs, 1)
+        return outdict    
+    
+
+    shape = (3,5,7)
+    step = _create.PatchResizer((11,13))
+    pipeline = _pipeline.Pipeline(step)
+    pipeline.initialize_patch_params(shape)
+    pipeline.set_loss(myloss)
+    pipeline.set_logging(logdir)
+    out = pipeline.train_patch(batch_size, num_steps, step_size, 
+                         eval_every, num_eval_steps, mainloss=1, profile=2)
+    pipeline.evaluate(batch_size, num_steps)
+    assert out.shape == shape    
     
     
 def test_pipeline_training_loop_runs_mifgsm_optimizer():
@@ -274,7 +300,7 @@ def test_pipeline_training_loop_runs_adam_optimizer():
     pipeline.set_loss(myloss)
     out = pipeline.train_patch(batch_size, num_steps, step_size, 
                          eval_every, num_eval_steps, mainloss=1,
-                         optimizer="adam")
+                         optimizer="adam", lr_decay="plateau")
     assert out.shape == shape
     
 def test_pipeline_training_loop_runs_lr_decay_exponential():
@@ -392,3 +418,32 @@ def test_pipeline_get_profiler(tmp_path_factory):
     pipe.set_logging(logdir=fn)
     prof = pipe._get_profiler()
     assert isinstance(prof, torch.profiler.profiler.profile)
+    
+    
+    
+def test_pipeline_optimize_runs_without_crashing(tmp_path_factory):
+    # a low bar but let's try to clear it
+    logdir = str(tmp_path_factory.mktemp("pipeline_optimize_logs"))
+    batch_size = 2
+    num_steps = 5
+    num_eval_steps = 1
+    N = 6
+    def myloss(outputs, patchparam):
+        outdict = {}
+        outputs = outputs.reshape(outputs.shape[0], -1)
+        outdict["mainloss"] = torch.mean(outputs, 1)
+        return outdict    
+    
+
+    shape = (3,5,7)
+    step = _create.PatchResizer((11,13))
+    pipeline = _pipeline.Pipeline(step)
+    pipeline.set_loss(myloss)
+    pipeline.optimize("mainloss", logdir, shape, N, num_steps,
+                      batch_size,
+                      num_eval_steps=num_eval_steps, 
+                      lr=(0.001, 0.01, "log"),
+                      accumulate=(1, 2, "int"),
+                      mainloss=(0.1,1.),
+                      lr_decay=["cosine", "exponential"],
+                      optimizer=["bim", "adam", "mifgsm"])

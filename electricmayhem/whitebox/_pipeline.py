@@ -540,24 +540,6 @@ class Pipeline(PipelineBase):
             self._log_image_to_mlflow(patch_params, "patch.png")
         return self.patch_params
     
-    def visualize_eval_results(self):
-        """
-        Use ipywidgets to visualize eval results within a notebook
-        """
-        logging.WARN("gonna deprecate this function. use electricmayhem.whitebox.viz.eval_result_interactive() instead.")
-        assert hasattr(self, "df"), "you gotta train a patch first for this to work bro"
-        import ipywidgets
-        def scatter(x, y, c):
-            plt.cla()
-            plt.scatter(self.df[x].values, self.df[y].values, 
-                        c=self.df[c].values, alpha=0.5)
-            plt.colorbar()
-            plt.xlabel(x)
-            plt.ylabel(y)
-            plt.title(c)
-        columns = list(self.df.columns)
-        colors = list(self.results.keys())
-        ipywidgets.interact(scatter, x=columns, y=columns, c=colors)
         
     def __del__(self):
         if self._logging_to_mlflow: mlflow.end_run()
