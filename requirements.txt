@@ -3,7 +3,7 @@ torch
 kornia>=0.6.9
 dask
 pandas
-sklearn
+scikit-learn
 matplotlib
 tqdm
 tensorboard
