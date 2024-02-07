@@ -83,15 +83,53 @@ class ModelWrapper(PipelineBase):
     """
     name = "ModelWrapper"
     
-    def __init__(self, model):
+    def __init__(self, model, eval_model=None):
+        """
+        :model: pytorch model or list/dict of models, in eval mode
+        :eval_model: optional model or list/dict of models to use in eval steps
+        """
         super().__init__()
-        self.model = model
+        # wrap the model container if necessary
+        self.model, self.wraptype = self._wrap(model)
+        # wrap eval model container if necessary
+        if eval_model is not None:
+            self.eval_model, self.eval_wraptype = self._wrap(eval_model)
+        else:
+            self.eval_model = self.model
+            self.eval_wraptype = self.wraptype
+        
         self.params = {}
-        if model.training:
-            logging.warn("model appears to be set to train mode. was this intentional?")
+        #if model.training:
+        #    logging.warn("model appears to be set to train mode. was this intentional?")
+            
+    def _wrap(self, x):
+        """
+        Wrap a container object if necessary
+        """
+        wraptype = "model"
+        if isinstance(x, list):
+            x = torch.nn.ModuleList(x)
+            wraptype = "list"
+        elif isinstance(x, dict):
+            x = torch.nn.ModuleDict(x)
+            wraptype = "dict"
+        return x, wraptype
+    
+    def _call_wrapped(self, model, x):
+        if isinstance(model, torch.nn.ModuleList):
+            return [m(x) for m in model]
+        elif isinstance(model, torch.nn.ModuleDict):
+            return {m:model[m](x) for m in model}
+        else:
+            return model(x)
         
     def forward(self, x, control=False, evaluate=False, **kwargs):
-        return self.model(x)
+        if evaluate:
+            model = self.eval_model
+        else:
+            model = self.model
+            
+        return self._call_wrapped(model, x)
     
     def get_last_sample_as_dict(self):
         """
@@ -502,24 +540,6 @@ class Pipeline(PipelineBase):
             self._log_image_to_mlflow(patch_params, "patch.png")
         return self.patch_params
     
-    def visualize_eval_results(self):
-        """
-        Use ipywidgets to visualize eval results within a notebook
-        """
-        logging.WARN("gonna deprecate this function. use electricmayhem.whitebox.viz.eval_result_interactive() instead.")
-        assert hasattr(self, "df"), "you gotta train a patch first for this to work bro"
-        import ipywidgets
-        def scatter(x, y, c):
-            plt.cla()
-            plt.scatter(self.df[x].values, self.df[y].values, 
-                        c=self.df[c].values, alpha=0.5)
-            plt.colorbar()
-            plt.xlabel(x)
-            plt.ylabel(y)
-            plt.title(c)
-        columns = list(self.df.columns)
-        colors = list(self.results.keys())
-        ipywidgets.interact(scatter, x=columns, y=columns, c=colors)
         
     def __del__(self):
         if self._logging_to_mlflow: mlflow.end_run()
