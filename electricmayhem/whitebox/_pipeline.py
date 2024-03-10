@@ -10,11 +10,14 @@ import logging
 import os
 import json
 import inspect
+import copy
 
 from ._util import _dict_of_tensors_to_dict_of_arrays, _concat_dicts_of_arrays
 from ._util import _flatten_dict, _mlflow_description, _bootstrap_std
 from ._opt import _create_ax_client
+from ._multi import PatchWrapper
 from .optim import _get_optimizer_and_scheduler
+
 
 class PipelineBase(torch.nn.Module):
     """
@@ -74,6 +77,13 @@ class PipelineBase(torch.nn.Module):
         """
         """
         pass
+    
+    def copy(self):
+        """
+        Perform a deepcopy AFTER MOVING TO THE CPU
+        """
+        self.cpu()
+        return copy.deepcopy(self)
         
     
     
@@ -158,6 +168,12 @@ class Pipeline(PipelineBase):
         for e,s in enumerate(self.steps):
             self.params[f"{e}_{s.name}"] = s.params
             
+        # These attributes will only be used when we're training in distributed
+        # mode over multiple GPUs. In that case they'll be overwritten.
+        self.rank = 0
+        self.worldsize = 0
+        self.devices = []
+            
     def forward(self, x, control=False, evaluate=False, **kwargs):
         for a in self.steps:
             x = a(x, control=control, evaluate=evaluate, **kwargs)
@@ -175,10 +191,11 @@ class Pipeline(PipelineBase):
         """
         Save self.params to a YAML file
         """
-        yamltext = yaml.dump(self.params, default_flow_style=False)
-        if hasattr(self, "logdir"):
-            open(os.path.join(self.logdir, "config.yml"),
-                 "w").write(yamltext)
+        if self.rank == 0:
+            yamltext = yaml.dump(self.params, default_flow_style=False)
+            if hasattr(self, "logdir"):
+                open(os.path.join(self.logdir, "config.yml"),
+                     "w").write(yamltext)
         return 
     
     def get_last_sample_as_dict(self):
@@ -265,7 +282,26 @@ class Pipeline(PipelineBase):
             patch = torch.zeros(patch_shape, dtype=torch.float32).uniform_(0,1)
 
         self._defaults["patch_param_shape"] = patch.shape    
-        self.patch_params = patch.to(device)
+        # now wrap the patch in a torch.nn.Module subclass so that we can
+        # distribute it if we need to
+        if not isinstance(patch, PatchWrapper):
+            patch = patch.clone().detach().requires_grad_(True)
+            patch_wrapped = PatchWrapper(patch,
+                                         single_patch=single_patch)
+        # distribute wrapped patch if we're training in parallel on multiple machines
+        if self.worldsize > 0:
+            # which device is this worker assigned to?
+            device = self.devices[self.rank]
+            # DDP API is different if device is CPU
+            if (device == "cpu")|(device == torch.device("cpu")):
+                device_ids = None
+            else:
+                device_ids = [device]
+            patch_wrapped = torch.nn.DistributedDataParallel(patch_wrapped,
+                                                             device_ids=device_ids)
+            
+        #self.patch_params = patch.to(device)
+        self.patch_params = patch_wrapped.to(device)
         self._single_patch = single_patch
         
     def _get_learning_rate(self):
@@ -283,9 +319,10 @@ class Pipeline(PipelineBase):
         """
         log images to tensorboard
         """
-        if hasattr(self, "writer"):
-            for k in kwargs:
-                self.writer.add_image(k, kwargs[k], global_step=self.global_step)
+        if self.rank == 0:
+            if hasattr(self, "writer"):
+                for k in kwargs:
+                    self.writer.add_image(k, kwargs[k], global_step=self.global_step)
         
 
 
@@ -293,19 +330,21 @@ class Pipeline(PipelineBase):
         """
         log scalars
         """
-        if hasattr(self, "writer"):
-            for k in kwargs:
-                self.writer.add_scalar(k, kwargs[k], global_step=self.global_step)
-        if mlflow_metric&self._logging_to_mlflow:
-            mlflow.log_metrics(kwargs, step=self.global_step)
+        if self.rank == 0:
+            if hasattr(self, "writer"):
+                for k in kwargs:
+                    self.writer.add_scalar(k, kwargs[k], global_step=self.global_step)
+            if mlflow_metric&self._logging_to_mlflow:
+                mlflow.log_metrics(kwargs, step=self.global_step)
             
     def _log_histograms(self, **kwargs):
         """
         log scalars
         """
-        if hasattr(self, "writer"):
-            for k in kwargs:
-                self.writer.add_histogram(k, kwargs[k], global_step=self.global_step)
+        if self.rank == 0:
+            if hasattr(self, "writer"):
+                for k in kwargs:
+                    self.writer.add_histogram(k, kwargs[k], global_step=self.global_step)
         
     def set_loss(self, lossfunc, test_patch_shape=(2,3,64,64)):
         """
@@ -342,6 +381,8 @@ class Pipeline(PipelineBase):
         Wraps the log_vizualizations method in each of the pipeline
         stages.
         """
+        if self.rank > 0:
+            return
         with torch.no_grad():
             x = patchbatch 
             x_control = patchbatch.clone()
@@ -357,14 +398,17 @@ class Pipeline(PipelineBase):
         """
         Run a set of evaluation batches and log results.
         """
+        if self.rank > 0:
+            return
         if patchbatch is None:
             patch_params = self.patch_params
         
             # stack into a batch of patches
-            if self._single_patch:
-                patchbatch = torch.stack([patch_params for _ in range(batch_size)], 0)
-            else:
-                patchbatch = patch_params
+            #if self._single_patch:
+            #    patchbatch = torch.stack([patch_params for _ in range(batch_size)], 0)
+            #else:
+            #    patchbatch = patch_params
+            patchbatch = self.patch_params(batch_size)
             
         # store loss function outputs for each eval batch
         results = []
@@ -465,9 +509,13 @@ class Pipeline(PipelineBase):
             prof = self._get_profiler(active=profile)
         
         # copy patch and turn on gradients
-        patch_params = self.patch_params.clone().detach().requires_grad_(True)
+        #patch_params = self.patch_params.clone().detach().requires_grad_(True)
+        patch_params = self.patch_params
+        # DISTRIBUTED: optimizer needs to get defined INSIDE spawned process
         # initialize optimizer and scheduler
-        optimizer, scheduler = _get_optimizer_and_scheduler(optimizer, [patch_params],
+        #optimizer, scheduler = _get_optimizer_and_scheduler(optimizer, [patch_params],
+        optimizer, scheduler = _get_optimizer_and_scheduler(optimizer,
+                                                            patch_params.parameters(),
                                                             learning_rate,
                                                             decay=lr_decay,
                                                             steps=int(num_steps/accumulate))
@@ -479,11 +527,16 @@ class Pipeline(PipelineBase):
             loop = tqdm(loop)
             
         for i in loop:
+            # DISTRIBUTED: need to wrap patch in an nn.Module subclass
             # stack into a batch of patches
-            if self._single_patch:
-                patchbatch = torch.stack([patch_params for _ in range(batch_size)], 0)
-            else:
-                patchbatch = patch_params
+            #if self._single_patch:
+            #    patchbatch = torch.stack([patch_params for _ in range(batch_size)], 0)
+            #else:
+            #    patchbatch = patch_params
+            patchbatch = self.patch_params(batch_size)
+            
+            # DISTRIBUTED: wrapped patch batch object needs to get wrapped again
+            # with torch.nn.parallel.DistributedDataParallel
             
             # run through the pipeline
             outputs = self(patchbatch)
@@ -498,6 +551,7 @@ class Pipeline(PipelineBase):
                 if k in kwargs:
                     #loss += kwargs[k]*meanloss
                     loss += kwargs[k]*meanloss/accumulate
+            # DISTRIBUTED: only log to TB if we're in the process with rank 0
             # save metrics to tensorboard
             self._log_scalars(mlflow_metric=False, **record)
             
@@ -514,8 +568,9 @@ class Pipeline(PipelineBase):
                 #self._log_scalars(learning_rate=scheduler.get_last_lr()[0])
                 self._log_scalars(learning_rate=optimizer.param_groups[0]["lr"])
                 if clamp_to is not None:
-                    with torch.no_grad():
-                        patch_params.clamp_(clamp_to[0], clamp_to[1])
+                    self.patch_params.clamp(clamp_to[0], clamp_to[1])
+                    #with torch.no_grad():
+                    #    patch_params.clamp_(clamp_to[0], clamp_to[1])
                 
             
             # if this is an evaluate step- run evaluation and save params
@@ -534,11 +589,12 @@ class Pipeline(PipelineBase):
             self.global_step += 1
                 
         # finished training- save a copy of the patch tensor
-        self.patch_params = patch_params.clone().detach()
+        # shouldn't need this now since we didn't detatch from self.patch_params
+        #self.patch_params = patch_params.clone().detach()
         # wrap up mlflow logging
         if self._logging_to_mlflow:
             self._log_image_to_mlflow(patch_params, "patch.png")
-        return self.patch_params
+        return self.patch_params.patch
     
         
     def __del__(self):
@@ -554,11 +610,12 @@ class Pipeline(PipelineBase):
         """
         Use torch.save to record self.patch_params to file
         """
-        if path is None:
-            path = os.path.join(self.logdir, "patch_params.pt")
-        torch.save(self.patch_params, path)
-        if self._logging_to_mlflow:
-            mlflow.log_artifact(path, "patch_params.pt")
+        if self.rank == 0:
+            if path is None:
+                path = os.path.join(self.logdir, "patch_params.pt")
+            torch.save(self.patch_params.patch, path)
+            if self._logging_to_mlflow:
+                mlflow.log_artifact(path, "patch_params.pt")
     
     def optimize(self, objective, logdir, patch_shape, N, num_steps, 
                  batch_size, num_eval_steps=10, mlflow_uri=None, experiment_name=None, 
