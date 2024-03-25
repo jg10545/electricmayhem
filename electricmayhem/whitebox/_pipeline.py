@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import torch
 import torch.utils.tensorboard
+import torch.multiprocessing as mp
 import yaml
 import mlflow
 from tqdm import tqdm
@@ -11,12 +12,15 @@ import os
 import json
 import inspect
 import copy
+import multiprocessing
 
 from ._util import _dict_of_tensors_to_dict_of_arrays, _concat_dicts_of_arrays
 from ._util import _flatten_dict, _mlflow_description, _bootstrap_std
 from ._opt import _create_ax_client
-from ._multi import PatchWrapper
+from ._multi import PatchWrapper, _run_worker_training_loop
 from .optim import _get_optimizer_and_scheduler
+
+import dill
 
 
 class PipelineBase(torch.nn.Module):
@@ -171,8 +175,6 @@ class Pipeline(PipelineBase):
         # These attributes will only be used when we're training in distributed
         # mode over multiple GPUs. In that case they'll be overwritten.
         self.rank = 0
-        self.worldsize = 0
-        self.devices = []
             
     def forward(self, x, control=False, evaluate=False, **kwargs):
         for a in self.steps:
@@ -289,16 +291,17 @@ class Pipeline(PipelineBase):
             patch_wrapped = PatchWrapper(patch,
                                          single_patch=single_patch)
         # distribute wrapped patch if we're training in parallel on multiple machines
-        if self.worldsize > 0:
-            # which device is this worker assigned to?
-            device = self.devices[self.rank]
-            # DDP API is different if device is CPU
-            if (device == "cpu")|(device == torch.device("cpu")):
-                device_ids = None
-            else:
-                device_ids = [device]
-            patch_wrapped = torch.nn.DistributedDataParallel(patch_wrapped,
-                                                             device_ids=device_ids)
+        #if self.worldsize > 0:
+        #    # which device is this worker assigned to?
+        #    device = self.devices[self.rank]
+        #    # DDP API is different if device is CPU
+        #    if (device == "cpu")|(device == torch.device("cpu")):
+        #        device_ids = None
+        #    else:
+        #        device_ids = [device]
+        #    patch_wrapped = torch.nn.DistributedDataParallel(patch_wrapped,
+        #                                                     device_ids=device_ids)
+        # NEVER MIND just do this in _multi.py
             
         #self.patch_params = patch.to(device)
         self.patch_params = patch_wrapped.to(device)
@@ -568,7 +571,11 @@ class Pipeline(PipelineBase):
                 #self._log_scalars(learning_rate=scheduler.get_last_lr()[0])
                 self._log_scalars(learning_rate=optimizer.param_groups[0]["lr"])
                 if clamp_to is not None:
-                    self.patch_params.clamp(clamp_to[0], clamp_to[1])
+                    #self.patch_params.clamp(clamp_to[0], clamp_to[1])
+                    if isinstance(self.patch_params, PatchWrapper):
+                        self.patch_params.patch.clamp(clamp_to[0], clamp_to[1])
+                    else:
+                        print("SKIPPING CLAMP STEP")
                     #with torch.no_grad():
                     #    patch_params.clamp_(clamp_to[0], clamp_to[1])
                 
@@ -594,11 +601,19 @@ class Pipeline(PipelineBase):
         # wrap up mlflow logging
         if self._logging_to_mlflow:
             self._log_image_to_mlflow(patch_params, "patch.png")
-        return self.patch_params.patch
+        #return self.patch_params.patch
+        if self._single_patch:
+            return self.patch_params(1).squeeze(0)
+        else:
+            return self.patch_params()
     
         
     def __del__(self):
-        if self._logging_to_mlflow: mlflow.end_run()
+        if self._logging_to_mlflow: 
+            try:
+                mlflow.end_run()
+            except:
+                pass
         
     def __getitem__(self, i):
         return self.steps[i]
@@ -694,4 +709,45 @@ class Pipeline(PipelineBase):
             
         return False
         
+    
+    def distributed_train_patch(self, devices, batch_size, num_steps,  **kwargs):
+        """
+        EXPERIMENTAL!!! NOT FULLY TESTED YET.
+        """
+        world_size = len(devices)
+        #def fn(rank):
+        #    return _run_worker_training_loop(self, rank, world_size, devices, 
+        #                                     batch_size, num_steps, **kwargs)
+        if hasattr(self, "writer"):
+            print("DELETING SUMMARYWRITER")
+            delattr(self, "writer")
+            
+        print("initializing queue")
+        #queue = multiprocessing.Queue()
+        queue = mp.Queue()
+        # for pytorch to retrieve a Tensor from a Queue, the subprocess that
+        # added the Tensor to the Queue needs to still be alive.
+        evt = mp.Event()
+            
+        #if hasattr(self, "loss"):
+        #    print("CALLING DILL.DUMPS ON self.loss")
+        #    self.loss = dill.dumps(self.loss)
+        pipestring = dill.dumps(self)
+        print("running mp.spawn")
+        mp.spawn(_run_worker_training_loop, 
+                        args=(world_size, devices, pipestring, queue, evt,
+                              batch_size, num_steps, 
+                              kwargs), nprocs=world_size, join=False)#join=True)
+        print("retrieving patch from queue")
+        for _ in range(world_size):
+            patch = queue.get()
+            print(f"from queue retrieved {type(patch)}")
+        #return mp.spawn(_run_worker_training_loop, 
+        #                args=(world_size, devices, self, batch_size, num_steps, 
+        #                      kwargs), nprocs=world_size, join=True)
+        evt.set()
+        queue.close()
+        queue.join_thread()
+        return patch
+            
     
