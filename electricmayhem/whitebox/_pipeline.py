@@ -434,7 +434,7 @@ class Pipeline(PipelineBase):
                 stepdict[f"{k}_delta"] = result_patch[k] - result_control[k]
             results.append(stepdict)
             samples.append(self.get_last_sample_as_dict())
-        
+        print("done running eval steps")
         # concatenate list of dicts
         results = _concat_dicts_of_arrays(*results)
         samples = _concat_dicts_of_arrays(*samples)
@@ -459,6 +459,7 @@ class Pipeline(PipelineBase):
             mlflow.log_artifact(saveto)
         
         self.log_vizualizations(patchbatch)
+        print("done with evaluate()")
                 
         
     def train_patch(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000,
@@ -538,6 +539,11 @@ class Pipeline(PipelineBase):
             #    patchbatch = patch_params
             patchbatch = self.patch_params(batch_size)
             
+            # instead of manual-clamping outside of the gradient computation
+            # let's try running it through a clamp here
+            #if clamp_to is not None:
+            #    patchbatch = torch.clamp(patchbatch, clamp_to[0], clamp_to[1])
+            
             # DISTRIBUTED: wrapped patch batch object needs to get wrapped again
             # with torch.nn.parallel.DistributedDataParallel
             
@@ -568,22 +574,26 @@ class Pipeline(PipelineBase):
                     scheduler.step(loss)
                 else:
                     scheduler.step()
-                #self._log_scalars(learning_rate=scheduler.get_last_lr()[0])
+                    
                 self._log_scalars(learning_rate=optimizer.param_groups[0]["lr"])
                 if clamp_to is not None:
-                    #self.patch_params.clamp(clamp_to[0], clamp_to[1])
-                    if isinstance(self.patch_params, PatchWrapper):
-                        self.patch_params.patch.clamp(clamp_to[0], clamp_to[1])
-                    else:
-                        print("SKIPPING CLAMP STEP")
-                    #with torch.no_grad():
-                    #    patch_params.clamp_(clamp_to[0], clamp_to[1])
-                
+                    with torch.no_grad():
+                        if isinstance(self.patch_params, PatchWrapper):
+                            self.patch_params.patch.clamp_(clamp_to[0], clamp_to[1])
+                        else:
+                            # distributed case: type should be
+                            # torch.nn.parallel.distributed.DistributedDataParallel
+                            self.patch_params.module.patch.clamp_(clamp_to[0], clamp_to[1])
+                            
+                        
+
             
             # if this is an evaluate step- run evaluation and save params
             if ((i+1)%eval_every == 0)&(eval_every > 0):
                 self.evaluate(batch_size, num_eval_steps, patchbatch)
+                print("saving patch params")
                 self.save_patch_params()
+                print("done saving")
                 
             # if we're profiling, update the profiler
             if self._profiling:
@@ -595,9 +605,6 @@ class Pipeline(PipelineBase):
                 
             self.global_step += 1
                 
-        # finished training- save a copy of the patch tensor
-        # shouldn't need this now since we didn't detatch from self.patch_params
-        #self.patch_params = patch_params.clone().detach()
         # wrap up mlflow logging
         if self._logging_to_mlflow:
             self._log_image_to_mlflow(patch_params, "patch.png")
@@ -628,7 +635,12 @@ class Pipeline(PipelineBase):
         if self.rank == 0:
             if path is None:
                 path = os.path.join(self.logdir, "patch_params.pt")
-            torch.save(self.patch_params.patch, path)
+            # SINGLE GPU CASE
+            if isinstance(self.patch_params, PatchWrapper):
+                torch.save(self.patch_params.patch, path)
+            # MULTI GPU CASE
+            else:
+                torch.save(self.patch_params.module.patch, path)
             if self._logging_to_mlflow:
                 mlflow.log_artifact(path, "patch_params.pt")
     
@@ -719,10 +731,10 @@ class Pipeline(PipelineBase):
         #    return _run_worker_training_loop(self, rank, world_size, devices, 
         #                                     batch_size, num_steps, **kwargs)
         if hasattr(self, "writer"):
-            print("DELETING SUMMARYWRITER")
+            #print("DELETING SUMMARYWRITER")
             delattr(self, "writer")
             
-        print("initializing queue")
+        #print("initializing queue")
         #queue = multiprocessing.Queue()
         queue = mp.Queue()
         # for pytorch to retrieve a Tensor from a Queue, the subprocess that
@@ -733,15 +745,15 @@ class Pipeline(PipelineBase):
         #    print("CALLING DILL.DUMPS ON self.loss")
         #    self.loss = dill.dumps(self.loss)
         pipestring = dill.dumps(self)
-        print("running mp.spawn")
+        #print("running mp.spawn")
         mp.spawn(_run_worker_training_loop, 
                         args=(world_size, devices, pipestring, queue, evt,
                               batch_size, num_steps, 
                               kwargs), nprocs=world_size, join=False)#join=True)
-        print("retrieving patch from queue")
+        #print("retrieving patch from queue")
         for _ in range(world_size):
             patch = queue.get()
-            print(f"from queue retrieved {type(patch)}")
+            #print(f"from queue retrieved {type(patch)}")
         #return mp.spawn(_run_worker_training_loop, 
         #                args=(world_size, devices, self, batch_size, num_steps, 
         #                      kwargs), nprocs=world_size, join=True)
