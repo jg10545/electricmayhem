@@ -487,7 +487,7 @@ class Pipeline(PipelineBase):
         # warn the user if they didn't pass any keys from the loss dict
         if hasattr(self, "_lossdictkeys"):
             if len(set(self._lossdictkeys)&set(kwargs.keys())) == 0:
-                logging.warning("no weights given for any terms in your loss dictionary")
+                logging.error("no weights given for any terms in your loss dictionary")
             # warn the user if they passed a keyword argument that doesn't 
             # match anything in params or the lossdict. i wasted a bunch 
             # of time once when i was doing hyperparameter optimization 
@@ -517,7 +517,6 @@ class Pipeline(PipelineBase):
         patch_params = self.patch_params
         # DISTRIBUTED: optimizer needs to get defined INSIDE spawned process
         # initialize optimizer and scheduler
-        #optimizer, scheduler = _get_optimizer_and_scheduler(optimizer, [patch_params],
         optimizer, scheduler = _get_optimizer_and_scheduler(optimizer,
                                                             patch_params.parameters(),
                                                             learning_rate,
@@ -724,39 +723,36 @@ class Pipeline(PipelineBase):
     
     def distributed_train_patch(self, devices, batch_size, num_steps,  **kwargs):
         """
-        EXPERIMENTAL!!! NOT FULLY TESTED YET.
+        EXPERIMENTAL!!! NOT FULLY TESTED YET. Ye be warned.
+
+        Parallelize training over several devices. Only the first device will
+        be used for logging and evaluation steps.
+
+        :devices: list of torch device objects; the devices to be parallelized over
+        :batch_size: int; batch size per device
+        :num_steps: int; number of training steps
+        :**kwargs: training keyword arguments to be passed to self.train_patch()
         """
         world_size = len(devices)
-        #def fn(rank):
-        #    return _run_worker_training_loop(self, rank, world_size, devices, 
-        #                                     batch_size, num_steps, **kwargs)
         if hasattr(self, "writer"):
-            #print("DELETING SUMMARYWRITER")
             delattr(self, "writer")
             
-        #print("initializing queue")
-        #queue = multiprocessing.Queue()
         queue = mp.Queue()
         # for pytorch to retrieve a Tensor from a Queue, the subprocess that
         # added the Tensor to the Queue needs to still be alive.
         evt = mp.Event()
             
-        #if hasattr(self, "loss"):
-        #    print("CALLING DILL.DUMPS ON self.loss")
-        #    self.loss = dill.dumps(self.loss)
         pipestring = dill.dumps(self)
-        #print("running mp.spawn")
+        
         mp.spawn(_run_worker_training_loop, 
                         args=(world_size, devices, pipestring, queue, evt,
                               batch_size, num_steps, 
-                              kwargs), nprocs=world_size, join=False)#join=True)
-        #print("retrieving patch from queue")
+                              kwargs), nprocs=world_size, join=False)
+        
         for _ in range(world_size):
             patch = queue.get()
-            #print(f"from queue retrieved {type(patch)}")
-        #return mp.spawn(_run_worker_training_loop, 
-        #                args=(world_size, devices, self, batch_size, num_steps, 
-        #                      kwargs), nprocs=world_size, join=True)
+
+        # trigger the event so the workers can end their processes
         evt.set()
         queue.close()
         queue.join_thread()

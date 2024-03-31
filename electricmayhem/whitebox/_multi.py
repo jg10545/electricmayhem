@@ -41,7 +41,8 @@ class PatchWrapper(torch.nn.Module):
             
             
 def _run_worker_training_loop(rank, world_size, devices, pipestring, queue, evt,
-                              batch_size, num_steps, kwargs):
+                              batch_size, num_steps, kwargs, 
+                              master_addr="localhost", master_port="12355"):
     """
     Function to send to a subprocess for parallel training.
     
@@ -61,36 +62,22 @@ def _run_worker_training_loop(rank, world_size, devices, pipestring, queue, evt,
     :kwargs: dictionary of keyword arguments for pipeline.train_patch()
     """
     
-    #print(f"starting _run_worker_training_loop() for worker {rank}")
-    #logging.debug(f"starting _run_worker_training_loop() for worker {rank}")
-    
-    #print(f"worker {rank} event is {type(evt)}")
-    #print(f"unpickling pipeline for worker {rank}")
     pipeline = dill.loads(pipestring)
-    #print(f"logging to mlflow for worker {rank}: {pipeline._logging_to_mlflow}")
     # checks
     assert hasattr(pipeline, "patch_params"), "need to call initialize_patch_params() first"
     assert hasattr(pipeline, "loss"), "need to call set_loss() first"
     
-    #print("UNPICKLING LOSS")
-    #pipeline.loss = dill.loads(pipeline.loss)
-    
     # recreate the SummaryWriter but only on one worker
     if hasattr(pipeline, "logdir")&(rank == 0):
-        #print("adding writer back on worker 0")
         pipeline.writer = torch.utils.tensorboard.SummaryWriter(pipeline.logdir)
         
     
     # setup
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
-    #print(f"initializing process group for worker {rank}")
+    os.environ["MASTER_ADDR"] = master_addr
+    os.environ["MASTER_PORT"] = master_port
     torch.distributed.init_process_group("gloo", rank=rank, world_size=world_size)
     
     # move pipeline to the corresponding device
-    #print(f"copying pipeline for worker {rank}")
-    #pipeline = pipeline.copy()
-    #print(f"moving pipeline for worker {rank} to device {devices[rank]}")
     pipeline.to(devices[rank])
     
     # set pipeline.rank. this will make sure only one worker is writing to
@@ -105,28 +92,20 @@ def _run_worker_training_loop(rank, world_size, devices, pipestring, queue, evt,
         device_ids = None
     else:
         device_ids = [device]
-    #print(f"device_ids for worker {rank}: {device_ids}")
-    #print(f"DDP step for worker {rank}")
-    #original_params = pipeline.patch_params
     pipeline.patch_params = torch.nn.parallel.DistributedDataParallel(pipeline.patch_params,
                                                      device_ids=device_ids)
-    #print(type(pipeline.patch_params))
+    
     # let's try adding a clamp() method to the DDP object
-    #pipeline.patch_params.clamp = original_params.clamp
-    #print(f"starting actual training loop for worker {rank}")
     patch = pipeline.train_patch(batch_size, num_steps, progressbar=False,
                                  **kwargs)
     # move patch back to CPU from wherever it is
     patch.cpu()
-    #print(f"done with training loop for worker {rank}")
     torch.distributed.destroy_process_group()
-    #print(f"process group destroyed for worker {rank}")
-    #print(f"worker {rank} patch of type {type(patch)} into queue")
+    # queues are the preferred way to send data between processes
     queue.put(patch.detach())
     
-    #print(f"worker {rank} waiting for event")
+    # gotta keep the main process alive until all workers are done
     evt.wait()
-    #print(f"worker {rank} closing")
     
     
 
