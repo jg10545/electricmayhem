@@ -61,7 +61,6 @@ def _run_worker_training_loop(rank, world_size, devices, pipestring, queue, evt,
     :num_steps: int; number of training steps
     :kwargs: dictionary of keyword arguments for pipeline.train_patch()
     """
-    print(f"starting rank {rank}")
     pipeline = dill.loads(pipestring)
     # checks
     assert hasattr(pipeline, "patch_params"), "need to call initialize_patch_params() first"
@@ -98,6 +97,7 @@ def _run_worker_training_loop(rank, world_size, devices, pipestring, queue, evt,
     # let's try adding a clamp() method to the DDP object
     patch = pipeline.train_patch(batch_size, num_steps, progressbar=False,
                                  **kwargs)
+    
     # move patch back to CPU from wherever it is
     patch.cpu()
     torch.distributed.destroy_process_group()

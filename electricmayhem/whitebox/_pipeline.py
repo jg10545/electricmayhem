@@ -710,25 +710,26 @@ class Pipeline(PipelineBase):
         evt = mp.Event()
             
         pipestring = dill.dumps(self)
-        print("calling spawn")
+        
         mp.spawn(_run_worker_training_loop, 
                         args=(world_size, devices, pipestring, queue, evt,
                               batch_size, num_steps, 
                               kwargs), nprocs=world_size, join=False)
         
-        print("done spawning")
+        
         for _ in range(world_size):
             #patch = queue.get()
             print(_)
             patch = queue.get(block=True)
-        print("done looping")
+            
         # trigger the event so the workers can end their processes
         evt.set()
-        print("event set")
+        
         queue.close()
-        print("closed")
+        
         queue.join_thread()
-        print("joined")
+        
+        #ctx.join()
         return patch
             
     
