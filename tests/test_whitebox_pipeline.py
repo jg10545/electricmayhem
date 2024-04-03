@@ -116,8 +116,8 @@ def test_pipeline_initialize_patch_params_with_size():
     shape = (1,3,5)
     pipeline = _pipeline.Pipeline()
     pipeline.initialize_patch_params(patch_shape=shape)
-    assert isinstance(pipeline.patch_params, torch.Tensor)
-    assert pipeline.patch_params.shape == shape
+    assert isinstance(pipeline.patch_params.patch, torch.Tensor)
+    assert pipeline.patch_params.patch.shape == shape
     
     
 def test_pipeline_initialize_patch_params_with_pre_initialized_patch():
@@ -125,9 +125,9 @@ def test_pipeline_initialize_patch_params_with_pre_initialized_patch():
     startpatch = torch.zeros(shape)
     pipeline = _pipeline.Pipeline()
     pipeline.initialize_patch_params(patch = startpatch)
-    assert isinstance(pipeline.patch_params, torch.Tensor)
-    assert pipeline.patch_params.shape == shape
-    assert pipeline.patch_params.numpy().max() == 0
+    assert isinstance(pipeline.patch_params.patch, torch.Tensor)
+    assert pipeline.patch_params.patch.shape == shape
+    assert pipeline.patch_params.patch.detach().numpy().max() == 0
     
     
 def test_pipeline_set_loss():
