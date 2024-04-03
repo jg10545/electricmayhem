@@ -14,6 +14,7 @@ import inspect
 import copy
 import multiprocessing
 
+from electricmayhem import __version__
 from ._util import _dict_of_tensors_to_dict_of_arrays, _concat_dicts_of_arrays
 from ._util import _flatten_dict, _mlflow_description, _bootstrap_std
 from ._opt import _create_ax_client
@@ -168,7 +169,7 @@ class Pipeline(PipelineBase):
         self._profiling = False
         
         
-        self.params = {}
+        self.params = {"version":__version__}
         for e,s in enumerate(self.steps):
             self.params[f"{e}_{s.name}"] = s.params
             
