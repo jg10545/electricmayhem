@@ -4,10 +4,6 @@ Dummy PyTorch models for use in unit tests
 import torch
 
 
-#import torch.nn as nn
-#import torch.nn.functional as F
-
-
 class DummyConvNet(torch.nn.Module):
     def __init__(self, outdim=7):
         super().__init__()
