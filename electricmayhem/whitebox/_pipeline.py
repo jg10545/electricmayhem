@@ -279,7 +279,6 @@ class Pipeline(PipelineBase):
             for n in self.parameters():
                 device = n.device
                 break
-            #device = next(self.parameters()).device
         if (patch_shape is not None)&(patch is None):
             patch = torch.zeros(patch_shape, dtype=torch.float32).uniform_(0,1)
 
@@ -290,20 +289,7 @@ class Pipeline(PipelineBase):
             patch = patch.clone().detach().requires_grad_(True)
             patch_wrapped = PatchWrapper(patch,
                                          single_patch=single_patch)
-        # distribute wrapped patch if we're training in parallel on multiple machines
-        #if self.worldsize > 0:
-        #    # which device is this worker assigned to?
-        #    device = self.devices[self.rank]
-        #    # DDP API is different if device is CPU
-        #    if (device == "cpu")|(device == torch.device("cpu")):
-        #        device_ids = None
-        #    else:
-        #        device_ids = [device]
-        #    patch_wrapped = torch.nn.DistributedDataParallel(patch_wrapped,
-        #                                                     device_ids=device_ids)
-        # NEVER MIND just do this in _multi.py
-            
-        #self.patch_params = patch.to(device)
+       
         self.patch_params = patch_wrapped.to(device)
         self._single_patch = single_patch
         
@@ -405,12 +391,8 @@ class Pipeline(PipelineBase):
             return
         if patchbatch is None:
             patch_params = self.patch_params
-        
-            # stack into a batch of patches
-            #if self._single_patch:
-            #    patchbatch = torch.stack([patch_params for _ in range(batch_size)], 0)
-            #else:
-            #    patchbatch = patch_params
+            # patch_params is a PatchWrapper object that will return a stack
+            # of patches when called
             patchbatch = self.patch_params(batch_size)
             
         # store loss function outputs for each eval batch
@@ -434,7 +416,7 @@ class Pipeline(PipelineBase):
                 stepdict[f"{k}_delta"] = result_patch[k] - result_control[k]
             results.append(stepdict)
             samples.append(self.get_last_sample_as_dict())
-        print("done running eval steps")
+            
         # concatenate list of dicts
         results = _concat_dicts_of_arrays(*results)
         samples = _concat_dicts_of_arrays(*samples)
@@ -459,7 +441,6 @@ class Pipeline(PipelineBase):
             mlflow.log_artifact(saveto)
         
         self.log_vizualizations(patchbatch)
-        print("done with evaluate()")
                 
         
     def train_patch(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000,
@@ -512,10 +493,7 @@ class Pipeline(PipelineBase):
         if profile > 0:
             prof = self._get_profiler(active=profile)
         
-        # copy patch and turn on gradients
-        #patch_params = self.patch_params.clone().detach().requires_grad_(True)
         patch_params = self.patch_params
-        # DISTRIBUTED: optimizer needs to get defined INSIDE spawned process
         # initialize optimizer and scheduler
         optimizer, scheduler = _get_optimizer_and_scheduler(optimizer,
                                                             patch_params.parameters(),
@@ -530,21 +508,9 @@ class Pipeline(PipelineBase):
             loop = tqdm(loop)
             
         for i in loop:
-            # DISTRIBUTED: need to wrap patch in an nn.Module subclass
-            # stack into a batch of patches
-            #if self._single_patch:
-            #    patchbatch = torch.stack([patch_params for _ in range(batch_size)], 0)
-            #else:
-            #    patchbatch = patch_params
+            # patch_params is a PatchWrapper object; the batch_size arg will
+            # return a stack of patches
             patchbatch = self.patch_params(batch_size)
-            
-            # instead of manual-clamping outside of the gradient computation
-            # let's try running it through a clamp here
-            #if clamp_to is not None:
-            #    patchbatch = torch.clamp(patchbatch, clamp_to[0], clamp_to[1])
-            
-            # DISTRIBUTED: wrapped patch batch object needs to get wrapped again
-            # with torch.nn.parallel.DistributedDataParallel
             
             # run through the pipeline
             outputs = self(patchbatch)
@@ -590,9 +556,7 @@ class Pipeline(PipelineBase):
             # if this is an evaluate step- run evaluation and save params
             if ((i+1)%eval_every == 0)&(eval_every > 0):
                 self.evaluate(batch_size, num_eval_steps, patchbatch)
-                print("saving patch params")
                 self.save_patch_params()
-                print("done saving")
                 
             # if we're profiling, update the profiler
             if self._profiling:
@@ -728,6 +692,9 @@ class Pipeline(PipelineBase):
         Parallelize training over several devices. Only the first device will
         be used for logging and evaluation steps.
 
+        You may need to add import statements within your loss function for
+        libraries like torch.
+
         :devices: list of torch device objects; the devices to be parallelized over
         :batch_size: int; batch size per device
         :num_steps: int; number of training steps
@@ -743,19 +710,25 @@ class Pipeline(PipelineBase):
         evt = mp.Event()
             
         pipestring = dill.dumps(self)
-        
+        print("calling spawn")
         mp.spawn(_run_worker_training_loop, 
                         args=(world_size, devices, pipestring, queue, evt,
                               batch_size, num_steps, 
                               kwargs), nprocs=world_size, join=False)
         
+        print("done spawning")
         for _ in range(world_size):
-            patch = queue.get()
-
+            #patch = queue.get()
+            print(_)
+            patch = queue.get(block=True)
+        print("done looping")
         # trigger the event so the workers can end their processes
         evt.set()
+        print("event set")
         queue.close()
+        print("closed")
         queue.join_thread()
+        print("joined")
         return patch
             
     

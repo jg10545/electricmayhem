@@ -61,7 +61,7 @@ def _run_worker_training_loop(rank, world_size, devices, pipestring, queue, evt,
     :num_steps: int; number of training steps
     :kwargs: dictionary of keyword arguments for pipeline.train_patch()
     """
-    
+    print(f"starting rank {rank}")
     pipeline = dill.loads(pipestring)
     # checks
     assert hasattr(pipeline, "patch_params"), "need to call initialize_patch_params() first"
