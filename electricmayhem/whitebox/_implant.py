@@ -58,11 +58,25 @@ class RectanglePatchImplanter(PipelineBase):
         self.params = {"scale":list(scale), "imgkeys":self.imgkeys,
                        "eval_imgkeys":self.eval_imgkeys,
                        "offset_frac_x":offset_frac_x,
-                       "offset_frac_y":offset_frac_y}
+                       "offset_frac_y":offset_frac_y,
+                       "mask":self._get_mask_summary(mask)}
         self.lastsample = {}
         
         assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
-        
+
+    def _get_mask_summary(self, mask):
+        """
+        get a mask type description, and make sure it's in the unit interval
+        """
+        if mask is None:
+            return 1
+        elif isinstance(mask, torch.Tensor):
+            assert torch.max(mask) <= 1 and torch.min(mask) >= 0, "mask should be between 0 and 1"
+            return "tensor"
+        else:
+            assert mask >= 0 and mask <= 1, "mask should be between 0 and 1"
+            return mask
+
     def get_min_dimensions(self):
         """
         Find the minimum height and width of any training/eval box
@@ -155,9 +169,9 @@ class RectanglePatchImplanter(PipelineBase):
             return 1.
         else:
             # if mask is a tensor...
-            if isinstance(self._mask, torch.Tensor):
+            if isinstance(self.mask, torch.Tensor):
                 with torch.no_grad():
-                    mask = self.mask.clone().detach()
+                    mask = self.mask.clone().detach().type(torch.float32)
                     # if mask was specified as 2D, add a batch dimension so
                     # it will broadcast directly
                     if len(mask.shape) == 2:
@@ -299,12 +313,25 @@ class RectanglePatchImplanter(PipelineBase):
         return outdict
     
     def get_description(self):
-        return f"**{self.name}:** {len(self.imgkeys)} training and {len(self.eval_imgkeys)} eval images"
+        mask_desc= self.params["mask"]
+        return f"**{self.name}:** {len(self.imgkeys)} training and {len(self.eval_imgkeys)} eval images, mask: {mask_desc}"
         
-    
-    
-    
-    
+    def log_params_to_mlflow(self):
+        """
+        In addition to logging whatever's in self.params, if there's a tensor mask we
+        should keep that someplace
+        """
+        if self.mask is not None:
+            if isinstance(self.mask, torch.Tensor):
+                mask = self.mask.cpu().detach()
+                # if mask is 2D add a channel dimension
+                if len(mask.shape) == 2:
+                    mask = mask.unsqueeze(0)
+                # if mask is single-channel, make it RGB
+                if mask.shape[0] == 1:
+                    mask = mask.repeat(3, 1, 1)
+                self._log_image_to_mlflow(mask, "mask.png")
+        super(self).log_params_to_mlflow()
     
     
 
