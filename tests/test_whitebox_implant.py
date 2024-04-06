@@ -12,6 +12,7 @@ testtensor = np.random.randint(0, 255, size=(128,128,3))
 testtensor2 = np.random.randint(0, 255, size=(128,128,3))
 colorpatch = torch.tensor(np.random.uniform(0, 1, size=(3, 50,50)))
 bwpatch = torch.tensor(np.random.uniform(0, 1, size=(1, 50,50)))
+mask = torch.tensor(np.random.choice([0, 1], size=(25,25)))
 box = [10, 10, 100, 100]
 bigpatch = torch.tensor(np.random.uniform(0, 1, size=(1, 5000,5000)))
 
@@ -116,6 +117,36 @@ def test_rectanglepatchimplanter_call_color_patch_batch():
     assert implanted.shape[0] == 2
     assert implanted.shape[1:] == torch.tensor(testtensor).permute(2,0,1).shape
     
+def test_rectanglepatchimplanter_call_color_patch_batch_scalar_mask():
+    imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]}, mask=0.5)
+    implanted = imp(torch.stack([colorpatch,colorpatch], 0))
+    assert isinstance(implanted, torch.Tensor)
+    assert implanted.shape[0] == 2
+    assert implanted.shape[1:] == torch.tensor(testtensor).permute(2,0,1).shape
+
+
+def test_rectanglepatchimplanter_call_color_patch_batch_2D_mask():
+    imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]}, mask=mask)
+    implanted = imp(torch.stack([colorpatch,colorpatch], 0))
+    assert isinstance(implanted, torch.Tensor)
+    assert implanted.shape[0] == 2
+    assert implanted.shape[1:] == torch.tensor(testtensor).permute(2,0,1).shape
+
+
+def test_rectanglepatchimplanter_call_color_patch_batch_3D_single_channel_mask():
+    imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]}, mask=mask.unsqueeze(0))
+    implanted = imp(torch.stack([colorpatch,colorpatch], 0))
+    assert isinstance(implanted, torch.Tensor)
+    assert implanted.shape[0] == 2
+    assert implanted.shape[1:] == torch.tensor(testtensor).permute(2,0,1).shape
+
+def test_rectanglepatchimplanter_call_color_patch_batch_3D_3_channel_mask():
+    imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]}, mask=torch.stack([mask]*3,0))
+    implanted = imp(torch.stack([colorpatch,colorpatch], 0))
+    assert isinstance(implanted, torch.Tensor)
+    assert implanted.shape[0] == 2
+    assert implanted.shape[1:] == torch.tensor(testtensor).permute(2,0,1).shape
+
 def test_rectanglepatchimplanter_call_bw_patch_batch():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]})
     implanted = imp(torch.stack([bwpatch,bwpatch], 0))
