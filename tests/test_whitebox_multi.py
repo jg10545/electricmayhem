@@ -24,9 +24,6 @@ def test_pipeline_distributed_training_loop_runs():
     appear to be related to some detail of how multiprocessing spawns
     new processes on the mac
     """
-    import multiprocessing as mp
-    mp.set_start_method("spawn", force=True)
-    
     batch_size = 2
     step_size = 1e-2
     num_steps = 5
@@ -42,8 +39,6 @@ def test_pipeline_distributed_training_loop_runs():
     
 
     shape = (3,5,7)
-    #step = _create.PatchResizer((11,13))
-    #pipeline = _pipeline.Pipeline(step)
     pipeline  = _create.PatchResizer((11,13)) + modelgenerators.DummyConvNet().eval()
     pipeline.initialize_patch_params(shape)
     pipeline.set_loss(myloss)
