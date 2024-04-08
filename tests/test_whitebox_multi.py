@@ -47,4 +47,4 @@ def test_pipeline_distributed_training_loop_runs():
                                            eval_every=eval_every,
                                            num_eval_steps=num_eval_steps,
                                            mainloss=1)
-    assert out.shape == shape 
+    assert out.shape == shape

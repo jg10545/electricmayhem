@@ -106,8 +106,3 @@ def _run_worker_training_loop(rank, world_size, devices, pipestring, queue, evt,
     evt.wait()
     
     
-
-    
-def run_demo(demo_fn, world_size, model):
-    torch.multiprocessing.spawn(demo_fn, args=(world_size, model),
-                                nprocs=world_size, join=True)
