@@ -61,12 +61,10 @@ def _run_worker_training_loop(rank, world_size, devices, pipestring, queue, evt,
     :num_steps: int; number of training steps
     :kwargs: dictionary of keyword arguments for pipeline.train_patch()
     """
-    print(f"starting worker {rank}")
     pipeline = dill.loads(pipestring)
     # checks
     assert hasattr(pipeline, "patch_params"), "need to call initialize_patch_params() first"
     assert hasattr(pipeline, "loss"), "need to call set_loss() first"
-    print(f"past assertion checks on worker {rank}")
     # recreate the SummaryWriter but only on one worker
     if hasattr(pipeline, "logdir")&(rank == 0):
         pipeline.writer = torch.utils.tensorboard.SummaryWriter(pipeline.logdir)
@@ -76,7 +74,6 @@ def _run_worker_training_loop(rank, world_size, devices, pipestring, queue, evt,
     os.environ["MASTER_ADDR"] = master_addr
     os.environ["MASTER_PORT"] = master_port
     torch.distributed.init_process_group("gloo", rank=rank, world_size=world_size)
-    print(f"done setting up process group on {rank}")
     # move pipeline to the corresponding device
     pipeline.to(devices[rank])
     
@@ -92,12 +89,11 @@ def _run_worker_training_loop(rank, world_size, devices, pipestring, queue, evt,
         device_ids = None
     else:
         device_ids = [device]
-    print(f"calling dataparallel on {rank}")
+        
     pipeline.patch_params = torch.nn.parallel.DistributedDataParallel(pipeline.patch_params,
                                                      device_ids=device_ids)
     
     # let's try adding a clamp() method to the DDP object
-    print(f"calling train_patch on {rank}")
     patch = pipeline.train_patch(batch_size, num_steps, progressbar=False,
                                  **kwargs)
     
@@ -105,16 +101,8 @@ def _run_worker_training_loop(rank, world_size, devices, pipestring, queue, evt,
     patch.cpu()
     torch.distributed.destroy_process_group()
     # queues are the preferred way to send data between processes
-    print(f"putting into queue on {rank}")
     queue.put(patch.detach())
-    print(f"waiting for evt on {rank}")
     # gotta keep the main process alive until all workers are done
     evt.wait()
-    print(f"closing out {rank}")
     
     
-
-    
-def run_demo(demo_fn, world_size, model):
-    torch.multiprocessing.spawn(demo_fn, args=(world_size, model),
-                                nprocs=world_size, join=True)

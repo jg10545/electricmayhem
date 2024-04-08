@@ -466,7 +466,6 @@ class Pipeline(PipelineBase):
         :kwargs: additional training parameters to save. at least one of the terms in your
             loss function should have a weight here.
         """
-        print(f"train_patch called on worker {self.rank}")
         # warn the user if they didn't pass any keys from the loss dict
         if hasattr(self, "_lossdictkeys"):
             if len(set(self._lossdictkeys)&set(kwargs.keys())) == 0:
@@ -510,18 +509,14 @@ class Pipeline(PipelineBase):
             loop = tqdm(loop)
             
         for i in loop:
-            print(f"train step {i} for worker {self.rank}")
             # patch_params is a PatchWrapper object; the batch_size arg will
             # return a stack of patches
             patchbatch = self.patch_params(batch_size)
-            print(f"\tgot patches, step {i} worker {self.rank}")
             # run through the pipeline
             outputs = self(patchbatch)
-            print(f"\tgot outputs, step {i} worker {self.rank}")
             
             # compute loss
             lossdict = self.loss(outputs, patchbatch)
-            print(f"\tgot loss, step {i} worker {self.rank}")
             loss = 0
             record = {}
             for k in lossdict:
@@ -720,23 +715,14 @@ class Pipeline(PipelineBase):
                         args=(world_size, devices, pipestring, queue, evt,
                               batch_size, num_steps, 
                               kwargs), nprocs=world_size, join=False)
-        print(f"mp.spawn() complete")
         
         for j in range(world_size):
-            #patch = queue.get()
-            print(f"pulling item {j} from queue")
             patch = queue.get(block=True)
             
         # trigger the event so the workers can end their processes
-        print("setting event")
         evt.set()
-        print("closing queue")
         queue.close()
-        print("joining thread")
         queue.join_thread()
-        #print("joining ctx")
-        #ctx.join()
-        print("done")
         return patch
             
     
