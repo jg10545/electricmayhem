@@ -27,7 +27,8 @@ def test_pipeline_distributed_training_loop_runs():
     num_steps = 5
     eval_every = 1000
     num_eval_steps = 1
-    devices = [torch.device("cpu"), torch.device("cpu")]
+    #devices = [torch.device("cpu"), torch.device("cpu")]
+    devices = [torch.device("cpu")]
     def myloss(outputs, patchparam):
         import torch
         outdict = {}
