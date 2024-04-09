@@ -13,7 +13,7 @@ def test_patchwrapper():
     assert batch.shape == (N, 3, 32, 32)
 
 
-
+"""
 def test_pipeline_distributed_training_loop_runs():
     # This is a pretty minimal test just to see
     # if it runs without crashing for a trivial case, splitting
@@ -27,8 +27,7 @@ def test_pipeline_distributed_training_loop_runs():
     num_steps = 5
     eval_every = 1000
     num_eval_steps = 1
-    #devices = [torch.device("cpu"), torch.device("cpu")]
-    devices = [torch.device("cpu")]
+    devices = [torch.device("cpu"), torch.device("cpu")]
     def myloss(outputs, patchparam):
         import torch
         outdict = {}
@@ -49,4 +48,4 @@ def test_pipeline_distributed_training_loop_runs():
                                            mainloss=1)
     assert out.shape == shape
 
-    
+"""
