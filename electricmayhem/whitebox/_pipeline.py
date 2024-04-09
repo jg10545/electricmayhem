@@ -89,6 +89,15 @@ class PipelineBase(torch.nn.Module):
         """
         self.cpu()
         return copy.deepcopy(self)
+    
+    def validate(self, x):
+        """
+        Overwrite this function to run any validation checks for this step
+        of the pipeline, to catch common errors. Return True if it passes the
+        checks and False otherwise. Use logging to explain what went wrong.
+        """
+        logging.info(f"no validation checks for {self.name}")
+        return True
         
     
     
@@ -314,6 +323,37 @@ class Pipeline(PipelineBase):
                 for k in kwargs:
                     self.writer.add_image(k, kwargs[k], global_step=self.global_step)
         
+
+    def validate(self, patch=None):
+        """
+        Run a test patch through the pipeline and check the validate() method of each
+        stage. Returns True if no problems are raised.
+
+        :patch: torch.Tensor containing a patch. If None, will look for a patch created by
+            self.initialize_patch_params()
+        """
+        passed_all = True
+        # get the patch and add a batch dimension
+        if patch is None:
+            assert hasattr(self, "patch_params"), "help i can't find a patch"
+            patchbatch = self.patch_params(1)
+        else:
+            patchbatch = patch.unsqueeze(0)
+
+        x = patchbatch
+        with torch.no_grad():
+            # for each step in the pipeline
+            for s in self.steps:
+                # see if it passed that step's validation
+                passed_step = s.validate(x)
+                if not passed_step:
+                    passed_all = False
+                # run x through the step to prepare
+                # for the next step
+                x = s(x)
+        return passed_all
+
+
 
 
     def _log_scalars(self, mlflow_metric=False, **kwargs):

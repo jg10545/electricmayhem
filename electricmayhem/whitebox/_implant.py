@@ -141,7 +141,7 @@ class RectanglePatchImplanter(PipelineBase):
                 dy = b[3] - b[1]
                 dx = b[2] - b[0]
                 if (max_y >= dy)|(max_x >= dx):
-                    logging.warning(f"box {j} of image {self.imgkeys[i]} is too small for this patch and scale")
+                    logging.warning(f"{self.name}: box {j} of image {self.imgkeys[i]} is too small for this patch and scale")
                     all_validated = False
                     
         for i in range(len(self.eval_images)):
@@ -150,7 +150,7 @@ class RectanglePatchImplanter(PipelineBase):
                 dy = b[3] - b[1]
                 dx = b[2] - b[0]
                 if (max_y >= dy)|(max_x >= dx):
-                    logging.warning(f"box {j} of eval image {self.imgkeys[i]} is too small for this patch and scale")
+                    logging.warning(f"{self.name}: box {j} of eval image {self.imgkeys[i]} is too small for this patch and scale")
                     all_validated = False
         return all_validated
     
