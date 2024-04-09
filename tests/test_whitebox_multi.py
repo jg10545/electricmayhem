@@ -13,7 +13,7 @@ def test_patchwrapper():
     assert batch.shape == (N, 3, 32, 32)
 
 
-"""
+
 def test_pipeline_distributed_training_loop_runs():
     # This is a pretty minimal test just to see
     # if it runs without crashing for a trivial case, splitting
@@ -35,7 +35,7 @@ def test_pipeline_distributed_training_loop_runs():
         outdict["mainloss"] = torch.mean(outputs, 1)
         return outdict    
     
-
+"""
     shape = (3,5,7)
     pipeline  = _create.PatchResizer((11,13)) + modelgenerators.DummyConvNet().eval()
     pipeline.initialize_patch_params(shape)
