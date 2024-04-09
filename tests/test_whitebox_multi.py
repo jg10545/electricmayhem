@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from electricmayhem.whitebox import _multi, _create, _pipeline
 from tests import modelgenerators
-"""
+
 def test_patchwrapper():
     N = 5
     patch = torch.tensor(np.random.uniform(0,1,size=(3,32,32)))
@@ -13,7 +13,7 @@ def test_patchwrapper():
     assert batch.shape == (N, 3, 32, 32)
 
 
-
+"""
 def test_pipeline_distributed_training_loop_runs():
     # This is a pretty minimal test just to see
     # if it runs without crashing for a trivial case, splitting
