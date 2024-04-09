@@ -512,7 +512,6 @@ class Pipeline(PipelineBase):
             # patch_params is a PatchWrapper object; the batch_size arg will
             # return a stack of patches
             patchbatch = self.patch_params(batch_size)
-            
             # run through the pipeline
             outputs = self(patchbatch)
             
@@ -524,7 +523,6 @@ class Pipeline(PipelineBase):
                 meanloss = torch.mean(lossdict[k])
                 record[k] = meanloss
                 if k in kwargs:
-                    #loss += kwargs[k]*meanloss
                     loss += kwargs[k]*meanloss/accumulate
             # DISTRIBUTED: only log to TB if we're in the process with rank 0
             # save metrics to tensorboard
@@ -712,25 +710,18 @@ class Pipeline(PipelineBase):
             
         pipestring = dill.dumps(self)
         
-        mp.spawn(_run_worker_training_loop, 
+        ctx = mp.spawn(_run_worker_training_loop, 
                         args=(world_size, devices, pipestring, queue, evt,
                               batch_size, num_steps, 
                               kwargs), nprocs=world_size, join=False)
         
-        
-        for _ in range(world_size):
-            #patch = queue.get()
-            print(_)
+        for j in range(world_size):
             patch = queue.get(block=True)
             
         # trigger the event so the workers can end their processes
         evt.set()
-        
         queue.close()
-        
         queue.join_thread()
-        
-        #ctx.join()
         return patch
             
     

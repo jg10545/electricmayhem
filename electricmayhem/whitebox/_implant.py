@@ -24,7 +24,7 @@ class RectanglePatchImplanter(PipelineBase):
     
     def __init__(self, imagedict, boxdict, eval_imagedict=None,
                  eval_boxdict=None, scale=(0.75,1.25), offset_frac_x=None,
-                 offset_frac_y=None):
+                 offset_frac_y=None, mask=None):
         """
         :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
         :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
@@ -34,12 +34,14 @@ class RectanglePatchImplanter(PipelineBase):
         :scale: tuple of floats; range of scaling factors
         :offset_frac_x: None or float between 0 and 1- optionally specify a relative x position within the target box for the patch.
         :offset_frac_y: None or float between 0 and 1- optionally specify a relative y position within the target box for the patch.
+        :mask: None, scalar between 0 and 1, or torch.Tensor on the unit interval to use for masking the patch
         """
         super(RectanglePatchImplanter, self).__init__()
         # save training image/box information
         self.imgkeys = list(imagedict.keys())
         self.images = torch.nn.ParameterList([_img_to_tensor(imagedict[k]) for k in self.imgkeys])
         self.boxes = [boxdict[k] for k in self.imgkeys]
+        self.mask = mask
         
         # save eval image/box information
         if eval_imagedict is None:
@@ -56,11 +58,25 @@ class RectanglePatchImplanter(PipelineBase):
         self.params = {"scale":list(scale), "imgkeys":self.imgkeys,
                        "eval_imgkeys":self.eval_imgkeys,
                        "offset_frac_x":offset_frac_x,
-                       "offset_frac_y":offset_frac_y}
+                       "offset_frac_y":offset_frac_y,
+                       "mask":self._get_mask_summary(mask)}
         self.lastsample = {}
         
         assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
-        
+
+    def _get_mask_summary(self, mask):
+        """
+        get a mask type description, and make sure it's in the unit interval
+        """
+        if mask is None:
+            return 1
+        elif isinstance(mask, torch.Tensor):
+            assert torch.max(mask) <= 1 and torch.min(mask) >= 0, "mask should be between 0 and 1"
+            return "tensor"
+        else:
+            assert mask >= 0 and mask <= 1, "mask should be between 0 and 1"
+            return mask
+
     def get_min_dimensions(self):
         """
         Find the minimum height and width of any training/eval box
@@ -137,6 +153,37 @@ class RectanglePatchImplanter(PipelineBase):
                     logging.warning(f"box {j} of eval image {self.imgkeys[i]} is too small for this patch and scale")
                     all_validated = False
         return all_validated
+    
+    def _get_mask(self, patch):
+        """
+        Input a patch and return a mask, either as a scalar
+        or as a (1,H,W) tensor with the same spatial dimensions
+        as the patch.
+
+        This method will handle cases where either no mask was
+        specified, a scalar mask was specified, or a mask image
+        was specified as a 2D or 3D tensor
+        """
+        # no mask? easy
+        if self.mask is None:
+            return 1.
+        else:
+            # if mask is a tensor...
+            if isinstance(self.mask, torch.Tensor):
+                with torch.no_grad():
+                    mask = self.mask.clone().detach().type(torch.float32)
+                    # if mask was specified as 2D, add a batch dimension so
+                    # it will broadcast directly
+                    if len(mask.shape) == 2:
+                        mask = mask.unsqueeze(0)
+                    # resize mask to match patch
+                    mask = kornia.geometry.resize(mask, (patch.shape[1], patch.shape[2]))
+            # scalar mask case
+            else:
+                mask = self.mask
+        return mask
+
+
         
     def _implant_patch(self, image, patch, offset_x, offset_y):
         implanted = []
@@ -145,7 +192,20 @@ class RectanglePatchImplanter(PipelineBase):
             pC, pH, pW = patch[i].shape
         
             imp = image[i].clone().detach()
-            imp[:, offset_y[i]:offset_y[i]+pH, offset_x[i]:offset_x[i]+pW] = patch[i]
+
+            # if there's a mask we need to mix the patch with the part of
+            # the image it's replacing
+            if self.mask is not None:
+                # get the corresponding mask
+                mask = self._get_mask(patch[i])
+                # get a copy of the part of the image we're cutting out
+                with torch.no_grad():
+                    cutout = imp.clone().detach()[:, offset_y[i]:offset_y[i]+pH, offset_x[i]:offset_x[i]+pW]
+                replace = patch[i]*mask + cutout*(1-mask)
+            # otherwise we're just replacing with the patch
+            else:
+                replace = patch[i]
+            imp[:, offset_y[i]:offset_y[i]+pH, offset_x[i]:offset_x[i]+pW] = replace
             implanted.append(imp)
         
         return torch.stack(implanted,0)
@@ -253,12 +313,25 @@ class RectanglePatchImplanter(PipelineBase):
         return outdict
     
     def get_description(self):
-        return f"**{self.name}:** {len(self.imgkeys)} training and {len(self.eval_imgkeys)} eval images"
+        mask_desc= self.params["mask"]
+        return f"**{self.name}:** {len(self.imgkeys)} training and {len(self.eval_imgkeys)} eval images, mask: {mask_desc}"
         
-    
-    
-    
-    
+    def log_params_to_mlflow(self):
+        """
+        In addition to logging whatever's in self.params, if there's a tensor mask we
+        should keep that someplace
+        """
+        if self.mask is not None:
+            if isinstance(self.mask, torch.Tensor):
+                mask = self.mask.cpu().detach()
+                # if mask is 2D add a channel dimension
+                if len(mask.shape) == 2:
+                    mask = mask.unsqueeze(0)
+                # if mask is single-channel, make it RGB
+                if mask.shape[0] == 1:
+                    mask = mask.repeat(3, 1, 1)
+                self._log_image_to_mlflow(mask, "mask.png")
+        super(self).log_params_to_mlflow()
     
     
 
@@ -272,7 +345,7 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
     
     def __init__(self, imagedict, boxdict, eval_imagedict=None,
                  eval_boxdict=None, frac=0.5, scale_by="min",
-                 offset_frac_x=None, offset_frac_y=None):
+                 offset_frac_x=None, offset_frac_y=None, mask=None):
         """
         :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
         :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
@@ -284,12 +357,14 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
             of the two for scaling
         :offset_frac_x: None or float between 0 and 1- optionally specify a relative x position within the target box for the patch.
         :offset_frac_y: None or float between 0 and 1- optionally specify a relative y position within the target box for the patch.
+        :mask: None, scalar between 0 and 1, or torch.Tensor on the unit interval to use for masking the patch
         """
         super(RectanglePatchImplanter, self).__init__()
         # save training image/box information
         self.imgkeys = list(imagedict.keys())
         self.images = torch.nn.ParameterList([_img_to_tensor(imagedict[k]) for k in self.imgkeys])
         self.boxes = [boxdict[k] for k in self.imgkeys]
+        self.mask = mask
         
         # save eval image/box information
         if eval_imagedict is None:
@@ -431,19 +506,21 @@ class ScaleToBoxRectanglePatchImplanter(RectanglePatchImplanter):
     name = "ScaleToBoxRectanglePatchImplanter"
     
     def __init__(self, imagedict, boxdict, eval_imagedict=None,
-                 eval_boxdict=None):
+                 eval_boxdict=None, mask=None):
         """
         :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
         :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
             {"img1":[[xmin1, ymin1, xmax1, ymax1], [xmin2, ymin2, xmax2, ymax2]]}
         :eval_imagedict: separate dictionary of images to evaluate on
         :eval_boxdict: separate dictionary of lists of bounding boxes for evaluation
+        :mask: None, scalar between 0 and 1, or torch.Tensor on the unit interval to use for masking the patch
         """
         super(RectanglePatchImplanter, self).__init__()
         # save training image/box information
         self.imgkeys = list(imagedict.keys())
         self.images = torch.nn.ParameterList([_img_to_tensor(imagedict[k]) for k in self.imgkeys])
         self.boxes = [boxdict[k] for k in self.imgkeys]
+        self.mask = mask
         
         # save eval image/box information
         if eval_imagedict is None:
