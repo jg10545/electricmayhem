@@ -40,7 +40,7 @@ def test_pipeline_distributed_training_loop_runs():
     pipeline  = _create.PatchResizer((11,13)) + modelgenerators.DummyConvNet().eval()
     pipeline.initialize_patch_params(shape)
     pipeline.set_loss(myloss)
-    """
+    
     out = pipeline.distributed_train_patch(devices, batch_size, num_steps, 
                                            learning_rate=step_size, 
                                            eval_every=eval_every,
@@ -48,4 +48,4 @@ def test_pipeline_distributed_training_loop_runs():
                                            mainloss=1)
     assert out.shape == shape
 
-    """
+    
