@@ -3,7 +3,7 @@ import torch
 
 from electricmayhem.whitebox import loss
 
-"""
+
 def test_printability_loss():
     # define a printability calculator
     calc = loss.NPSCalculator((48,24))
@@ -36,7 +36,7 @@ def test_total_variation_loss_nonzero_case():
     assert isinstance(tvloss, torch.Tensor)
     assert tvloss.shape == ()
     assert tvloss.numpy().max() > 0
-"""
+
 def test_saliency_loss_returns_correct_shape():
     test_tensor_batch = torch.tensor(np.random.uniform(0, 1, size=(1,3,23,17)))
     sal_loss = loss.saliency_loss(test_tensor_batch)

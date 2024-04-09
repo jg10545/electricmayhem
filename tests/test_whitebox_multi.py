@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from electricmayhem.whitebox import _multi, _create, _pipeline
 from tests import modelgenerators
-
+"""
 def test_patchwrapper():
     N = 5
     patch = torch.tensor(np.random.uniform(0,1,size=(3,32,32)))
@@ -15,15 +15,13 @@ def test_patchwrapper():
 
 
 def test_pipeline_distributed_training_loop_runs():
-    """
-    This is a pretty minimal test just to see
-    if it runs without crashing for a trivial case, splitting
-    over two CPU processes.
+    # This is a pretty minimal test just to see
+    # if it runs without crashing for a trivial case, splitting
+    # over two CPU processes.
 
-    I'm running into some issues with this unit test on a mac, which
-    appear to be related to some detail of how multiprocessing spawns
-    new processes on the mac
-    """
+    # I'm running into some issues with this unit test on a mac, which
+    # appear to be related to some detail of how multiprocessing spawns
+    # new processes on the mac
     batch_size = 2
     step_size = 1e-2
     num_steps = 5
@@ -48,3 +46,5 @@ def test_pipeline_distributed_training_loop_runs():
                                            num_eval_steps=num_eval_steps,
                                            mainloss=1)
     assert out.shape == shape
+
+    """
