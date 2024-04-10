@@ -92,8 +92,15 @@ class KorniaAugmentationPipeline(PipelineBase):
             if ((y1-y2)**2).numpy().mean() > epsilon:
                 failures += 1
         if failures > 0:
-            logging.warning(f"reproducibility check failed {failures} out of {N} times")
+            logging.warning(f"{self.name}: reproducibility check failed {failures} out of {N} times")
         return failures
+    
+    def validate(self, x):
+        """
+        Wrapper for check_reproducibility(); will return False if any of the reproducibility checks
+        fail
+        """
+        return self.check_reproducibility(x) == 0
     
     
     def get_last_sample_as_dict(self):

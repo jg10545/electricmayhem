@@ -447,3 +447,14 @@ def test_pipeline_optimize_runs_without_crashing(tmp_path_factory):
                       mainloss=(0.1,1.),
                       lr_decay=["cosine", "exponential"],
                       optimizer=["bim", "adam", "mifgsm"])
+    
+
+def test_pipeline_passes_validate():
+    augdict1 = {"ColorJiggle":{"contrast":0.2, "p":1}}
+    
+    stack = _create.PatchStacker()
+    aug = _aug.KorniaAugmentationPipeline(augdict1)
+    
+    pipe = stack + aug
+    pipe.initialize_patch_params(patch_shape=(1,5,7))
+    assert pipe.validate()

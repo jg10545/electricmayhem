@@ -27,7 +27,16 @@ def test_korniaaugmentationpipeline_reproducibility():
     aug = _aug.KorniaAugmentationPipeline(augdict)
     repro = aug.check_reproducibility()
     assert repro == 0
+
+
+def test_korniaaugmentationpipeline_validate():
+    augdict = {"ColorJiggle":{"contrast":0.2, "hue":0.2, "p":1},
+          "RandomAffine":{"scale":[0.1,1.5], "degrees":45, "p":1}}
     
+    aug = _aug.KorniaAugmentationPipeline(augdict)
+    assert aug.validate(torch.tensor(np.random.uniform(0, 1, (1, 3, 21, 37)).astype(np.float32)))
+    
+
 def test_korniaaugmentationpipeline_get_last_sample_as_dict():
     augdict = {"RandomPlasmaShadow":{"roughness":(0.4,0.5), "p":1.},
           "ColorJiggle":{"contrast":0.2, "hue":0.2, "p":1.}}
