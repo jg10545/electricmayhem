@@ -6,10 +6,10 @@ def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None):
     :patch_batch: (B,C,H',W') tensor containing batch of patches
     :target_batch: (B,C,H,W) tensor containing batch of target images
     :coord_batch: (B,4,2) tensor containing corner coordinates for implanting the patch in each image
+    :mask: optional, batch of masks
     """
     assert patch_batch.shape[0] == target_batch.shape[0], "batch dimensions need to line up"
     assert target_batch.shape[0] == coord_batch.shape[0], "batch dimensions need to line up"
-    assert mask is None, "NOT IMPLEMENTED"
     
     # get transformation matrix
     patch_border = torch.tensor([[0.,0.],
@@ -25,7 +25,16 @@ def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None):
                                                       padding_mode="fill", 
                                                       fill_value=torch.tensor([0,1,0])) # (B,C,H,W)
     # use the green background to create a mask
-    mask = ((warped[:,0,:,:] == 0)&(warped[:,1,:,:] == 1)&(warped[:,2,:,:] == 0)).type(torch.float32) # (B,H,W)
-    mask = mask.unsqueeze(1) # (B,1,H,W)
+    warpmask = ((warped[:,0,:,:] == 0)&(warped[:,1,:,:] == 1)&(warped[:,2,:,:] == 0)).type(torch.float32) # (B,H,W)
+    warpmask = warpmask.unsqueeze(1) # (B,1,H,W)
     
-    return target_batch*mask + warped*(1-mask)
+    if mask is not None:
+        # apply same transforms to batch of masks, but fill with zeros. patch will only show through
+        # in places where mask > 0
+        mask_pw = kornia.geometry.transform.warp_perspective(mask, tfm,
+                                                      (target_batch.shape[2], target_batch.shape[3]),
+                                                      padding_mode="zeros") # (B,C,H,W) or (1,1,H,W)
+        # update the warp mask to exclude the patch wherever the mask is zero
+        warpmask = (warpmask + (1-mask_pw)).clip(0,1)
+    
+    return target_batch*warpmask + warped*(1-warpmask)
