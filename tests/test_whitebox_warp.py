@@ -13,6 +13,7 @@ boxdict = {"foo":[[[10,10],[10,35],[20,35],[20,10]], [[0,10],[0,35],[23,35],[20,
           "bar":[[[10,10],[10,38],[20,35],[20,10]], [[5,4],[10,35],[20,35],[20,10]]]}
 
 patch_batch = torch.tensor(np.random.uniform(0,1, (B,C,7,11)).astype(np.float32))
+mask = torch.tensor(np.random.uniform(0, 1, size=(11,13)).astype(np.float32))
 
 
 def test_warp_and_implant_batch_gives_correct_output_shape():
@@ -61,7 +62,6 @@ def test_warp_and_implant_batch_gives_correct_output_shape_with_scalar_mask():
     # some pixels in the target batch should be unchanged
     assert torch.sum(target_batch == implanted) > 0
 
-
 def test_warppatchimplanter():
     # simple checks- output shape and reproducibility
     warp = WarpPatchImplanter(imagedict, boxdict)
@@ -69,5 +69,22 @@ def test_warppatchimplanter():
     output2 = warp(patch_batch, params=warp.lastsample)
     
     assert output.shape == (B, C, H, W)
-    print(np.mean((output.detach().numpy() - output2.detach().numpy())**2) )
+    assert np.mean((output.detach().numpy() - output2.detach().numpy())**2) < 1e-6
+    
+def test_warppatchimplanter_with_scalar_mask():
+    # simple checks- output shape and reproducibility
+    warp = WarpPatchImplanter(imagedict, boxdict, mask=0.5)
+    output = warp(patch_batch)
+    output2 = warp(patch_batch, params=warp.lastsample)
+    
+    assert output.shape == (B, C, H, W)
+    assert np.mean((output.detach().numpy() - output2.detach().numpy())**2) < 1e-6
+    
+def test_warppatchimplanter_with_2D_mask():
+    # simple checks- output shape and reproducibility
+    warp = WarpPatchImplanter(imagedict, boxdict, mask=mask)
+    output = warp(patch_batch)
+    output2 = warp(patch_batch, params=warp.lastsample)
+    
+    assert output.shape == (B, C, H, W)
     assert np.mean((output.detach().numpy() - output2.detach().numpy())**2) < 1e-6

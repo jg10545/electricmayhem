@@ -36,6 +36,9 @@ def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None):
         with torch.no_grad():
             # IMAGE MASK CASE
             if isinstance(mask, torch.Tensor):
+                # add batch dimension if necessary
+                if len(mask.shape) == 3:
+                    mask = torch.stack([mask for _ in range(patch_batch.shape[0])], 0)
                 # apply same transforms to batch of masks, but fill with zeros. patch will only show through
                 # in places where mask > 0
                 mask_pw = kornia.geometry.transform.warp_perspective(mask, tfm,
