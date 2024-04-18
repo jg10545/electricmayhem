@@ -1,5 +1,8 @@
+import numpy as np
 import torch
 import kornia.geometry.transform
+import logging
+import matplotlib.patches
 
 from ._implant import RectanglePatchImplanter
 
