@@ -7,12 +7,15 @@ import matplotlib.patches
 
 from ._implant import RectanglePatchImplanter
 
-def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None):
+def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None,
+                           scale_brightness=False):
     """
     :patch_batch: (B,C,H',W') tensor containing batch of patches
     :target_batch: (B,C,H,W) tensor containing batch of target images
     :coord_batch: (B,4,2) tensor containing corner coordinates for implanting the patch in each image
     :mask: optional, batch of masks
+    :scale_brightness: if True, adjust brightness of patch to match the average brightness of the section of
+            image it's replacing
     """
     assert patch_batch.shape[0] == target_batch.shape[0], "batch dimensions need to line up"
     assert target_batch.shape[0] == coord_batch.shape[0], "batch dimensions need to line up"
@@ -44,6 +47,16 @@ def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None):
         warpmask = warpmask.unsqueeze(1) # (B,1,H,W)
         # so every place where warpmask=1 will be the target image; every place where it's 0 will be the patch
     
+    # do we need to scale the patch's brightness?
+    if scale_brightness:
+        patch_brightness = torch.mean(patch_batch, dim=(1,2,3), keepdim=True) # (B,1,1,1)
+        target_brightness = torch.sum(target_batch*(1-warpmask), dim=(1,2,3), 
+                                      keepdim=True)/torch.sum(1-warpmask, dim=(1,2,3),
+                                                              keepdim=True) # (B,1,1,1)
+        scale = target_brightness/patch_brightness # (B,1,1,1)
+    else:
+        scale = 1.
+
     if mask is not None:
         with torch.no_grad():
             # IMAGE MASK CASE
@@ -66,7 +79,7 @@ def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None):
                 warpmask = warpmask*mask + 1 - mask
 
     
-    return target_batch*warpmask + warped_patch*(1-warpmask)
+    return torch.clamp(target_batch*warpmask + warped_patch*(1-warpmask)*scale, 0, 1) # brightness scaling could push above 1
 
 
 
@@ -83,50 +96,24 @@ class WarpPatchImplanter(RectanglePatchImplanter):
     name = "WarpPatchImplanter"
     
     def __init__(self, imagedict, boxdict, eval_imagedict=None,
-                 eval_boxdict=None, mask=None):
+                 eval_boxdict=None, mask=None, scale_brightness=False):
         """
         :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
-        :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
-            {"img1":[[xmin1, ymin1, xmax1, ymax1], [xmin2, ymin2, xmax2, ymax2]]}
+        :boxdict: dictionary mapping the same keys to lists of corner coordinates, i.e.
+            {"img1":[[[x1,y1],[x2,y2],[x3,y3],[x4,y4]], ...]}
         :eval_imagedict: separate dictionary of images to evaluate on
         :eval_boxdict: separate dictionary of lists of bounding boxes for evaluation
         :scale: tuple of floats; range of scaling factors
         :offset_frac_x: None or float between 0 and 1- optionally specify a relative x position within the target box for the patch.
         :offset_frac_y: None or float between 0 and 1- optionally specify a relative y position within the target box for the patch.
         :mask: None, scalar between 0 and 1, or torch.Tensor on the unit interval to use for masking the patch
+        :scale_brightness: if True, adjust brightness of patch to match the average brightness of the section of
+            image it's replacing
         """
-        #super(RectanglePatchImplanter, self).__init__()
         super().__init__(imagedict, boxdict, eval_imagedict=eval_imagedict,
-                         eval_boxdict=eval_boxdict, mask=mask)
+                         eval_boxdict=eval_boxdict, mask=mask,
+                         scale_brightness=scale_brightness)
 
-        """
-        # save training image/box information
-        self.imgkeys = list(imagedict.keys())
-        self.images = torch.nn.ParameterList([_img_to_tensor(imagedict[k]) for k in self.imgkeys])
-        self.boxes = [boxdict[k] for k in self.imgkeys]
-        self.mask = mask
-        
-        # save eval image/box information
-        if eval_imagedict is None:
-            eval_imagedict = imagedict
-            eval_boxdict = boxdict
-            
-        self.eval_imgkeys = list(eval_imagedict.keys())
-        self.eval_images = torch.nn.ParameterList([_img_to_tensor(eval_imagedict[k]) for k in
-                                                   self.eval_imgkeys])
-        self.eval_boxes = [eval_boxdict[k] for k in self.eval_imgkeys]
-            
-        
-        
-        self.params = {"scale":list(scale), "imgkeys":self.imgkeys,
-                       "eval_imgkeys":self.eval_imgkeys,
-                       "offset_frac_x":offset_frac_x,
-                       "offset_frac_y":offset_frac_y,
-                       "mask":self._get_mask_summary(mask)}
-        self.lastsample = {}
-        
-        assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
-        """
         # some of the parameters in the parent class aren't used here- let's remove some clutter
         for key in ["scale", "offset_frac_x", "offset_frac_y"]:
             if key in self.params:
@@ -239,8 +226,8 @@ class WarpPatchImplanter(RectanglePatchImplanter):
                               for i in range(patches.shape[0]) ],0).to(patches.device)
 
         # implant patch
-        implanted_images = warp_and_implant_batch(patches, target_images, coords, mask=mask)
-        #implanted_images = warp_and_implant_batch(target_images, coords, patches, mask=mask)
+        implanted_images = warp_and_implant_batch(patches, target_images, coords, mask=mask,
+                                                  scale_brightness=self.params["scale_brightness"])
 
         return implanted_images
     
