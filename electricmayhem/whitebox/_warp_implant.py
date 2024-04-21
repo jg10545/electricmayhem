@@ -28,13 +28,21 @@ def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None):
     # apply transformation to get a warped patch with green background
     warped_patch = kornia.geometry.transform.warp_perspective(patch_batch, tfm,
                                                       (target_batch.shape[2], target_batch.shape[3]),
+                                                      padding_mode="border") # (B,C,H,W)
+    # do the transformation a second time- but with a "green screen" we can use to generate the mask
+    # we'll need to implant in the image (not to be confused with an additional optional mask for 
+    # within the boundaries of the patch itself). the reason we do this with a separate step is otherwise
+    # the image resampling causes some of the chromakey to leak into the implanted patch.
+    with torch.no_grad():
+        chromakey = kornia.geometry.transform.warp_perspective(patch_batch, tfm,
+                                                      (target_batch.shape[2], target_batch.shape[3]),
                                                       padding_mode="fill", 
                                                       fill_value=torch.tensor([0,1,0])) # (B,C,H,W)
-    # use the green background to create a mask for deciding where to overwrite the target image
-    # with the patch
-    warpmask = ((warped_patch[:,0,:,:] == 0)&(warped_patch[:,1,:,:] == 1)&(warped_patch[:,2,:,:] == 0)).type(torch.float32) # (B,H,W)
-    warpmask = warpmask.unsqueeze(1) # (B,1,H,W)
-    # so every place where warpmask=1 will be the target image; every place where it's 0 will be the patch
+        # use the green background to create a mask for deciding where to overwrite the target image
+        # with the patch
+        warpmask = ((chromakey[:,0,:,:] == 0)&(chromakey[:,1,:,:] == 1)&(chromakey[:,2,:,:] == 0)).type(torch.float32) # (B,H,W)
+        warpmask = warpmask.unsqueeze(1) # (B,1,H,W)
+        # so every place where warpmask=1 will be the target image; every place where it's 0 will be the patch
     
     if mask is not None:
         with torch.no_grad():
