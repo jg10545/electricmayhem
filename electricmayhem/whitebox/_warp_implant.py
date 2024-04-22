@@ -49,7 +49,11 @@ def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None,
     
     # do we need to scale the patch's brightness?
     if scale_brightness:
+        # compute the brightness of each patch in the batch
         patch_brightness = torch.mean(patch_batch, dim=(1,2,3), keepdim=True) # (B,1,1,1)
+        # target_batch*(1-warpmask) will be the target images in all the places where we're
+        # overwriting with patch. we have to take the sum and divide by the sum of 1-warpmask
+        # to get an average.
         target_brightness = torch.sum(target_batch*(1-warpmask), dim=(1,2,3), 
                                       keepdim=True)/torch.sum(1-warpmask, dim=(1,2,3),
                                                               keepdim=True) # (B,1,1,1)

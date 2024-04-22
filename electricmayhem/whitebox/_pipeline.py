@@ -609,7 +609,7 @@ class Pipeline(PipelineBase):
                 
         # wrap up mlflow logging
         if self._logging_to_mlflow:
-            self._log_image_to_mlflow(patch_params, "patch.png")
+            self._log_image_to_mlflow(patch_params.patch, "patch.png")
         #return self.patch_params.patch
         if self._single_patch:
             return self.patch_params(1).squeeze(0)
