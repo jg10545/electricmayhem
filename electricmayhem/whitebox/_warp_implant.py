@@ -86,7 +86,26 @@ def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None,
     return torch.clamp(target_batch*warpmask + warped_patch*(1-warpmask)*scale, 0, 1) # brightness scaling could push above 1
 
 
+def scale_coordinate_list(coord, scale=0.1):
+    """
+    Utility function to scale a list of corner coordinates out by a fraction
+    of its width
+    """
+    newcoord = [[0,0], [0,0], [0,0], [0,0]] # upper left, upper right, lower right, lower left
 
+    newcoord[0][0] = int(coord[0][0] - scale*(coord[1][0]-coord[0][0])) # upper left x
+    newcoord[0][1] = int(coord[0][1] - scale*(coord[3][1]-coord[0][1])) # upper left y
+
+    newcoord[1][0] = int(coord[1][0] - scale*(coord[0][0]-coord[1][0])) # upper right x
+    newcoord[1][1] = int(coord[1][1] - scale*(coord[3][1]-coord[0][1])) # upper right y
+
+    newcoord[3][0] = int(coord[3][0] - scale*(coord[1][0]-coord[0][0])) # lower left x
+    newcoord[3][1] = int(coord[3][1] - scale*(coord[0][1]-coord[3][1])) # lower left y
+
+    newcoord[2][0] = int(coord[2][0] - scale*(coord[0][0]-coord[1][0])) # upper right x
+    newcoord[2][1] = int(coord[2][1] - scale*(coord[0][1]-coord[3][1])) # upper right y
+    
+    return newcoord
 
 class WarpPatchImplanter(RectanglePatchImplanter):
     """
@@ -105,6 +124,7 @@ class WarpPatchImplanter(RectanglePatchImplanter):
         :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
         :boxdict: dictionary mapping the same keys to lists of corner coordinates, i.e.
             {"img1":[[[x1,y1],[x2,y2],[x3,y3],[x4,y4]], ...]}
+            The order of (x,y) pairs is [upper left, upper right, lower right, lower left]
         :eval_imagedict: separate dictionary of images to evaluate on
         :eval_boxdict: separate dictionary of lists of bounding boxes for evaluation
         :scale: tuple of floats; range of scaling factors
