@@ -200,7 +200,8 @@ class RectanglePatchImplanter(PipelineBase):
             with torch.no_grad():
                 cutout = imp.clone().detach()[:, offset_y[i]:offset_y[i]+pH, offset_x[i]:offset_x[i]+pW]
             if scale_brightness:
-                scale = torch.mean(cutout)/torch.mean(patch[i])
+                with torch.no_grad():
+                    scale = torch.mean(cutout)/torch.mean(patch[i])
             else:
                 scale = 1
 
