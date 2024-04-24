@@ -178,8 +178,23 @@ class WarpPatchImplanter(RectanglePatchImplanter):
         """
         Check to see whether any of your patch/scale/image/box combinations could throw an error
         """
-        logging.info("nothing implemented for WarpPatchImplanter yet")
-        return True
+        all_validated = True
+        
+        for i in range(len(self.images)):
+            for j in range(len(self.boxes[i])):
+                b = self.boxes[i][j]
+                box_ok = True
+                # should be four corners in the box
+                if len(b) != 4:
+                    box_ok = False
+                # each corner should have two coordinates
+                for k in b:
+                    if len(k) != 2:
+                        box_ok = False
+                if not box_ok:
+                    logging.warning(f"{self.name}: box {j} of image {self.imgkeys[i]} has the wrong shape")
+                    all_validated = False
+        return all_validated
     
     def _get_mask(self, patch):
         """
@@ -260,7 +275,6 @@ class WarpPatchImplanter(RectanglePatchImplanter):
         """
         Quick visualization with matplotlib of the victim images and box regions
         """
-        assert False, "not yet implemented"
         if evaluate:
             images = self.eval_images
             boxes = self.eval_boxes
@@ -283,12 +297,7 @@ class WarpPatchImplanter(RectanglePatchImplanter):
                     
                     for j in range(len(boxes[i])):
                         b = boxes[i][j]
-                        xw = (b[0], b[1])
-                        width = b[2]-b[0]
-                        height = b[3]-b[1]
-                        rect = matplotlib.patches.Rectangle(xw, width, height, linewidth=2, fill=False, color="r")
-                        ax.add_artist(rect)
-                        ax.text(xw[0], xw[1], str(j))
+                        ax.plot([f[0] for f in b], [f[1] for f in b], "o-")
                     ax.set_title(imgkeys[i])
                 
                 i += 1
