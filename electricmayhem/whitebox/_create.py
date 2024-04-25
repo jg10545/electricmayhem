@@ -5,6 +5,20 @@ import logging
 
 from ._pipeline import PipelineBase
 
+def scroll_single_image(x, offset_x=0, offset_y=0):
+    """
+    helper function for PatchScroller. take an image and translate it,
+    wrapping with toroidal boundary conditions
+    
+    :x: torch tensor for a single image in channel-first format (C,H,W)
+    :offset_x: int; number of pixels to offset in x direction
+    :offset_y: int; number of pixels to offset in y direction
+    """
+    
+    x = torch.concat([x[:,:,offset_x:], x[:,:,:offset_x]], 2)
+    x = torch.concat([x[:,offset_y:,:], x[:,:offset_y,:]], 1)
+    return x
+
 
 class PatchSaver(PipelineBase):
     """
@@ -177,4 +191,56 @@ class PatchTiler(PatchSaver):
         auto-populating a description for MLFlow.
         """
         return f"**{self.name}:** tile to {self.size}"
+    
+
+class PatchScroller(PipelineBase):
+    """
+    Class for translating a patch with toroidal boundary conditions.
+    
+    Returns the unchanged patch during evaluation steps.
+    """
+    name = "PatchScroller"
+    
+    def __init__(self, logviz=True):
+        super().__init__()
+        self.params = {}#kwargs
+        self.lastsample = {}
+        self._logviz = logviz
+        
+    def sample(self, patchbatch, params={}):
+        N,C,H,W = patchbatch.shape
+        
+        sampdict = {k:params[k] for k in params}
+        if "offset_x" not in sampdict:
+            sampdict["offset_x"] = torch.randint(low=0, high=W, size=[N])
+        if "offset_y" not in sampdict:
+            sampdict["offset_y"] = torch.randint(low=0, high=H, size=[N])
+            
+        self.lastsample = sampdict
+        
+
+        
+    def forward(self, x, control=False, evaluate=False, params={}, **kwargs):
+        # eval case: 
+        if evaluate:
+            return x
+        # if this isn't a control step, sample new offsets for each
+        # image in the batch
+        if not control:
+            self.sample(x, params)
+            
+        s = self.lastsample
+        shifted = torch.stack([
+            scroll_single_image(x[i], s["offset_x"][i], s["offset_y"][i])
+            for i in range(x.shape[0])
+                ], 0)
+        
+        return shifted
+        
+    def get_last_sample_as_dict(self):
+        """
+        Return last sample as a JSON-serializable dict
+        """
+        return {k:self.lastsample[k].cpu().detach().numpy() for k in self.lastsample}
+    
         

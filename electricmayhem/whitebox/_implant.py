@@ -24,7 +24,7 @@ class RectanglePatchImplanter(PipelineBase):
     
     def __init__(self, imagedict, boxdict, eval_imagedict=None,
                  eval_boxdict=None, scale=(0.75,1.25), offset_frac_x=None,
-                 offset_frac_y=None, mask=None):
+                 offset_frac_y=None, mask=None, scale_brightness=False):
         """
         :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
         :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
@@ -35,6 +35,8 @@ class RectanglePatchImplanter(PipelineBase):
         :offset_frac_x: None or float between 0 and 1- optionally specify a relative x position within the target box for the patch.
         :offset_frac_y: None or float between 0 and 1- optionally specify a relative y position within the target box for the patch.
         :mask: None, scalar between 0 and 1, or torch.Tensor on the unit interval to use for masking the patch
+        :scale_brightness: if True, adjust brightness of patch to match the average brightness of the section of
+            image it's replacing
         """
         super(RectanglePatchImplanter, self).__init__()
         # save training image/box information
@@ -59,7 +61,8 @@ class RectanglePatchImplanter(PipelineBase):
                        "eval_imgkeys":self.eval_imgkeys,
                        "offset_frac_x":offset_frac_x,
                        "offset_frac_y":offset_frac_y,
-                       "mask":self._get_mask_summary(mask)}
+                       "mask":self._get_mask_summary(mask),
+                       "scale_brightness":scale_brightness}
         self.lastsample = {}
         
         assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
@@ -185,7 +188,7 @@ class RectanglePatchImplanter(PipelineBase):
 
 
         
-    def _implant_patch(self, image, patch, offset_x, offset_y):
+    def _implant_patch(self, image, patch, offset_x, offset_y, scale_brightness=False):
         implanted = []
         for i in range(len(image)):
             C, H, W = image[i].shape
@@ -193,22 +196,29 @@ class RectanglePatchImplanter(PipelineBase):
         
             imp = image[i].clone().detach()
 
+            # get a copy of the part of the image we're cutting out
+            with torch.no_grad():
+                cutout = imp.clone().detach()[:, offset_y[i]:offset_y[i]+pH, offset_x[i]:offset_x[i]+pW]
+            if scale_brightness:
+                with torch.no_grad():
+                    scale = torch.mean(cutout)/torch.mean(patch[i])
+            else:
+                scale = 1
+
             # if there's a mask we need to mix the patch with the part of
             # the image it's replacing
             if self.mask is not None:
                 # get the corresponding mask
                 mask = self._get_mask(patch[i])
-                # get a copy of the part of the image we're cutting out
-                with torch.no_grad():
-                    cutout = imp.clone().detach()[:, offset_y[i]:offset_y[i]+pH, offset_x[i]:offset_x[i]+pW]
-                replace = patch[i]*mask + cutout*(1-mask)
+
+                replace = scale*patch[i]*mask + cutout*(1-mask)
             # otherwise we're just replacing with the patch
             else:
-                replace = patch[i]
+                replace = scale*patch[i]
             imp[:, offset_y[i]:offset_y[i]+pH, offset_x[i]:offset_x[i]+pW] = replace
             implanted.append(imp)
         
-        return torch.stack(implanted,0)
+        return torch.clamp(torch.stack(implanted,0), 0, 1) # brightness scaling could push above 1
     
     def forward(self, patches, control=False, evaluate=False, params={}, **kwargs):
         """
@@ -257,7 +267,7 @@ class RectanglePatchImplanter(PipelineBase):
         if control:
             return torch.stack(images,0)
         
-        return self._implant_patch(images, patchlist, offset_x, offset_y)
+        return self._implant_patch(images, patchlist, offset_x, offset_y, self.params["scale_brightness"])
     
     def plot_boxes(self, evaluate=False):
         """
@@ -345,7 +355,8 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
     
     def __init__(self, imagedict, boxdict, eval_imagedict=None,
                  eval_boxdict=None, frac=0.5, scale_by="min",
-                 offset_frac_x=None, offset_frac_y=None, mask=None):
+                 offset_frac_x=None, offset_frac_y=None, mask=None,
+                 scale_brightness=False):
         """
         :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
         :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
@@ -358,6 +369,8 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
         :offset_frac_x: None or float between 0 and 1- optionally specify a relative x position within the target box for the patch.
         :offset_frac_y: None or float between 0 and 1- optionally specify a relative y position within the target box for the patch.
         :mask: None, scalar between 0 and 1, or torch.Tensor on the unit interval to use for masking the patch
+        :scale_brightness: if True, adjust brightness of patch to match the average brightness of the section of
+            image it's replacing
         """
         super(RectanglePatchImplanter, self).__init__()
         # save training image/box information
@@ -382,7 +395,8 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
                        "eval_imgkeys":self.eval_imgkeys, 
                        "scale_by":scale_by,
                        "offset_frac_x":offset_frac_x,
-                       "offset_frac_y":offset_frac_y}
+                       "offset_frac_y":offset_frac_y,
+                       "scale_brightness":scale_brightness}
         self.lastsample = {}
         
         assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
@@ -489,7 +503,7 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
         if control:
             return torch.stack(images,0)
         
-        return self._implant_patch(images, patchlist, offset_x, offset_y)
+        return self._implant_patch(images, patchlist, offset_x, offset_y, self.params["scale_brightness"])
     
     
     
@@ -506,7 +520,7 @@ class ScaleToBoxRectanglePatchImplanter(RectanglePatchImplanter):
     name = "ScaleToBoxRectanglePatchImplanter"
     
     def __init__(self, imagedict, boxdict, eval_imagedict=None,
-                 eval_boxdict=None, mask=None):
+                 eval_boxdict=None, mask=None, scale_brightness=False):
         """
         :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
         :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
@@ -514,6 +528,8 @@ class ScaleToBoxRectanglePatchImplanter(RectanglePatchImplanter):
         :eval_imagedict: separate dictionary of images to evaluate on
         :eval_boxdict: separate dictionary of lists of bounding boxes for evaluation
         :mask: None, scalar between 0 and 1, or torch.Tensor on the unit interval to use for masking the patch
+        :scale_brightness: if True, adjust brightness of patch to match the average brightness of the section of
+            image it's replacing
         """
         super(RectanglePatchImplanter, self).__init__()
         # save training image/box information
@@ -535,7 +551,8 @@ class ScaleToBoxRectanglePatchImplanter(RectanglePatchImplanter):
         
         
         self.params = {"imgkeys":self.imgkeys,
-                       "eval_imgkeys":self.eval_imgkeys}
+                       "eval_imgkeys":self.eval_imgkeys,
+                       "scale_brightness":scale_brightness}
         self.lastsample = {}
         
         assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
@@ -619,7 +636,7 @@ class ScaleToBoxRectanglePatchImplanter(RectanglePatchImplanter):
         if control:
             return torch.stack(images,0)
         
-        return self._implant_patch(images, patchlist, offset_x, offset_y)
+        return self._implant_patch(images, patchlist, offset_x, offset_y, self.params["scale_brightness"])
     
     def validate(self, patch):
         """

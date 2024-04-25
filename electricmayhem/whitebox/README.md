@@ -45,10 +45,12 @@
 * `PatchResizer`: upsample a low-res patch
 * `PatchTiler`: create a large patch from a small one by tiling it
 * `PatchStacker`: stack a 1-channel patch into a 3-channel patch
+* `PatchScroller`:
 * `SoftProofer`: on evaluation steps only, use a color management system and ICC profile to simulate what the patch will look like after printing
 * `RectanglePatchImplanter`: implant a patch into a target image. Can randomly select from multiple images and multiple bounding boxes per image. Optionally, reserve some target images only for evaluation.
 * `FixedRatioRectanglePatchImplanter`: scale patch to a fixed size with respect to the target box and implant in image. Optionally, reserve some target images only for evaluation.
 * `ScaleToBoxRectanglePatchImplanter`: scale the patch to fill the box.
+* `WarpPatchImplanter`:
 * `KorniaAugmentationPipeline`: wraps the `kornia` library to augment an image
 * `ModelWrapper`: wrap a pytorch model as a pipeline step
 * `YOLOWrapper`: model wrapper that adds a detection visualization to TensorBoard
