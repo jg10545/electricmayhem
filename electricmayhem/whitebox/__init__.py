@@ -6,4 +6,5 @@ from ._create import PatchResizer, PatchStacker, PatchSaver, PatchTiler, PatchSc
 from ._yolo import YOLOWrapper
 from._proofer import SoftProofer
 from ._warp_implant import WarpPatchImplanter
+from ._filter import HighPassFilter
 from electricmayhem.whitebox import loss, viz
