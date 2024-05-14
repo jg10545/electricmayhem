@@ -396,7 +396,8 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
                        "scale_by":scale_by,
                        "offset_frac_x":offset_frac_x,
                        "offset_frac_y":offset_frac_y,
-                       "scale_brightness":scale_brightness}
+                       "scale_brightness":scale_brightness,
+                       "mask":self._get_mask_summary(mask)}
         self.lastsample = {}
         
         assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
@@ -552,7 +553,8 @@ class ScaleToBoxRectanglePatchImplanter(RectanglePatchImplanter):
         
         self.params = {"imgkeys":self.imgkeys,
                        "eval_imgkeys":self.eval_imgkeys,
-                       "scale_brightness":scale_brightness}
+                       "scale_brightness":scale_brightness,
+                       "mask":self._get_mask_summary(mask)}
         self.lastsample = {}
         
         assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
