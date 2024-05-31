@@ -458,3 +458,49 @@ def test_pipeline_passes_validate():
     pipe = stack + aug
     pipe.initialize_patch_params(patch_shape=(1,5,7))
     assert pipe.validate()
+
+
+def test_update_patch_gradients():
+    batch_size = 2
+    accumulate = 1
+    def myloss(outputs, patchparam):
+        outdict = {}
+        outputs = outputs.reshape(outputs.shape[0], -1)
+        outdict["mainloss"] = torch.mean(outputs, 1)
+        return outdict    
+    
+
+    shape = (3,5,7)
+    step = _create.PatchResizer((11,13))
+    pipeline = _pipeline.Pipeline(step)
+    pipeline.initialize_patch_params(shape)
+    pipeline.set_loss(myloss)
+
+    lossdict = _pipeline._update_patch_gradients(pipeline, batch_size, 
+                                       {"mainloss":1}, accumulate=accumulate,
+                                       rho=0)
+    assert isinstance(lossdict, dict)
+    assert pipeline.patch_params.patch.grad is not None
+
+
+def test_update_patch_gradients_with_sharpness_aware_minimization():
+    batch_size = 2
+    accumulate = 1
+    def myloss(outputs, patchparam):
+        outdict = {}
+        outputs = outputs.reshape(outputs.shape[0], -1)
+        outdict["mainloss"] = torch.mean(outputs, 1)
+        return outdict    
+    
+
+    shape = (3,5,7)
+    step = _create.PatchResizer((11,13))
+    pipeline = _pipeline.Pipeline(step)
+    pipeline.initialize_patch_params(shape)
+    pipeline.set_loss(myloss)
+
+    lossdict = _pipeline._update_patch_gradients(pipeline, batch_size, 
+                                       {"mainloss":1}, accumulate=accumulate,
+                                       rho=0.5)
+    assert isinstance(lossdict, dict)
+    assert pipeline.patch_params.patch.grad is not None

@@ -161,7 +161,74 @@ class ModelWrapper(PipelineBase):
         """
         return {}
     
+
+def _update_patch_gradients(pipeline, batch_size, lossweights, accumulate=1, rho=0):
+    """
     
+
+    For the sharpness-aware minimization case (rho > 0):
+        -for now don't worry that we're separately sampling augmentations and stuff
+            for the adversarial and training steps.
+    """ 
+    def _getloss(outputs, patchbatch):
+        lossdict = pipeline.loss(outputs, patchbatch)
+        loss = 0
+        record = {}
+        for k in lossdict:
+            meanloss = torch.mean(lossdict[k])
+            record[k] = meanloss
+            # add this term to the loss function if a weight was included
+            if k in lossweights:
+                loss += lossweights[k]*meanloss/accumulate
+        return lossdict, loss
+
+
+    # patch_params is a PatchWrapper object; the batch_size arg will        
+    # return a stack of patches
+    patchbatch = pipeline.patch_params(batch_size)
+
+    # NORMAL CASE
+    if rho == 0:
+        # run through the pipeline
+        outputs = pipeline(patchbatch)
+        lossdict, loss = _getloss(outputs, patchbatch)
+
+        # estimate gradients
+        loss.backward()
+    # SHARPNESS-AWARE CASE
+    else:
+        # make a copy of the batch
+        batch_copy = patchbatch.clone().detach().requires_grad_(True) # (N, C, H, W)
+
+        # run it through pipeline and get the loss
+        lossdict, loss = _getloss(pipeline(batch_copy), batch_copy)
+
+        # compute gradients and average across batch
+        loss.backward()
+        mean_grad = torch.mean(batch_copy.grad, dim=[0]) # (C,H,W)
+
+        # normalize gradients
+        grad_norm = torch.sqrt(torch.sum(mean_grad**2))
+
+        # compute adversarially-perturbed x_adv = clamp(x.detach() + rho*grad/grad_norm, 0, 1).requires_grad_(True)
+        x_adv = torch.clamp(pipeline.patch_params.patch + rho*mean_grad/grad_norm, 0, 1).detach().requires_grad_(True)
+        # now run x_adv through the pipeline and get loss
+        patchbatch_adv = torch.stack([x_adv for _ in range(batch_size)], 0)
+        outputs_adv = pipeline(patchbatch_adv)
+        lossdict_adv, loss_adv = _getloss(outputs_adv, patchbatch_adv)
+        # compute gradients
+        loss_adv.backward()
+
+        with torch.no_grad():
+            # add gradient to single_patch.grad
+            if pipeline.patch_params.patch.grad is None:
+                pipeline.patch_params.patch.grad = x_adv.grad
+            else:
+                pipeline.patch_params.patch.grad += x_adv.grad
+
+    return lossdict
+
+
 class Pipeline(PipelineBase):
     """
     Class to manage a sequence of pipeline steps
@@ -564,12 +631,13 @@ class Pipeline(PipelineBase):
                 record[k] = meanloss
                 if k in kwargs:
                     loss += kwargs[k]*meanloss/accumulate
+
+            # estimate gradients
+            loss.backward()
+
             # DISTRIBUTED: only log to TB if we're in the process with rank 0
             # save metrics to tensorboard
             self._log_scalars(mlflow_metric=False, **record)
-            
-            # estimate gradients
-            loss.backward()
             
             # if this is an update step- update patch, clamp to unit interval
             if (i+1)%accumulate == 0:
@@ -578,6 +646,8 @@ class Pipeline(PipelineBase):
                     scheduler.step(loss)
                 else:
                     scheduler.step()
+
+                optimizer.zero_grad()
                     
                 self._log_scalars(learning_rate=optimizer.param_groups[0]["lr"])
                 if clamp_to is not None:
