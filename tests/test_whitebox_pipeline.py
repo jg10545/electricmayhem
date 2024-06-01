@@ -476,7 +476,7 @@ def test_update_patch_gradients():
     pipeline.initialize_patch_params(shape)
     pipeline.set_loss(myloss)
 
-    lossdict = _pipeline._update_patch_gradients(pipeline, batch_size, 
+    lossdict, loss = _pipeline._update_patch_gradients(pipeline, batch_size, 
                                        {"mainloss":1}, accumulate=accumulate,
                                        rho=0)
     assert isinstance(lossdict, dict)
@@ -499,7 +499,7 @@ def test_update_patch_gradients_with_sharpness_aware_minimization():
     pipeline.initialize_patch_params(shape)
     pipeline.set_loss(myloss)
 
-    lossdict = _pipeline._update_patch_gradients(pipeline, batch_size, 
+    lossdict, loss = _pipeline._update_patch_gradients(pipeline, batch_size, 
                                        {"mainloss":1}, accumulate=accumulate,
                                        rho=0.5)
     assert isinstance(lossdict, dict)
