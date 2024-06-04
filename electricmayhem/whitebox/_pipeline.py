@@ -212,12 +212,15 @@ def _update_patch_gradients(pipeline, batch_size, lossweights, accumulate=1, rho
         grad_norm = torch.sqrt(torch.sum(mean_grad**2)) + 1e-8 # numerical stability
 
         # compute adversarially-perturbed x_adv = clamp(x.detach() + rho*grad/grad_norm, 0, 1).requires_grad_(True)
-        x_adv = torch.clamp(pipeline.patch_params.patch + rho*mean_grad/grad_norm, 0, 1).detach().requires_grad_(True)
+        #x_adv = torch.clamp(pipeline.patch_params.patch + rho*mean_grad/grad_norm, 0, 1).detach().requires_grad_(True)
         if clamp_to is not None:
-            x_adv = torch.clamp(pipeline.patch_params.patch + rho*mean_grad/grad_norm, 
+            #x_adv = torch.clamp(pipeline.patch_params.patch + rho*mean_grad/grad_norm, 
+            #                    clamp_to[0], clamp_to[1]).detach().requires_grad_(True)
+            x_adv = torch.clamp(pipeline.patch_params.patch + rho*mean_grad.sign(), 
                                 clamp_to[0], clamp_to[1]).detach().requires_grad_(True)
         else:
-            x_adv = (pipeline.patch_params.patch + rho*mean_grad/grad_norm).detach().requires_grad_(True)
+            #x_adv = (pipeline.patch_params.patch + rho*mean_grad/grad_norm).detach().requires_grad_(True)
+            x_adv = (pipeline.patch_params.patch + rho*mean_grad.sign()).detach().requires_grad_(True)
         # now run x_adv through the pipeline and get loss
         patchbatch_adv = torch.stack([x_adv for _ in range(batch_size)], 0)
         outputs_adv = pipeline(patchbatch_adv)
