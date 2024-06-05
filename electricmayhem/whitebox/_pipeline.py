@@ -161,7 +161,96 @@ class ModelWrapper(PipelineBase):
         """
         return {}
     
-    
+
+def _update_patch_gradients(pipeline, batch_size, lossweights, accumulate=1, rho=0, clamp_to=(0,1)):
+    """
+    Input a Pipeline object and update the weights of this patch. Designed to be called from
+    within the training loop. This function is a somewhat inelegant solution and the API may change 
+    in the future!
+
+    The main reason to break this function out is to capture the code we'd need to do sharpness-aware
+    minimization (SAM) during patch training. This option follows equation 4 of RETHINKING MODEL ENSEMBLE IN 
+    TRANSFER-BASED ADVERSARIAL ATTACKS by Chen et all instead of the original SAM paper (normalizing the
+    gradient in the adversarial step by taking the sign instead of an L2 norm).
+
+    The adversarial and forward step of optimization here is making two passes through the pipeline, so
+    any implantation and augmentation parameters will have different values- this may add too much noise
+    to the training loop; we'll see.
+
+    I expect that this will NOT work with multi-GPU training.
+
+    :pipeline: a Pipeline object with loss function and patch already initialized
+    :batch_size: batch size to use for training
+    :lossweights: dictionary of loss function weights
+    :accumulate: gradient accumulation hyperparameter
+    :rho: learning rate for adversarial gradient-ascent step
+    :clamp_to: tuple or None; values to clamp patch to after updating
+
+    Returns dictionary of disaggregated loss values and total loss tensor
+    """ 
+    def _getloss(outputs, patchbatch):
+        lossdict = pipeline.loss(outputs, patchbatch)
+        loss = 0
+        record = {}
+        for k in lossdict:
+            meanloss = torch.mean(lossdict[k])
+            record[k] = meanloss
+            # add this term to the loss function if a weight was included
+            if k in lossweights:
+                loss += lossweights[k]*meanloss/accumulate
+        return lossdict, loss
+
+
+    # patch_params is a PatchWrapper object; the batch_size arg will        
+    # return a stack of patches
+    patchbatch = pipeline.patch_params(batch_size)
+
+    # NORMAL CASE
+    if rho == 0:
+        # run through the pipeline
+        outputs = pipeline(patchbatch)
+        lossdict, loss = _getloss(outputs, patchbatch)
+
+        # estimate gradients
+        loss.backward()
+    # SHARPNESS-AWARE CASE
+    else:
+        # make a copy of the batch
+        batch_copy = patchbatch.clone().detach().requires_grad_(True) # (N, C, H, W)
+
+        # run it through pipeline and get the loss
+        lossdict, loss = _getloss(pipeline(batch_copy), batch_copy)
+
+        # compute gradients and average across batch
+        loss.backward()
+        mean_grad = torch.mean(batch_copy.grad, dim=[0]) # (C,H,W)
+
+        # normalize gradients
+        grad_norm = torch.sqrt(torch.sum(mean_grad**2)) + 1e-8 # numerical stability
+
+        # compute adversarially-perturbed x_adv
+        if clamp_to is not None:
+            x_adv = torch.clamp(pipeline.patch_params.patch + rho*mean_grad.sign(), 
+                                clamp_to[0], clamp_to[1]).detach().requires_grad_(True)
+        else:
+            x_adv = (pipeline.patch_params.patch + rho*mean_grad.sign()).detach().requires_grad_(True)
+        # now run x_adv through the pipeline and get loss
+        patchbatch_adv = torch.stack([x_adv for _ in range(batch_size)], 0)
+        outputs_adv = pipeline(patchbatch_adv)
+        lossdict_adv, loss = _getloss(outputs_adv, patchbatch_adv)
+        # compute gradients
+        loss.backward()
+
+        with torch.no_grad():
+            # add gradient to single_patch.grad
+            if pipeline.patch_params.patch.grad is None:
+                pipeline.patch_params.patch.grad = x_adv.grad
+            else:
+                pipeline.patch_params.patch.grad += x_adv.grad
+
+    return lossdict, loss
+
+
 class Pipeline(PipelineBase):
     """
     Class to manage a sequence of pipeline steps
@@ -487,7 +576,7 @@ class Pipeline(PipelineBase):
     def train_patch(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000,
                     num_eval_steps=10, accumulate=1, lr_decay='cosine', 
                     optimizer="bim", profile=0, progressbar=True, 
-                    clamp_to=(0,1), **kwargs):
+                    clamp_to=(0,1), rho=0, **kwargs):
         """
         Patch training loop. Expects that you've already called initialize_patch_params() and
         set_loss().
@@ -503,6 +592,7 @@ class Pipeline(PipelineBase):
         :profile: int; if above zero, run pytorch profiler this many steps.
         :progressbar: bool; if True, use tqdm to monitor progress
         :clamp_to: int or None; range to clip patch parameters to
+        :rho: float; gradient ascent step size for sharpness-aware minization. 0 to disable.
         :kwargs: additional training parameters to save. at least one of the terms in your
             loss function should have a weight here.
         """
@@ -522,7 +612,7 @@ class Pipeline(PipelineBase):
                     "learning_rate":learning_rate, "num_steps":num_steps,
                     "eval_every":eval_every, "num_eval_steps":num_eval_steps,
                     "accumulate":accumulate, "lr_decay":lr_decay, 
-                    "optimizer":optimizer}
+                    "optimizer":optimizer, "rho":rho}
         for k in kwargs:
             trainparams[k] = kwargs[k]
         
@@ -549,27 +639,12 @@ class Pipeline(PipelineBase):
             loop = tqdm(loop)
             
         for i in loop:
-            # patch_params is a PatchWrapper object; the batch_size arg will
-            # return a stack of patches
-            patchbatch = self.patch_params(batch_size)
-            # run through the pipeline
-            outputs = self(patchbatch)
+            lossdict, loss = _update_patch_gradients(self, batch_size, kwargs, accumulate=accumulate, 
+                                                     rho=rho, clamp_to=clamp_to)
             
-            # compute loss
-            lossdict = self.loss(outputs, patchbatch)
-            loss = 0
-            record = {}
-            for k in lossdict:
-                meanloss = torch.mean(lossdict[k])
-                record[k] = meanloss
-                if k in kwargs:
-                    loss += kwargs[k]*meanloss/accumulate
-            # DISTRIBUTED: only log to TB if we're in the process with rank 0
             # save metrics to tensorboard
+            record = {k:torch.mean(lossdict[k]) for k in lossdict}
             self._log_scalars(mlflow_metric=False, **record)
-            
-            # estimate gradients
-            loss.backward()
             
             # if this is an update step- update patch, clamp to unit interval
             if (i+1)%accumulate == 0:
@@ -578,6 +653,8 @@ class Pipeline(PipelineBase):
                     scheduler.step(loss)
                 else:
                     scheduler.step()
+
+                optimizer.zero_grad()
                     
                 self._log_scalars(learning_rate=optimizer.param_groups[0]["lr"])
                 if clamp_to is not None:
@@ -588,13 +665,10 @@ class Pipeline(PipelineBase):
                             # distributed case: type should be
                             # torch.nn.parallel.distributed.DistributedDataParallel
                             self.patch_params.module.patch.clamp_(clamp_to[0], clamp_to[1])
-                            
-                        
-
             
             # if this is an evaluate step- run evaluation and save params
             if ((i+1)%eval_every == 0)&(eval_every > 0):
-                self.evaluate(batch_size, num_eval_steps, patchbatch)
+                self.evaluate(batch_size, num_eval_steps)#, patchbatch)
                 self.save_patch_params()
                 
             # if we're profiling, update the profiler
