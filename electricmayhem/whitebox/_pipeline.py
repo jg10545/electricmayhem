@@ -236,7 +236,9 @@ def _update_patch_gradients(pipeline, batch_size, lossweights, accumulate=1, rho
             x_adv = (pipeline.patch_params.patch + rho*mean_grad.sign()).detach().requires_grad_(True)
         # now run x_adv through the pipeline and get loss
         patchbatch_adv = torch.stack([x_adv for _ in range(batch_size)], 0)
-        outputs_adv = pipeline(patchbatch_adv)
+        # get sampled parameters from the pipeline to run through under the same conditions
+        sampdict = pipeline.get_last_sample_as_dict()
+        outputs_adv = pipeline(patchbatch_adv, **sampdict)
         lossdict_adv, loss = _getloss(outputs_adv, patchbatch_adv)
         # compute gradients
         loss.backward()
@@ -276,8 +278,14 @@ class Pipeline(PipelineBase):
         self.rank = 0
             
     def forward(self, x, control=False, evaluate=False, **kwargs):
-        for a in self.steps:
-            x = a(x, control=control, evaluate=evaluate, **kwargs)
+        # run through each pipeline stage sequentially
+        for e,s in enumerate(self.steps):
+            # pull out a dictionary of keyword arguments for this
+            # stage of the pipeline
+            key = f"{e}_{s.name}_"
+            step_kwargs = {k.split(key)[-1]:kwargs[k] for k in kwargs
+                            if k.startswith(key)}
+            x = s(x, control=control, evaluate=evaluate, **step_kwargs)
         return x
     
     def __add__(self, y):
