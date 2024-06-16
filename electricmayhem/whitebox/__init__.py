@@ -7,4 +7,5 @@ from ._yolo import YOLOWrapper
 from._proofer import SoftProofer
 from ._warp_implant import WarpPatchImplanter
 from ._filter import HighPassFilter
+from ._ssa import SpectrumSimulationAttack
 from electricmayhem.whitebox import loss, viz
