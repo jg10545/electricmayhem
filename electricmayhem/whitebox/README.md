@@ -41,17 +41,30 @@
 
 ## Steps implemented so far
 
+### create
+
 * `PatchSaver`: pass-through to make sure your patch gets logged to TensorBard
 * `PatchResizer`: upsample a low-res patch
 * `PatchTiler`: create a large patch from a small one by tiling it
 * `PatchStacker`: stack a 1-channel patch into a 3-channel patch
-* `PatchScroller`:
+* `PatchScroller`: translate the patch with toroidal boundary conditions during training; makes some patch objectives less like an inversion attack
+* `HighPassFilter`: run the patch through a 2D high-pass filter during training; makes some patch objectives less like an inversion attack
+* `SpectrumSimulationAttack`: during training steps, applies the domain noise from "Frequency Domain Model Augmentation for Adversarial Attack" by Long et al (2022)
 * `SoftProofer`: on evaluation steps only, use a color management system and ICC profile to simulate what the patch will look like after printing
+
+### implant
+
 * `RectanglePatchImplanter`: implant a patch into a target image. Can randomly select from multiple images and multiple bounding boxes per image. Optionally, reserve some target images only for evaluation.
 * `FixedRatioRectanglePatchImplanter`: scale patch to a fixed size with respect to the target box and implant in image. Optionally, reserve some target images only for evaluation.
 * `ScaleToBoxRectanglePatchImplanter`: scale the patch to fill the box.
-* `WarpPatchImplanter`:
+* `WarpPatchImplanter`: input arbitrary corner coordinates instead of rectangular boxes; deforms patch to meet corners.
+
+### compose
+
 * `KorniaAugmentationPipeline`: wraps the `kornia` library to augment an image
+
+### infer
+
 * `ModelWrapper`: wrap a pytorch model as a pipeline step
 * `YOLOWrapper`: model wrapper that adds a detection visualization to TensorBoard
 
