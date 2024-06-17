@@ -178,8 +178,8 @@ class SpectrumSimulationAttack(PipelineBase):
         """
         Return last sample as a JSON-serializable dict
         """
-        return {"epsilon":self._tensor_to_list(self.epsilon),
-               "mask":self._tensor_to_list(self.mask)}
+        return {}#{"epsilon":self._tensor_to_list(self.epsilon),
+               #"mask":self._tensor_to_list(self.mask)}
     
     def get_description(self):
         return f"**{self.name}:** epsilon={self.params['epsilon']}, rho={self.params['rho']}"
