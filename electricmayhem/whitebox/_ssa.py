@@ -182,5 +182,5 @@ class SpectrumSimulationAttack(PipelineBase):
                #"mask":self._tensor_to_list(self.mask)}
     
     def get_description(self):
-        return f"**{self.name}:** epsilon={self.params['epsilon']}, rho={self.params['rho']}"
+        return f"**{self.name}:** sigma={self.params['sigma']}, rho={self.params['rho']}"
 
