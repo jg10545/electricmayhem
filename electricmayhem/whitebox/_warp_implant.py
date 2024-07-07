@@ -7,6 +7,28 @@ import matplotlib.patches
 
 from ._implant import RectanglePatchImplanter
 
+def get_mask(shape, coords, scale=0):
+    """
+    Get a black-and-white mask showing which pixels are inside the mask corners
+    :shape: length-3 tuple of mask shape; (C,H,W)
+    :coords: [4,2] array or nested list of corner coordinates
+    :scale: float; if set above zero it will extend the mask by this fraction
+    """
+    patch_batch = torch.ones(shape).unsqueeze(0)
+    patch_border = torch.tensor([[0.,0.],
+                                 [patch_batch.shape[3], 0], 
+                                 [patch_batch.shape[3], patch_batch.shape[2]], 
+                                 [0., patch_batch.shape[2]]]).unsqueeze(0) # (1,4,2)
+    coord_batch = torch.tensor([scale_coordinate_list(coords, scale)]).float()
+
+    tfm = kornia.geometry.transform.get_perspective_transform(patch_border, coord_batch) # (B,3,3)
+    mask = kornia.geometry.transform.warp_perspective(patch_batch, tfm,
+                                                      (patch_batch.shape[2], patch_batch.shape[3]),
+                                                      padding_mode="fill", 
+                                                      fill_value=torch.tensor([0,0,0])) 
+    return mask.squeeze(0)
+
+
 def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None,
                            scale_brightness=False):
     """
