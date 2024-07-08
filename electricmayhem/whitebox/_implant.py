@@ -43,7 +43,8 @@ class RectanglePatchImplanter(PipelineBase):
         self.imgkeys = list(imagedict.keys())
         self.images = torch.nn.ParameterList([_img_to_tensor(imagedict[k]) for k in self.imgkeys])
         self.boxes = [boxdict[k] for k in self.imgkeys]
-        self.mask = mask
+        self.mask = torch.nn.Parameter(mask) # so it gets copied to the GPU along with this module
+        #self.mask = mask
         
         # save eval image/box information
         if eval_imagedict is None:

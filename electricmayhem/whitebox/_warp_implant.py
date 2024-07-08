@@ -97,9 +97,12 @@ def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None,
                 # in places where mask > 0
                 mask_pw = kornia.geometry.transform.warp_perspective(mask, tfm,
                                                       (target_batch.shape[2], target_batch.shape[3]),
-                                                      padding_mode="zeros") # (B,C,H,W) or (1,1,H,W)
+                                                       padding_mode="fill", 
+                                                      fill_value=torch.tensor([1,1,1]))
+                
                 # update the warp mask to exclude the patch wherever the mask is zero
-                warpmask = (warpmask + (1-mask_pw)).clip(0,1)
+                #warpmask = (warpmask + (1-mask_pw)).clip(0,1)
+                warpmask = mask_pw#1 - ((1-warpmask)*mask_pw)
             # SCALAR MASK CASE
             else:
                 # we want every place where warpmask=1 to still be 1.
@@ -235,7 +238,7 @@ class WarpPatchImplanter(RectanglePatchImplanter):
             return 1.
         else:
             # if mask is a tensor...
-            if isinstance(self.mask, torch.Tensor):
+            if isinstance(self.mask, torch.Tensor)|isinstance(self.mask, torch.nn.Parameter):
                 with torch.no_grad():
                     mask = self.mask.clone().detach().type(torch.float32)
                     # if mask was specified as 2D, add a batch dimension so
@@ -243,7 +246,7 @@ class WarpPatchImplanter(RectanglePatchImplanter):
                     if len(mask.shape) == 2:
                         mask = mask.unsqueeze(0)
                     # resize mask to match patch
-                    mask = kornia.geometry.resize(mask, (patch.shape[1], patch.shape[2]))
+                    mask = kornia.geometry.resize(mask, (patch.shape[-2], patch.shape[-1]))
             # scalar mask case
             else:
                 mask = self.mask
