@@ -123,6 +123,9 @@ class SpectrumSimulationAttack(PipelineBase):
 
     The method basically does a discrete cosine transform on the image, adds noise in the
     frequency domain, then does an inverse DCT to get back to the spatial domain.
+
+    Warning: Unlike other pipeline stages, this does NOT generate reproducible results
+    when you pass the get_last_sample_as_dict() results as a kwarg to forward().
     """
     name = "SpectrumSimulationAttack"
     
