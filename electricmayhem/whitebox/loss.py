@@ -118,12 +118,12 @@ def saliency_loss(img):
     
     :img: torch.Tensor; batch of images in channel-first format
     """
-    r = img[:,0,:,:]
-    g = img[:,1,:,:]
-    b = img[:,2,:,:]
+    r = img[:,0,:,:] # (B,H,W)
+    g = img[:,1,:,:] # (B,H,W)
+    b = img[:,2,:,:] # (B,H,W)
     
     rg = r-g
     yb = 0.5*(r+g)-b
     
-    return torch.sqrt(torch.var(rg)+torch.var(yb)) + \
-        0.3*torch.sqrt(torch.mean(rg)**2 + torch.sqrt(torch.mean(yb)**2))
+    return torch.sqrt(torch.var(rg, dim=(1,2))+torch.var(yb, dim=(1,2))) + \
+        0.3*torch.sqrt(torch.mean(rg, dim=(1,2))**2 + torch.sqrt(torch.mean(yb, dim=(1,2))**2))
