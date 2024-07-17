@@ -2,7 +2,7 @@
 
 __author__ = """Joe Gezo"""
 __email__ = 'joegezo@gmail.com'
-__version__ = '0.2.3'
+__version__ = '0.2.4'
 
 
 from electricmayhem._graphite import BlackBoxPatchTrainer
