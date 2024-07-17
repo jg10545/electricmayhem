@@ -121,16 +121,22 @@ class SpectrumSimulationAttack(PipelineBase):
     Implements the augmentation method described in "Frequency Domain Model Augmentation 
     for Adversarial Attack" by Long et al (2022) DURING TRAINING STEPS ONLY
 
+    Note that unlike other pipeline stages this one is not fully reproducible in its
+    current implementation.
+
     The method basically does a discrete cosine transform on the image, adds noise in the
     frequency domain, then does an inverse DCT to get back to the spatial domain.
+
+    Warning: Unlike other pipeline stages, this does NOT generate reproducible results
+    when you pass the get_last_sample_as_dict() results as a kwarg to forward().
     """
     name = "SpectrumSimulationAttack"
     
     def __init__(self, sigma=0.06, rho=0.5, clamp=(0,1)):
         """
-        :limit:
-        :sigma:
-        :rho:
+        :sigma: scale for spatial-domain additive noise
+        :rho: scale for frequency-domain multiplicative noise
+        :clamp: length-2 tuple or None; limits to clamp the patch to
         """
         super().__init__()
         
@@ -142,7 +148,7 @@ class SpectrumSimulationAttack(PipelineBase):
         
     def forward(self, x, control=False, evaluate=False, params={}, **kwargs):
         """
-        Run image through highpass filter; for evaluation steps do nothing
+        Only apply noise during training steps
         """
         if evaluate:
             return x
@@ -178,8 +184,7 @@ class SpectrumSimulationAttack(PipelineBase):
         """
         Return last sample as a JSON-serializable dict
         """
-        return {}#{"epsilon":self._tensor_to_list(self.epsilon),
-               #"mask":self._tensor_to_list(self.mask)}
+        return {}
     
     def get_description(self):
         return f"**{self.name}:** sigma={self.params['sigma']}, rho={self.params['rho']}"

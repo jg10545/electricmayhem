@@ -19,6 +19,12 @@
   * loss function weights- you'll need to pass at least one of the keys from the dictionary your loss function outputs (summary stats on all the loss dict outputs will still be stored in TensorBoard though)
 
 
+```
+import electricmayhem.whitebox as emw
+
+
+```
+
 ### To optimize hyperparameters
 
 * Initialize all the steps of your pipeline
@@ -29,6 +35,7 @@
   * replace the hyperparameter value with a tuple `(low,high)` to optimize that value (on a linear scale)
   * replace with a tuple `(low, high, 'log')` to optimize on a log scale
   * replace with a tuple `(low, high, 'int')` to optimize as an integer (for example, for the number of gradient accumulation steps)
+  * replace with a list of strings `['option1', 'option2']` to optimize categorical hyperparameters like the optimizer (`'adam'`, `'bim'`, or `'mifgsm'`) or learning rate decay schedule (`'none'`, `'cosine'`, `'exponential'`, or `'plateau'`) 
 
 
 ## General pipeline stages

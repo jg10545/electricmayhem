@@ -38,7 +38,7 @@ def test_total_variation_loss_nonzero_case():
     assert tvloss.numpy().max() > 0
 
 def test_saliency_loss_returns_correct_shape():
-    test_tensor_batch = torch.tensor(np.random.uniform(0, 1, size=(1,3,23,17)))
+    test_tensor_batch = torch.tensor(np.random.uniform(0, 1, size=(5,3,23,17)))
     sal_loss = loss.saliency_loss(test_tensor_batch)
     assert isinstance(sal_loss, torch.Tensor)
-    assert sal_loss.shape == ()
+    assert sal_loss.shape == (5,)

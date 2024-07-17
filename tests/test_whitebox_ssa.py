@@ -16,6 +16,11 @@ def test_spectrumsimulationattack_correct_output_shape():
     y = ssa(x)
     assert x.shape == y.shape
 
+def test_spectrumsimulationattack_get_description():
+    ssa = SpectrumSimulationAttack()
+    assert isinstance(ssa.get_description(), str)
+
+    
 """
 def test_spectrumsimulationattack_reproducible():
     ssa = SpectrumSimulationAttack()

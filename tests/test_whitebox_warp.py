@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from electricmayhem.whitebox._warp_implant import warp_and_implant_batch, WarpPatchImplanter
+from electricmayhem.whitebox._warp_implant import warp_and_implant_batch, WarpPatchImplanter, get_mask
 
 H = 40
 W = 27
@@ -114,3 +114,11 @@ def test_warppatchimplanter_with_2D_mask():
     
     assert output.shape == (B, C, H, W)
     assert np.mean((output.detach().numpy() - output2.detach().numpy())**2) < 1e-6
+
+
+def test_get_mask_returns_correct_shape():
+    shape = (3,640,640)
+    coords = [[299.0, 196.0], [477.0, 205.0], [477.0, 394.0], [309.0, 373.0]]
+    mask = get_mask(shape, coords)
+    assert isinstance(mask, torch.Tensor)
+    assert mask.shape == shape
