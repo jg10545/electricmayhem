@@ -4,8 +4,6 @@ from PIL import Image
 import torch
 import io
 
-from electricmayhem.blackbox._augment import augment_image, compose
-
 def load_to_tensor(i):
     """
     Input a path to an image (or a PIL.Image object) and convert
@@ -25,46 +23,27 @@ def load_to_tensor(i):
     return t[:3,:,:]
 
 
-def plot(i, augs=None, detect_func=None, mask=None, perturbation=None):
+def plot(i):
     """
     Matplotlib macro for plotting a channel-first image tensor
     
     :i: torch.Tensor containing normalized image in channel-first format
-    :augs: if a list of augmentation parameters is passed, will sample 9
-        and return a grid plot of augmented images
-    :detect_func: if a detection function is passed, output will be
-        used as an image title
     """
     # in case it's on the GPU
     i = i.detach().cpu()
     # if there's a batch dimension just take it off
     if len(i.shape) == 4:
         i = i.squeeze(0)
-    if augs is not None:
-        chosen_augs = np.random.choice(augs, size=9)
-        for e, a in enumerate(chosen_augs):
-            plt.subplot(3,3,e+1)
-            plot(augment_image(i, **a, mask=mask, perturbation=perturbation),
-                 detect_func=detect_func)
-    else:
-        if (perturbation is not None)&(mask is not None):
-            i = compose(i, mask, perturbation)
-        plt.imshow(i.permute(1,2,0))
-        plt.axis(False)
-        if detect_func is not None:
-            plt.title(detect_func(i))
+    plt.imshow(i.permute(1,2,0))
+    plt.axis(False)
 
 
-def save(i, filepath, mask=None, perturbation=None):
+def save(i, filepath):
     """
     Matplotlib/PIL macro for saving a channel-first image tensor
     
     :i: torch.Tensor containing normalized image in channel-first format
-    :mask:
     """
-    if (perturbation is not None)&(mask is not None):
-        i = compose(i, mask, perturbation)
-        
     img = Image.fromarray((i.permute(1,2,0).numpy()*255).astype(np.uint8))
     img.save(filepath)
     
