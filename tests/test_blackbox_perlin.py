@@ -1,10 +1,11 @@
 import numpy as np 
 import torch
 
-from electricmayhem._perlin import (perlin, 
+from electricmayhem.blackbox._perlin import (perlin, 
                                     _get_patch_outer_box_from_mask,
                                     BayesianPerlinNoisePatchTrainer)
-from electricmayhem import _augment, mask
+from electricmayhem.blackbox import _augment
+from electricmayhem.blackbox import mask
 
 
 def detect_func(x, return_raw=False):

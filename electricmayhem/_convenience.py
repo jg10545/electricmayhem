@@ -4,7 +4,7 @@ from PIL import Image
 import torch
 import io
 
-from electricmayhem._augment import augment_image, compose
+from electricmayhem.blackbox._augment import augment_image, compose
 
 def load_to_tensor(i):
     """

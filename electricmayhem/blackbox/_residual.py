@@ -4,8 +4,10 @@ import yaml
 import kornia.geometry
 import os
 
-from ._graphite import BlackBoxPatchTrainer, estimate_transform_robustness
-from electricmayhem import mask, _augment
+from electricmayhem.blackbox import mask
+
+from .blackbox._graphite import BlackBoxPatchTrainer, estimate_transform_robustness
+from electricmayhem.blackbox import _augment
 
 
 

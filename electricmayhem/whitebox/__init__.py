@@ -9,3 +9,4 @@ from ._warp_implant import WarpPatchImplanter
 from ._filter import HighPassFilter
 from ._ssa import SpectrumSimulationAttack
 from electricmayhem.whitebox import loss, viz
+from electricmayhem._convenience import load_to_tensor, plot, save

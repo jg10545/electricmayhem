@@ -9,8 +9,8 @@ import mlflow
 import os
 import yaml
 
-import electricmayhem.mask
-from electricmayhem import _augment
+import electricmayhem.blackbox.mask
+from electricmayhem.blackbox import _augment
 
 def estimate_transform_robustness(detect_func, augments, img, 
                                   mask=None, pert=None, 
@@ -304,7 +304,7 @@ class BlackBoxPatchTrainer():
         self.img = img
         self.initial_mask = initial_mask
         self.final_mask = final_mask
-        self.priority_mask = electricmayhem.mask.generate_priority_mask(initial_mask, final_mask)
+        self.priority_mask = electricmayhem.blackbox.mask.generate_priority_mask(initial_mask, final_mask)
         self.detect_func = detect_func
         
         if isinstance(eval_augments, int):
@@ -422,7 +422,7 @@ class BlackBoxPatchTrainer():
         # check to see if we need to take a random subset of the mask
         subset_frac = self.params["subset_frac"]
         if subset_frac > 0:
-            mask = electricmayhem.mask.random_subset_mask(mask, subset_frac)
+            mask = electricmayhem.blackbox.mask.random_subset_mask(mask, subset_frac)
             self._subset_mask = mask
             self.writer.add_image("subset_mask", mask, global_step=self.query_counter)
         self.tr = estimate_transform_robustness(self.detect_func,

@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from electricmayhem._augment import *
+from electricmayhem.blackbox._augment import *
 
 
 

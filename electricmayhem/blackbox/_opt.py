@@ -15,8 +15,8 @@ import ax.modelbridge.registry
 
 
 
-from electricmayhem._graphite import BlackBoxPatchTrainer
-from electricmayhem._perlin import BayesianPerlinNoisePatchTrainer
+from electricmayhem.blackbox._graphite import BlackBoxPatchTrainer
+from electricmayhem.blackbox._perlin import BayesianPerlinNoisePatchTrainer
 
 
 

@@ -17,7 +17,7 @@ import ax.modelbridge.registry
 from noise import pnoise2
 from ._graphite import BlackBoxPatchTrainer, estimate_transform_robustness
 #import mask
-from electricmayhem import _augment
+from electricmayhem.blackbox import _augment
 
 def normalize(vec):
     vmax = np.amax(vec)
