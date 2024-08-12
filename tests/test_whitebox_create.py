@@ -8,8 +8,8 @@ from electricmayhem.whitebox import _create
 def test_patchresizer():
     resizer = _create.PatchResizer((31, 29))
     
-    assert resizer(torch.zeros((1,3,17,19), dtype=torch.float32)).shape == (1,3,31,29)
-    assert resizer(torch.zeros((2,1,23,19), dtype=torch.float32)).shape == (2,1,31,29)
+    assert resizer(torch.zeros((1,3,17,19), dtype=torch.float32))[0].shape == (1,3,31,29)
+    assert resizer(torch.zeros((2,1,23,19), dtype=torch.float32))[0].shape == (2,1,31,29)
     assert "31, 29" in resizer.get_description()
 
 
@@ -17,7 +17,7 @@ def test_patchstacker():
         resizer = _create.PatchStacker(num_channels=3)
         
         patch_params = torch.zeros((1,1,32,32)).type(torch.float32)
-        output = resizer(patch_params)
+        output, _ = resizer(patch_params)
         assert output.shape == (1,3,32,32)
         assert "3 channels" in resizer.get_description()
         
@@ -26,7 +26,7 @@ def test_patchsaver():
         resizer = _create.PatchSaver()
         
         patch_params = torch.zeros((1,1,32,32)).type(torch.float32)
-        output = resizer(patch_params)
+        output, _ = resizer(patch_params)
         assert output.shape == (1,1,32,32)
         
         
@@ -35,8 +35,8 @@ def test_patchsaver():
 def test_patchtiler():
     resizer = _create.PatchTiler((31, 29))
     
-    assert resizer(torch.zeros((1,3,17,19), dtype=torch.float32)).shape == (1,3,31,29)
-    assert resizer(torch.zeros((2,1,23,19), dtype=torch.float32)).shape == (2,1,31,29)
+    assert resizer(torch.zeros((1,3,17,19), dtype=torch.float32))[0].shape == (1,3,31,29)
+    assert resizer(torch.zeros((2,1,23,19), dtype=torch.float32))[0].shape == (2,1,31,29)
     assert "31, 29" in resizer.get_description()
 
 
@@ -54,7 +54,7 @@ def test_patchscroller():
     scroll = _create.PatchScroller()
     test_img = torch.tensor(np.random.uniform(0, 1, size=(3,23,31)).astype(np.float32))
     test_batch = torch.stack([test_img for _ in range(B)], 0)
-    scrolled_batch = scroll(test_batch)
+    scrolled_batch, _ = scroll(test_batch)
     
     assert scrolled_batch.shape == test_batch.shape
     for i in range(B):

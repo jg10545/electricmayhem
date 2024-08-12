@@ -69,7 +69,7 @@ class KorniaAugmentationPipeline(PipelineBase):
         else:
             y = self.aug(x, params=to_paramitem(params))
         self.lastsample = from_paramitem(self.aug._params)
-        return y
+        return y, kwargs
     
     def check_reproducibility(self, x=None, N=100, epsilon=1e-6):
         """
@@ -87,8 +87,8 @@ class KorniaAugmentationPipeline(PipelineBase):
             x = torch.tensor(np.random.uniform(0, 1, size=(3,128,128)).astype(np.float32))
         failures = 0
         for _ in range(100):
-            y1 = self(x)
-            y2 = self(x, control=True)
+            y1, _ = self(x)
+            y2, _ = self(x, control=True)
             if ((y1-y2)**2).numpy().mean() > epsilon:
                 failures += 1
         if failures > 0:

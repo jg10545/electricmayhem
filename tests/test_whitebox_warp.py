@@ -84,8 +84,8 @@ def test_warp_and_implant_batch_gives_correct_output_shape_with_scalar_mask():
 def test_warppatchimplanter():
     # simple checks- output shape and reproducibility
     warp = WarpPatchImplanter(imagedict, boxdict)
-    output = warp(patch_batch)
-    output2 = warp(patch_batch, params=warp.lastsample)
+    output, _ = warp(patch_batch)
+    output2, _ = warp(patch_batch, params=warp.lastsample)
     
     assert output.shape == (B, C, H, W)
     assert np.mean((output.detach().numpy() - output2.detach().numpy())**2) < 1e-6
@@ -100,8 +100,8 @@ def test_bad_warppatchimplanter_fails_validation():
 def test_warppatchimplanter_with_scalar_mask():
     # simple checks- output shape and reproducibility
     warp = WarpPatchImplanter(imagedict, boxdict, mask=0.5)
-    output = warp(patch_batch)
-    output2 = warp(patch_batch, params=warp.lastsample)
+    output, _ = warp(patch_batch)
+    output2, _ = warp(patch_batch, params=warp.lastsample)
     
     assert output.shape == (B, C, H, W)
     assert np.mean((output.detach().numpy() - output2.detach().numpy())**2) < 1e-6
@@ -109,8 +109,8 @@ def test_warppatchimplanter_with_scalar_mask():
 def test_warppatchimplanter_with_2D_mask():
     # simple checks- output shape and reproducibility
     warp = WarpPatchImplanter(imagedict, boxdict, mask=mask)
-    output = warp(patch_batch)
-    output2 = warp(patch_batch, params=warp.lastsample)
+    output, _ = warp(patch_batch)
+    output2, _ = warp(patch_batch, params=warp.lastsample)
     
     assert output.shape == (B, C, H, W)
     assert np.mean((output.detach().numpy() - output2.detach().numpy())**2) < 1e-6

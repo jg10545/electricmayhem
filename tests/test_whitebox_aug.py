@@ -12,7 +12,7 @@ def test_korniaaugmentationpipeline_call():
     testim = torch.tensor(np.random.uniform(0, 1, (1,3, 29, 37)))
     
     aug = _aug.KorniaAugmentationPipeline(augdict)
-    y = aug(testim)
+    y, _ = aug(testim)
     assert isinstance(y, torch.Tensor)
     assert y.shape == testim.shape
     assert not (y.numpy() == testim.numpy()).all()

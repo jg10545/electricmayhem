@@ -40,9 +40,9 @@ class HighPassFilter(PipelineBase):
         Run image through highpass filter; for evaluation steps do nothing
         """
         if evaluate:
-            return x
+            return x, kwargs
         else:
-            return highpass(x, self.params["limit_x"], self.params["limit_y"])
+            return highpass(x, self.params["limit_x"], self.params["limit_y"]), kwargs
     
     def get_last_sample_as_dict(self):
         """

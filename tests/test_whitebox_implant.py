@@ -35,15 +35,15 @@ def test_rectanglepatchimplanter_train_and_eval_images():
     val = imp.validate(colorpatch)
     assert val
     # run a training image through
-    implanted = imp(colorpatch.unsqueeze(0))
+    implanted, _ = imp(colorpatch.unsqueeze(0))
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), control=True)
+    unimplanted, _ = imp(colorpatch.unsqueeze(0), control=True)
     assert (unimplanted.squeeze(0) == imp.images[0]).all()
     assert not (unimplanted.squeeze(0) == imp.eval_images[0]).all()
     # run an eval image through
-    implanted = imp(colorpatch.unsqueeze(0), evaluate=True)
+    implanted, _ = imp(colorpatch.unsqueeze(0), evaluate=True)
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
+    unimplanted, _ = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
     assert not (unimplanted.squeeze(0) == imp.images[0]).all()
     assert (unimplanted.squeeze(0) == imp.eval_images[0]).all()
     
@@ -54,14 +54,14 @@ def test_rectanglepatchimplanter_eval_mode_without_separate_eval_set():
     val = imp.validate(colorpatch)
     assert val
     # run a training image through
-    implanted = imp(colorpatch.unsqueeze(0))
+    implanted, _ = imp(colorpatch.unsqueeze(0))
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), control=True)
+    unimplanted, _ = imp(colorpatch.unsqueeze(0), control=True)
     assert (unimplanted.squeeze(0) == imp.images[0]).all()
     # run an eval image through
-    implanted = imp(colorpatch.unsqueeze(0), evaluate=True)
+    implanted, _ = imp(colorpatch.unsqueeze(0), evaluate=True)
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
+    unimplanted, _ = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
     assert (unimplanted.squeeze(0) == imp.images[0]).all()
 
 def test_rectanglepatchimplanter_sample():
@@ -85,13 +85,13 @@ def test_rectanglepatchimplanter_sample_with_fixed_offset():
         
 def test_rectanglepatchimplanter_apply_color_patch():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]})
-    implanted = imp(colorpatch.unsqueeze(0))
+    implanted, _ = imp(colorpatch.unsqueeze(0))
     assert isinstance(implanted, torch.Tensor)
     assert implanted.squeeze(0).shape == torch.tensor(testtensor).permute(2,0,1).shape
 
 def test_rectanglepatchimplanter_apply_color_patch_with_brightness_scaling():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]}, scale_brightness=True)
-    implanted = imp(colorpatch.unsqueeze(0))
+    implanted, _ = imp(colorpatch.unsqueeze(0))
     assert isinstance(implanted, torch.Tensor)
     assert implanted.squeeze(0).shape == torch.tensor(testtensor).permute(2,0,1).shape
 
@@ -104,7 +104,7 @@ def test_rectanglepatchimplanter_get_min_dimensions():
     
 def test_rectanglepatchimplanter_apply_bw_patch():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]})
-    implanted = imp(bwpatch.unsqueeze(0))
+    implanted, _ = imp(bwpatch.unsqueeze(0))
     assert isinstance(implanted, torch.Tensor)
     assert implanted.squeeze(0).shape == torch.tensor(testtensor).permute(2,0,1).shape
     
@@ -112,20 +112,20 @@ def test_rectanglepatchimplanter_apply_bw_patch():
 def test_rectanglepatchimplanter_apply_bw_patch_no_scaling():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]},
                                   scale=(1.,1.))
-    implanted = imp(bwpatch.unsqueeze(0))
+    implanted, _ = imp(bwpatch.unsqueeze(0))
     assert isinstance(implanted, torch.Tensor)
     assert implanted.squeeze(0).shape == torch.tensor(testtensor).permute(2,0,1).shape
 
 def test_rectanglepatchimplanter_call_color_patch_batch():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]})
-    implanted = imp(torch.stack([colorpatch,colorpatch], 0))
+    implanted, _ = imp(torch.stack([colorpatch,colorpatch], 0))
     assert isinstance(implanted, torch.Tensor)
     assert implanted.shape[0] == 2
     assert implanted.shape[1:] == torch.tensor(testtensor).permute(2,0,1).shape
     
 def test_rectanglepatchimplanter_call_color_patch_batch_scalar_mask():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]}, mask=0.5)
-    implanted = imp(torch.stack([colorpatch,colorpatch], 0))
+    implanted, _ = imp(torch.stack([colorpatch,colorpatch], 0))
     assert isinstance(implanted, torch.Tensor)
     assert implanted.shape[0] == 2
     assert implanted.shape[1:] == torch.tensor(testtensor).permute(2,0,1).shape
@@ -133,7 +133,7 @@ def test_rectanglepatchimplanter_call_color_patch_batch_scalar_mask():
 
 def test_rectanglepatchimplanter_call_color_patch_batch_2D_mask():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]}, mask=mask)
-    implanted = imp(torch.stack([colorpatch,colorpatch], 0))
+    implanted, _ = imp(torch.stack([colorpatch,colorpatch], 0))
     assert isinstance(implanted, torch.Tensor)
     assert implanted.shape[0] == 2
     assert implanted.shape[1:] == torch.tensor(testtensor).permute(2,0,1).shape
@@ -141,21 +141,21 @@ def test_rectanglepatchimplanter_call_color_patch_batch_2D_mask():
 
 def test_rectanglepatchimplanter_call_color_patch_batch_3D_single_channel_mask():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]}, mask=mask.unsqueeze(0))
-    implanted = imp(torch.stack([colorpatch,colorpatch], 0))
+    implanted, _ = imp(torch.stack([colorpatch,colorpatch], 0))
     assert isinstance(implanted, torch.Tensor)
     assert implanted.shape[0] == 2
     assert implanted.shape[1:] == torch.tensor(testtensor).permute(2,0,1).shape
 
 def test_rectanglepatchimplanter_call_color_patch_batch_3D_3_channel_mask():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]}, mask=torch.stack([mask]*3,0))
-    implanted = imp(torch.stack([colorpatch,colorpatch], 0))
+    implanted, _ = imp(torch.stack([colorpatch,colorpatch], 0))
     assert isinstance(implanted, torch.Tensor)
     assert implanted.shape[0] == 2
     assert implanted.shape[1:] == torch.tensor(testtensor).permute(2,0,1).shape
 
 def test_rectanglepatchimplanter_call_bw_patch_batch():
     imp = RectanglePatchImplanter({"im1":testtensor}, {"im1":[box]})
-    implanted = imp(torch.stack([bwpatch,bwpatch], 0))
+    implanted, _ = imp(torch.stack([bwpatch,bwpatch], 0))
     assert isinstance(implanted, torch.Tensor)
     assert implanted.shape[0] == 2
     assert implanted.shape[1:] == torch.tensor(testtensor).permute(2,0,1).shape

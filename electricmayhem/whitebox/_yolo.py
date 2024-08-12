@@ -246,7 +246,7 @@ class YOLOWrapper(ModelWrapper):
             else:
                 outputs = self._convert_v4_to_v5_if_you_can(outputs,H,W)
 
-        return outputs
+        return outputs, kwargs
     
     def _vizualize_and_log_one_model_detection(self, x, x_control, 
                                                detects, detects_control, 
@@ -289,8 +289,8 @@ class YOLOWrapper(ModelWrapper):
         # skip everything if we're not logging visualizations
         if self._logviz:
             # run images with and without patch through the model(s)
-            detects = self(x, evaluate=True)
-            detects_control = self(x_control, evaluate=True, control=True)
+            detects, _ = self(x, evaluate=True)
+            detects_control, _ = self(x_control, evaluate=True, control=True)
             # now log the viz separately for each model. if there's just one model:
             if self.eval_wraptype == "model":
                 self._vizualize_and_log_one_model_detection(x, x_control, detects[0],

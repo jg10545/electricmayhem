@@ -17,6 +17,6 @@ def test_HighPassFilter():
     
     for limit in [5,7,21]:
         hp = HighPassFilter(limit)
-        output = hp(test_batch)
+        output, _ = hp(test_batch)
         assert output.shape == test_batch.shape
         

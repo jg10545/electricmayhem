@@ -33,8 +33,8 @@ def test_softproofer(tmp_path_factory):
     proofer = _proofer.SoftProofer(target_profile)
     test_tensor = torch.tensor(np.random.uniform(0, 1, size=(5,3,7,13)))
 
-    output_train = proofer(test_tensor)
-    output_eval = proofer(test_tensor, evaluate=True)
+    output_train, _ = proofer(test_tensor)
+    output_eval, _ = proofer(test_tensor, evaluate=True)
 
     assert isinstance(output_train, torch.Tensor)
     assert test_tensor.shape == output_train.shape

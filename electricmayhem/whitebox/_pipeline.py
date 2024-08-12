@@ -49,7 +49,7 @@ class PipelineBase(torch.nn.Module):
         mlflow.log_params(p)
         
     def forward(self, x, control=False, evaluate=False, **kwargs):
-        return x
+        return x, kwargs
         
     def get_last_sample_as_dict(self):
         """
@@ -153,7 +153,7 @@ class ModelWrapper(PipelineBase):
         else:
             model = self.model
             
-        return self._call_wrapped(model, x)
+        return self._call_wrapped(model, x), kwargs
     
     def get_last_sample_as_dict(self):
         """
@@ -188,8 +188,8 @@ def _update_patch_gradients(pipeline, batch_size, lossweights, accumulate=1, rho
 
     Returns dictionary of disaggregated loss values and total loss tensor
     """ 
-    def _getloss(outputs, patchbatch):
-        lossdict = pipeline.loss(outputs, patchbatch)
+    def _getloss(outputs, extra_kwargs):
+        lossdict = pipeline.loss(outputs, **extra_kwargs)
         loss = 0
         record = {}
         for k in lossdict:
@@ -208,8 +208,8 @@ def _update_patch_gradients(pipeline, batch_size, lossweights, accumulate=1, rho
     # NORMAL CASE
     if rho == 0:
         # run through the pipeline
-        outputs = pipeline(patchbatch)
-        lossdict, loss = _getloss(outputs, patchbatch)
+        outputs, k = pipeline(patchbatch)
+        lossdict, loss = _getloss(outputs, k)
 
         # estimate gradients
         loss.backward()
@@ -219,7 +219,7 @@ def _update_patch_gradients(pipeline, batch_size, lossweights, accumulate=1, rho
         batch_copy = patchbatch.clone().detach().requires_grad_(True) # (N, C, H, W)
 
         # run it through pipeline and get the loss
-        lossdict, loss = _getloss(pipeline(batch_copy), batch_copy)
+        lossdict, loss = _getloss(*pipeline(batch_copy))
 
         # compute gradients and average across batch
         loss.backward()
@@ -238,8 +238,8 @@ def _update_patch_gradients(pipeline, batch_size, lossweights, accumulate=1, rho
         patchbatch_adv = torch.stack([x_adv for _ in range(batch_size)], 0)
         # get sampled parameters from the pipeline to run through under the same conditions
         sampdict = pipeline.get_last_sample_as_dict()
-        outputs_adv = pipeline(patchbatch_adv, **sampdict)
-        lossdict_adv, loss = _getloss(outputs_adv, patchbatch_adv)
+        outputs_adv, k = pipeline(patchbatch_adv, **sampdict)
+        lossdict_adv, loss = _getloss(outputs_adv, k)
         # compute gradients
         loss.backward()
 
@@ -278,6 +278,8 @@ class Pipeline(PipelineBase):
         self.rank = 0
             
     def forward(self, x, control=False, evaluate=False, **kwargs):
+        # initialize a dictionary to propagate additional useful information through the pipeline
+        extra_kwargs = {"input":x}
         # run through each pipeline stage sequentially
         for e,s in enumerate(self.steps):
             # pull out a dictionary of keyword arguments for this
@@ -285,8 +287,8 @@ class Pipeline(PipelineBase):
             key = f"{e}_{s.name}_"
             step_kwargs = {k.split(key)[-1]:kwargs[k] for k in kwargs
                             if k.startswith(key)}
-            x = s(x, control=control, evaluate=evaluate, **step_kwargs)
-        return x
+            x, extra_kwargs = s(x, control=control, evaluate=evaluate, **step_kwargs, **extra_kwargs)
+        return x, extra_kwargs
     
     def __add__(self, y):
         # check to see if it's an electricmayhem object. if not assume it's
@@ -447,7 +449,7 @@ class Pipeline(PipelineBase):
                     passed_all = False
                 # run x through the step to prepare
                 # for the next step
-                x = s(x)
+                x, _ = s(x)
         return passed_all
 
 
@@ -491,8 +493,8 @@ class Pipeline(PipelineBase):
         
         if test_patch_shape is not None:
             test_patch = torch.ones(test_patch_shape, dtype=torch.float32).uniform_(0,1)
-            model_output = self(test_patch)
-            lossdict = lossfunc(model_output, test_patch)
+            model_output, kwargs = self(test_patch)
+            lossdict = lossfunc(model_output, **kwargs)
             assert isinstance(lossdict, dict), "this loss function doesn't appear to generate a dictionary"
             for k in lossdict:
                 assert isinstance(lossdict[k], torch.Tensor), f"loss function output {k} doesn't appear to be a Tensor"
@@ -542,12 +544,12 @@ class Pipeline(PipelineBase):
         for _ in range(num_eval_steps):
             stepdict = {}
             # run a batch through with the patch included
-            result_patch = _dict_of_tensors_to_dict_of_arrays(self.loss(self(patchbatch, evaluate=True),
-                                                                        patchbatch))
+            output, kwargs = self(patchbatch, evaluate=True)
+            result_patch = _dict_of_tensors_to_dict_of_arrays(self.loss(output, **kwargs))
             # then a control batch; no patch but same parameters
-            result_control = _dict_of_tensors_to_dict_of_arrays(self.loss(self(patchbatch, control=True,
-                                                                               evaluate=True),
-                                                                              patchbatch))
+            output, kwargs = self(patchbatch, evaluate=True, control=True)
+            result_control = _dict_of_tensors_to_dict_of_arrays(self.loss(output, **kwargs))
+
             for k in result_patch:
                 stepdict[f"{k}_patch"] = result_patch[k]
                 stepdict[f"{k}_control"] = result_control[k]
@@ -676,7 +678,7 @@ class Pipeline(PipelineBase):
             
             # if this is an evaluate step- run evaluation and save params
             if ((i+1)%eval_every == 0)&(eval_every > 0):
-                self.evaluate(batch_size, num_eval_steps)#, patchbatch)
+                self.evaluate(batch_size, num_eval_steps)
                 self.save_patch_params()
                 
             # if we're profiling, update the profiler

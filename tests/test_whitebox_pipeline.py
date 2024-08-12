@@ -16,9 +16,10 @@ aug2 = _aug.KorniaAugmentationPipeline(augdict2)
 def test_pipelinebase_apply():
     base = _pipeline.PipelineBase(a="foo", b="bar")
     testinput = torch.zeros((3,13,17))
-    y = base(testinput)
+    y, kwargs = base(testinput)
     assert isinstance(y, torch.Tensor)
     assert y.shape == testinput.shape
+    assert isinstance(kwargs, dict)
     
 def test_pipelinebase_to_yaml():
     base = _pipeline.PipelineBase(a="foo", b="bar")
@@ -50,8 +51,8 @@ def test_modelwrapper_multiple_models():
     wrapper = _pipeline.ModelWrapper(train_model, eval_model=eval_model)
     x = torch.tensor(np.random.uniform(0, 1, (1,3,28,28)).astype(np.float32))
     
-    y_train = wrapper(x)
-    y_eval = wrapper(x, evaluate=True)
+    y_train, _ = wrapper(x)
+    y_eval, _ = wrapper(x, evaluate=True)
     
     assert y_train.shape == (1,3)
     assert y_eval.shape == (1,5)
@@ -65,8 +66,8 @@ def test_modelwrapper_multiple_models_in_dictionary():
                                                               "evalmodel":eval_model})
     x = torch.tensor(np.random.uniform(0, 1, (1,3,28,28)).astype(np.float32))
     
-    y_train = wrapper(x)
-    y_eval = wrapper(x, evaluate=True)
+    y_train, _ = wrapper(x)
+    y_eval, _ = wrapper(x, evaluate=True)
     
     assert y_train.shape == (1,3)
     assert isinstance(y_eval, dict)
@@ -77,14 +78,15 @@ def test_pipeline_manual_creation():
     pipe = _pipeline.Pipeline(aug1, aug2)
     inpt = torch.tensor(np.random.uniform(0, 1, (1,3,32,32)).astype(np.float32))
     # test apply
-    outpt = pipe(inpt)
+    outpt, kwargs = pipe(inpt)
     assert inpt.shape == outpt.shape
+    assert isinstance(kwargs, dict)
     
 def test_pipeline_dunderscore_creation():    
     pipe = aug1 + aug2
     inpt = torch.tensor(np.random.uniform(0, 1, (1,3,32,32)).astype(np.float32))
     # test apply
-    outpt = pipe(inpt)
+    outpt, _ = pipe(inpt)
     assert inpt.shape == outpt.shape
     
 def test_pipeline_len():    
@@ -131,7 +133,7 @@ def test_pipeline_initialize_patch_params_with_pre_initialized_patch():
     
     
 def test_pipeline_set_loss():
-    def myloss(outputs, patchparam):
+    def myloss(outputs, **kwargs):
         outputs = outputs.reshape(outputs.shape[0],-1)
         outdict = {}
         trueclass = 3
@@ -146,7 +148,7 @@ def test_pipeline_set_loss():
     
     
 def test_pipeline_set_loss_throws_error_for_bad_outputs():
-    def myloss(outputs, patchparam):
+    def myloss(outputs, **kwargs):
         
         return outputs
     step = _create.PatchResizer((11,13))
@@ -158,7 +160,7 @@ def test_pipeline_set_loss_throws_error_for_bad_outputs():
     
     
 def test_pipeline_set_loss_throws_error_for_bad_output_shapes():
-    def myloss(outputs, patchparam):
+    def myloss(outputs, **kwargs):
         return {"foo":torch.zeros((5,7,2))}
     step = _create.PatchResizer((11,13))
     pipeline = _pipeline.Pipeline(step)
@@ -180,7 +182,7 @@ def test_pipeline_training_loop_runs():
     num_steps = 5
     eval_every = 1000
     num_eval_steps = 1
-    def myloss(outputs, patchparam):
+    def myloss(outputs, **kwargs):
         outdict = {}
         outputs = outputs.reshape(outputs.shape[0], -1)
         outdict["mainloss"] = torch.mean(outputs, 1)
@@ -206,7 +208,7 @@ def test_pipeline_training_loop_with_logging(tmp_path_factory):
     num_steps = 5
     eval_every = 4
     num_eval_steps = 1
-    def myloss(outputs, patchparam):
+    def myloss(outputs, **kwargs):
         outdict = {}
         outputs = outputs.reshape(outputs.shape[0], -1)
         outdict["mainloss"] = torch.mean(outputs, 1)
@@ -232,7 +234,7 @@ def test_pipeline_training_loop_with_profiling(tmp_path_factory):
     num_steps = 5
     eval_every = 4
     num_eval_steps = 1
-    def myloss(outputs, patchparam):
+    def myloss(outputs,  **kwargs):
         outdict = {}
         outputs = outputs.reshape(outputs.shape[0], -1)
         outdict["mainloss"] = torch.mean(outputs, 1)
@@ -259,7 +261,7 @@ def test_pipeline_training_loop_runs_mifgsm_optimizer():
     num_steps = 5
     eval_every = 1000
     num_eval_steps = 1
-    def myloss(outputs, patchparam):
+    def myloss(outputs, **kwargs):
         outdict = {}
         outputs = outputs.reshape(outputs.shape[0], -1)
         outdict["mainloss"] = torch.mean(outputs, 1)
@@ -286,7 +288,7 @@ def test_pipeline_training_loop_runs_adam_optimizer():
     num_steps = 5
     eval_every = 1000
     num_eval_steps = 1
-    def myloss(outputs, patchparam):
+    def myloss(outputs, **kwargs):
         outdict = {}
         outputs = outputs.reshape(outputs.shape[0], -1)
         outdict["mainloss"] = torch.mean(outputs, 1)
@@ -312,7 +314,7 @@ def test_pipeline_training_loop_runs_lr_decay_exponential():
     num_steps = 5
     eval_every = 1000
     num_eval_steps = 1
-    def myloss(outputs, patchparam):
+    def myloss(outputs, **kwargs):
         outdict = {}
         outputs = outputs.reshape(outputs.shape[0], -1)
         outdict["mainloss"] = torch.mean(outputs, 1)
@@ -338,7 +340,7 @@ def test_pipeline_training_loop_runs_no_lr_decay():
     num_steps = 5
     eval_every = 1000
     num_eval_steps = 1
-    def myloss(outputs, patchparam):
+    def myloss(outputs, **kwargs):
         outdict = {}
         outputs = outputs.reshape(outputs.shape[0], -1)
         outdict["mainloss"] = torch.mean(outputs, 1)
@@ -361,7 +363,7 @@ def test_pipeline_training_loop_runs_progress_bar_disabled():
     num_steps = 5
     eval_every = 1000
     num_eval_steps = 1
-    def myloss(outputs, patchparam):
+    def myloss(outputs, **kwargs):
         outdict = {}
         outputs = outputs.reshape(outputs.shape[0], -1)
         outdict["mainloss"] = torch.mean(outputs, 1)
@@ -385,7 +387,7 @@ def test_pipeline_get_last_sample_as_dict():
     batch_size = 7
     inpt = torch.tensor(np.random.uniform(0, 1, (batch_size,3,32,32)).astype(np.float32))
     # test apply
-    outpt = pipe(inpt)
+    outpt, _ = pipe(inpt)
     lastsample = pipe.get_last_sample_as_dict()
     assert isinstance(lastsample, dict)
     keys = list(lastsample.keys())
@@ -428,7 +430,7 @@ def test_pipeline_optimize_runs_without_crashing(tmp_path_factory):
     num_steps = 5
     num_eval_steps = 1
     N = 6
-    def myloss(outputs, patchparam):
+    def myloss(outputs, **kwargs):
         outdict = {}
         outputs = outputs.reshape(outputs.shape[0], -1)
         outdict["mainloss"] = torch.mean(outputs, 1)
@@ -463,7 +465,7 @@ def test_pipeline_passes_validate():
 def test_update_patch_gradients():
     batch_size = 2
     accumulate = 1
-    def myloss(outputs, patchparam):
+    def myloss(outputs, **kwargs):
         outdict = {}
         outputs = outputs.reshape(outputs.shape[0], -1)
         outdict["mainloss"] = torch.mean(outputs, 1)
@@ -486,7 +488,7 @@ def test_update_patch_gradients():
 def test_update_patch_gradients_with_sharpness_aware_minimization():
     batch_size = 2
     accumulate = 1
-    def myloss(outputs, patchparam):
+    def myloss(outputs, **kwargs):
         outdict = {}
         outputs = outputs.reshape(outputs.shape[0], -1)
         outdict["mainloss"] = torch.mean(outputs, 1)

@@ -286,7 +286,7 @@ class WarpPatchImplanter(RectanglePatchImplanter):
         
         # if it's a control batch, skip the implanting step
         if control:
-            return target_images
+            return target_images, kwargs
 
         # build a batch of box coordinates
         coords = torch.stack([torch.tensor(boxes[s["image"][i]][s["box"][i]]).type(torch.float32)
@@ -296,7 +296,7 @@ class WarpPatchImplanter(RectanglePatchImplanter):
         implanted_images = warp_and_implant_batch(patches, target_images, coords, mask=mask,
                                                   scale_brightness=self.params["scale_brightness"])
 
-        return implanted_images
+        return implanted_images, kwargs
     
     def plot_boxes(self, evaluate=False):
         """

@@ -93,9 +93,9 @@ class SoftProofer(PipelineBase):
         if evaluate:
             device = x.device
             proofed = self.softproof(x).to(device)
-            return proofed
+            return proofed, kwargs
         else:
-            return x
+            return x, kwargs
         
     def get_last_sample_as_dict(self):
         return {}

@@ -13,7 +13,7 @@ def test_dct_and_inverse_dct_are_inverses():
 def test_spectrumsimulationattack_correct_output_shape():
     ssa = SpectrumSimulationAttack()
     x = torch.tensor(np.random.uniform(0, 1, size=(1,3,17,21)).astype(np.float32))
-    y = ssa(x)
+    y, _ = ssa(x)
     assert x.shape == y.shape
 
 def test_spectrumsimulationattack_get_description():

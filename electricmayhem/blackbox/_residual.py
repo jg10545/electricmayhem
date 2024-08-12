@@ -6,7 +6,7 @@ import os
 
 from electricmayhem.blackbox import mask
 
-from .blackbox._graphite import BlackBoxPatchTrainer, estimate_transform_robustness
+from ._graphite import BlackBoxPatchTrainer, estimate_transform_robustness
 from electricmayhem.blackbox import _augment
 
 

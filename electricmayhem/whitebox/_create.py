@@ -46,7 +46,7 @@ class PatchSaver(PipelineBase):
         :control: no effect on this function
         :kwargs: no effect on this function
         """
-        return patches
+        return patches, kwargs
     
     
     def get_last_sample_as_dict(self):
@@ -97,7 +97,7 @@ class PatchResizer(PatchSaver):
         :kwargs: no effect on this function
         """
         return kornia.geometry.resize(patches, self.size, 
-                                      interpolation=self.params["interpolation"])
+                                      interpolation=self.params["interpolation"]), kwargs
     
     def get_description(self):
         """
@@ -137,7 +137,7 @@ class PatchStacker(PatchSaver):
         :kwargs: no effect on this function
         """
         # dimension 0 is batch dimension; dimension 1 is channels
-        return torch.concat([patches for _ in range(self.params["num_channels"])], 1)
+        return torch.concat([patches for _ in range(self.params["num_channels"])], 1), kwargs
     
     def get_description(self):
         """
@@ -183,7 +183,7 @@ class PatchTiler(PatchSaver):
         # same basic computation for horizontal
         numtiles_W = W//patches.shape[3] + 1
         output = torch.concat([patchcolumn for _ in range(numtiles_W)], 3)[:,:,:,:W]
-        return output
+        return output, kwargs
     
     def get_description(self):
         """
@@ -235,7 +235,7 @@ class PatchScroller(PipelineBase):
             for i in range(x.shape[0])
                 ], 0)
         
-        return shifted
+        return shifted, kwargs
         
     def get_last_sample_as_dict(self):
         """

@@ -90,7 +90,7 @@ def test_yolowrapper_single_v5_model(tmp_path_factory):
     yolo = _yolo.YOLOWrapper(model, classnames=classnames)
     
     x = torch.tensor(np.random.uniform(0, 1, size=(1,3,13,23)).astype(np.float32))
-    y = yolo(x)
+    y, _ = yolo(x)
     assert y[0].shape == (x.shape[0], num_boxes, 5+num_classes)
     
     fn = str(tmp_path_factory.mktemp("logs"))
@@ -108,7 +108,7 @@ def test_yolowrapper_single_v4_model(tmp_path_factory):
     yolo = _yolo.YOLOWrapper(model, classnames=classnames, v4=True)
     
     x = torch.tensor(np.random.uniform(0, 1, size=(1,3,13,23)).astype(np.float32))
-    y = yolo(x)
+    y, _ = yolo(x)
     assert y[0].shape == (x.shape[0], num_boxes, 5+num_classes)
     
     fn = str(tmp_path_factory.mktemp("logs"))
@@ -132,9 +132,9 @@ def test_yolowrapper_different_train_eval_models(tmp_path_factory):
                              eval_model=model_eval)
     
     x = torch.tensor(np.random.uniform(0, 1, size=(1,3,13,23)).astype(np.float32))
-    y = yolo(x)
+    y, _ = yolo(x)
     assert y[0].shape == (x.shape[0], num_boxes, 5+num_classes)
-    y_eval = yolo(x, evaluate=True)
+    y_eval, _ = yolo(x, evaluate=True)
     assert y_eval[0].shape == (x.shape[0], num_boxes_eval, 5+num_classes_eval)
     
     fn = str(tmp_path_factory.mktemp("logs"))
@@ -163,12 +163,12 @@ def test_yolowrapper_different_train_eval_model_lists(tmp_path_factory):
                              eval_model=model_eval)
     
     x = torch.tensor(np.random.uniform(0, 1, size=(1,3,13,23)).astype(np.float32))
-    y = yolo(x)
+    y, _ = yolo(x)
     assert isinstance(y, list)
     assert y[0][0].shape == (x.shape[0], num_boxes_1, 5+num_classes)
     assert y[1][0].shape == (x.shape[0], num_boxes_2, 5+num_classes)
     
-    y_eval = yolo(x, evaluate=True)
+    y_eval, _ = yolo(x, evaluate=True)
     assert isinstance(y_eval, list)
     assert y_eval[0][0].shape == (x.shape[0], num_boxes_eval_1, 5+num_classes_eval)
     assert y_eval[1][0].shape == (x.shape[0], num_boxes_eval_2, 5+num_classes_eval)
@@ -203,12 +203,12 @@ def test_yolowrapper_different_train_eval_model_dicts(tmp_path_factory):
                              eval_model=model_eval)
     
     x = torch.tensor(np.random.uniform(0, 1, size=(1,3,13,23)).astype(np.float32))
-    y = yolo(x)
+    y, _ = yolo(x)
     assert isinstance(y, dict)
     assert y["foo"][0].shape == (x.shape[0], num_boxes_1, 5+num_classes)
     assert y["bar"][0].shape == (x.shape[0], num_boxes_2, 5+num_classes)
     
-    y_eval = yolo(x, evaluate=True)
+    y_eval, _ = yolo(x, evaluate=True)
     assert isinstance(y_eval, dict)
     assert y_eval["a"][0].shape == (x.shape[0], num_boxes_eval_1, 5+num_classes_eval)
     assert y_eval["b"][0].shape == (x.shape[0], num_boxes_eval_2, 5+num_classes_eval)

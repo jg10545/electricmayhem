@@ -151,7 +151,7 @@ class SpectrumSimulationAttack(PipelineBase):
         Only apply noise during training steps
         """
         if evaluate:
-            return x
+            return x, kwargs
         else:
             # generate noise
             with torch.no_grad():
@@ -175,7 +175,7 @@ class SpectrumSimulationAttack(PipelineBase):
             x_new = idct_2d(x_freq*mask)
             if self.params["clamp"] is not None:
                 x_new = torch.clamp(x_new, self.params["clamp"][0], self.params["clamp"][1])
-            return x_new
+            return x_new, kwargs
 
     def _tensor_to_list(self, x):
         return x.detach().cpu().numpy().tolist()

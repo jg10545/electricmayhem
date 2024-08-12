@@ -269,9 +269,9 @@ class RectanglePatchImplanter(PipelineBase):
         images = [images[i] for i in s["image"]]
         
         if control:
-            return torch.stack(images,0)
+            return torch.stack(images,0), kwargs
         
-        return self._implant_patch(images, patchlist, offset_x, offset_y, self.params["scale_brightness"])
+        return self._implant_patch(images, patchlist, offset_x, offset_y, self.params["scale_brightness"]), kwargs
     
     def plot_boxes(self, evaluate=False):
         """
