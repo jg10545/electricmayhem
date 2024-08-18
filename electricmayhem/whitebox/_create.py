@@ -83,7 +83,8 @@ class PatchResizer(PatchSaver):
     
     def __init__(self, size, interpolation="bilinear", logviz=True):
         """
-        :size: length-2 tuple giving target size (H,W) or dictionary of tuples
+        :size: length-2 tuple giving target size (H,W). for resizing multiple patches use
+            a dictionary of tuples
         :interpolation: string; 'bilinear', 'nearest', 'linear', 'bicubic', 'trilinear', or 'area'
         :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
             is called.
@@ -141,18 +142,23 @@ class PatchStacker(PatchSaver):
     """
     name = "PatchStacker"
     
-    def __init__(self, num_channels=3, logviz=True):
+    def __init__(self, num_channels=3, logviz=True, keys=None):
         """
         :size: length-2 tuple giving target size (H,W)
         :interpolation: string; 'bilinear', 'nearest', 'linear', 'bicubic', 'trilinear', or 'area'
         :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
             is called.
+        :keys: None or list of strings. If using multiple patches, use this to specify which patches to
+            apply to when forward() is called.
         """
         super().__init__()
         
         self.params = {"num_channels":num_channels}
         self.lastsample = {}
         self._logviz = logviz
+        self.keys = keys
+        if keys is not None:
+            self.params["keys"] = keys
         
     
     def forward(self, patches, control=False, evaluate=False, **kwargs):
@@ -163,6 +169,10 @@ class PatchStacker(PatchSaver):
         :control: no effect on this function
         :kwargs: no effect on this function
         """
+        # multiple patch case
+        if isinstance(patches, dict):
+            return self._apply_forward_to_dict(patches, control=control, evaluate=evaluate,
+                                               **kwargs)
         # dimension 0 is batch dimension; dimension 1 is channels
         return torch.concat([patches for _ in range(self.params["num_channels"])], 1), kwargs
     

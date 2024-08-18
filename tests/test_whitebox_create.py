@@ -27,12 +27,37 @@ def test_patchresizer_with_multiple_patches():
 
 
 def test_patchstacker():
-        resizer = _create.PatchStacker(num_channels=3)
+        stacker = _create.PatchStacker(num_channels=3)
         
         patch_params = torch.zeros((1,1,32,32)).type(torch.float32)
-        output, _ = resizer(patch_params)
+        output, _ = stacker(patch_params)
         assert output.shape == (1,3,32,32)
-        assert "3 channels" in resizer.get_description()
+        assert "3 channels" in stacker.get_description()
+
+
+def test_patchstacker_with_multiple_patches():
+        patch_params = {"foo":torch.zeros((1,1,32,32)).type(torch.float32),
+                        "bar":torch.zeros((1,1,13,17)).type(torch.float32)}
+        stacker = _create.PatchStacker(num_channels=3)
+        
+        output, _ = stacker(patch_params)
+        assert isinstance(output, dict)
+        assert output["foo"].shape == (1,3,32,32)
+        assert output["bar"].shape == (1,3,13,17)
+        assert "3 channels" in stacker.get_description()
+
+
+def test_patchstacker_with_multiple_patches_apply_to_one():
+        patch_params = {"foo":torch.zeros((1,1,32,32)).type(torch.float32),
+                        "bar":torch.zeros((1,1,13,17)).type(torch.float32)}
+        stacker = _create.PatchStacker(num_channels=3, keys=["foo"])
+        
+        output, _ = stacker(patch_params)
+        assert isinstance(output, dict)
+        assert len(stacker.keys) == 1
+        assert output["foo"].shape == (1,3,32,32) # <--- stack this one
+        assert output["bar"].shape == (1,1,13,17) # <--- don't stack this one
+        assert "3 channels" in stacker.get_description()
         
         
 def test_patchsaver():
