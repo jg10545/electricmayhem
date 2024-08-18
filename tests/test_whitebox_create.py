@@ -140,6 +140,7 @@ def test_scroll_single_image():
         # if we add up the values they should be the same
         assert (torch.sum(x**2).numpy() - torch.sum(shifted**2).numpy())**2 < 1e-5
 
+
 def test_patchscroller():
     B = 5
     scroll = _create.PatchScroller()
@@ -150,4 +151,26 @@ def test_patchscroller():
     assert scrolled_batch.shape == test_batch.shape
     for i in range(B):
         assert (scrolled_batch[i].detach().numpy().sum() - test_img.numpy().sum())**2 < 1e-5
-        
+
+def test_patchscroller_multiple_patches():
+    patch_params = {"foo":torch.zeros((1,1,11,13)).type(torch.float32),
+                        "bar":torch.zeros((1,3,15,23)).type(torch.float32)}
+    scroll = _create.PatchScroller()
+    scrolled_batch, _ = scroll(patch_params)
+
+    assert isinstance(scrolled_batch, dict)
+    assert scrolled_batch["foo"].shape == (1,1,11,13)
+    assert scrolled_batch["bar"].shape == (1,3,15,23)
+    
+
+def test_patchscroller_multiple_patches_but_leave_one_out():
+    patch_params = {"foo":torch.zeros((1,1,11,13)).type(torch.float32),
+                        "bar":torch.zeros((1,3,15,23)).type(torch.float32)}
+    scroll = _create.PatchScroller(keys=["foo"])
+    scrolled_batch, _ = scroll(patch_params)
+
+    assert isinstance(scrolled_batch, dict)
+    assert scrolled_batch["foo"].shape == (1,1,11,13)
+    assert scrolled_batch["bar"].shape == (1,3,15,23)
+    assert np.max(np.abs(patch_params["bar"].numpy() - scrolled_batch["bar"].numpy())) < 1e-5
+    

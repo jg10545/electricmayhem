@@ -272,11 +272,15 @@ class PatchScroller(PipelineBase):
     """
     name = "PatchScroller"
     
-    def __init__(self, logviz=True):
+    def __init__(self, logviz=True, keys=None):
+        """
+        :keys: optional; list of keys of patches to scroll for multi-patch case
+        """
         super().__init__()
-        self.params = {}#kwargs
+        self.params = {}
         self.lastsample = {}
         self._logviz = logviz
+        self.keys = keys
         
     def sample(self, patchbatch, params={}):
         N,C,H,W = patchbatch.shape
@@ -292,6 +296,8 @@ class PatchScroller(PipelineBase):
 
         
     def forward(self, x, control=False, evaluate=False, params={}, **kwargs):
+        if isinstance(x, dict):
+            return self._apply_forward_to_dict(x, control=control, evaluate=evaluate, params=params, **kwargs)
         # eval case: 
         if evaluate:
             return x

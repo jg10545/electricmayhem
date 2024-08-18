@@ -51,7 +51,7 @@ class PipelineBase(torch.nn.Module):
     def forward(self, x, control=False, evaluate=False, **kwargs):
         return x, kwargs
     
-    def _apply_forward_to_dict(self, x, control=False, evaluate=False, **kwargs):
+    def _apply_forward_to_dict(self, x, control=False, evaluate=False, params={}, **kwargs):
         """
         For pipeline stages that might input and output a dictionary of tensors (for 
         example, applying some transformation to several patches before implanting
