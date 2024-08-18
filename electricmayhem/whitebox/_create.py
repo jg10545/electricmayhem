@@ -84,7 +84,7 @@ class PatchResizer(PatchSaver):
     def __init__(self, size, interpolation="bilinear", logviz=True):
         """
         :size: length-2 tuple giving target size (H,W). for resizing multiple patches use
-            a dictionary of tuples
+            a dictionary of tuples. Leave a patch key out if you don't want to resize that one.
         :interpolation: string; 'bilinear', 'nearest', 'linear', 'bicubic', 'trilinear', or 'area'
         :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
             is called.
@@ -114,10 +114,18 @@ class PatchResizer(PatchSaver):
         :control: no effect on this function
         :kwargs: no effect on this function
         """
+        # multiple patch case
         if isinstance(patches, dict):
-            resized = {k:kornia.geometry.resize(patches[k], self.size[k], 
+            resized = {}
+            # resize the patch if the user specified a new size
+            for k in patches:
+                if k in self.size:
+                    resized[k] = kornia.geometry.resize(patches[k], self.size[k], 
                                       interpolation=self.params["interpolation"])
-                                      for k in patches}
+                # otherwise do nothing
+                else:
+                    resized[k] = patches[k]
+        # single patch case
         else:
             resized = kornia.geometry.resize(patches, self.size, 
                                       interpolation=self.params["interpolation"])
@@ -192,34 +200,55 @@ class PatchTiler(PatchSaver):
     
     def __init__(self, size, logviz=True):
         """
-        :size: length-2 tuple giving target size (H,W)
+        :size: length-2 tuple giving target size (H,W) or dictionary of tuples if using
+            multiple patches. Any patch keys not included will not be tiled.
         :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
             is called.
         """
         super().__init__()
-        assert len(size) == 2, "expected a length-2 tuple (H,W) for the size"
+        if isinstance(size, dict):
+            for k in size:
+                assert len(size[k]) == 2, "expected a length-2 tuple (H,W) for the size"
+            self.params["size"] = {k:list(size[k]) for k in size}
+        else:
+            assert len(size) == 2, "expected a length-2 tuple (H,W) for the size"
+            self.params = {"size":list(size)}
         self.size = size
         
-        self.params = {"size":list(size)}
         self.lastsample = {}
         self._logviz = logviz
-        
-    
-    def forward(self, patches, control=False, evaluate=False, **kwargs):
-        """
-        Implant a batch of patches in a batch of images
-        
-        :patches: torch Tensor; stack of patches
-        :control: no effect on this function
-        :kwargs: no effect on this function
-        """
-        H,W = self.size
+
+    def _tile_single_patch(self, patches, size):
+        H,W = size
         # figure out how many times to tile along vertical direction
         numtiles_H = H//patches.shape[2] + 1
         patchcolumn = torch.concat([patches for _ in range(numtiles_H)],2)[:,:,:H,:]
         # same basic computation for horizontal
         numtiles_W = W//patches.shape[3] + 1
         output = torch.concat([patchcolumn for _ in range(numtiles_W)], 3)[:,:,:,:W]
+        return output
+        
+    
+    def forward(self, patches, control=False, evaluate=False, **kwargs):
+        """
+        Implant a batch of patches in a batch of images
+        
+        :patches: torch Tensor; stack of patches or a dictionary of patches.
+        :control: no effect on this function
+        :kwargs: no effect on this function
+        """
+        # multi-patch case: tile the patches that were specified in the size dict;
+        # pass the others through
+        if isinstance(patches, dict):
+            output = {}
+            for k in patches:
+                if k in self.size:
+                    output[k] = self._tile_single_patch(patches[k], self.size[k])
+                else:
+                    output[k] = patches[k]
+        # single-patch case: just tile it
+        else:
+            output = self._tile_single_patch(patches, self.size)
         return output, kwargs
     
     def get_description(self):
@@ -227,7 +256,12 @@ class PatchTiler(PatchSaver):
         Return a markdown-formatted one-line string describing the pipeline step. Used for
         auto-populating a description for MLFlow.
         """
-        return f"**{self.name}:** tile to {self.size}"
+        if isinstance(self.size, dict):
+            tileto = ", ".join([f"{k}: {str(self.size[k])}" for k in self.size])
+
+        else:
+            tileto = self.size
+        return f"**{self.name}:** tile to {tileto}"
     
 
 class PatchScroller(PipelineBase):
