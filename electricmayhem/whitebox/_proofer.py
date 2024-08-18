@@ -38,7 +38,7 @@ class SoftProofer(PipelineBase):
     """
     name = "SoftProofer"
 
-    def __init__(self, target_profile, screen_profile=None, rendering_intent=0):
+    def __init__(self, target_profile, screen_profile=None, rendering_intent=0, keys=None):
         """
         :target_profile: ImageCmsProfile or path to a saved .icc file; the ICC profile for
             the printer
@@ -49,9 +49,12 @@ class SoftProofer(PipelineBase):
             ImageCms.Intent.RELATIVE_COLORIMETRIC = 1
             ImageCms.Intent.SATURATION            = 2
             ImageCms.Intent.ABSOLUTE_COLORIMETRIC = 3
+        :keys: if training multiple patches but only applying this proofer to some, pass a
+            list of strings here to specify which
         """
         super().__init__()
         self.params = {"rendering_intent":rendering_intent}
+        self.keys = keys
 
         # make sure both the source and target profiles are loaded as ImageCmsProfiles
         if isinstance(target_profile, str):
@@ -90,6 +93,10 @@ class SoftProofer(PipelineBase):
         return newtensors
     
     def forward(self, x, control=False, evaluate=False, params=None, **kwargs):
+        # multi-patch case
+        if isinstance(x, dict):
+            return self._apply_forward_to_dict(x, control=control, evaluate=evaluate,
+                                               params=params, **kwargs)
         if evaluate:
             device = x.device
             proofed = self.softproof(x).to(device)
@@ -100,16 +107,30 @@ class SoftProofer(PipelineBase):
     def get_last_sample_as_dict(self):
         return {}
         
-    def log_vizualizations(self, x, x_control, writer, step, logging_to_mlflow=False):
+    def log_vizualizations(self, x, x_control, writer, step, logging_to_mlflow=False, suffix=None):
         """
         For this pipeline stage- just compute visualizations on the first element in the batch
         """
-        x = x[:1,:,:,:].cpu().detach()
-        proofed = self.softproof(x)
-        writer.add_image("proofed_patch", proofed[0], global_step=step, dataformats='CHW')
-        # how much did proofing change the patch?
-        rms_diff = np.sqrt(np.mean((proofed.numpy()-x.numpy())**2))
-        writer.add_scalar("proofed_patch_rms_change", rms_diff, global_step=step)
+        # multi patch case
+        if isinstance(x, dict):
+            if self.keys is None:
+                keys = list(x.keys())
+            else:
+                keys = self.keys
+            for k in x:
+                if k in keys:
+                    self.log_vizualizations(x[k], x_control[k], writer, step, logging_to_mlflow=logging_to_mlflow,
+                                            suffix=k)
+        else:
+            x = x[:1,:,:,:].cpu().detach()
+            proofed = self.softproof(x)
+            name = "proofed_patch"
+            if suffix is not None:
+                name += "_" + suffix
+            writer.add_image(name, proofed[0], global_step=step, dataformats='CHW')
+            # how much did proofing change the patch?
+            rms_diff = np.sqrt(np.mean((proofed.numpy()-x.numpy())**2))
+            writer.add_scalar(f"{name}_rms_change", rms_diff, global_step=step)
         
-        if logging_to_mlflow:
-            mlflow.log_metric("proofed_patch_rms_change", rms_diff, step=step)
+            if logging_to_mlflow:
+                mlflow.log_metric(f"{name}_rms_change", rms_diff, step=step)
