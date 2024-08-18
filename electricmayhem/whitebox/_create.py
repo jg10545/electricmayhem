@@ -55,14 +55,23 @@ class PatchSaver(PipelineBase):
         """
         return {}
     
+    def _log_single_image(self, img, name, writer, step):
+        # if it's a batch take the first element
+        if len(img.shape) == 4:
+            img = img[0]
+        # check to make sure it's a 3-channel image
+        if img.shape[0] == 3:
+            writer.add_image(name, img, global_step=step)
+    
     def log_vizualizations(self, x, x_control, writer, step, logging_to_mlflow=False):
         """
         """
         if self._logviz:
-            img = self(x)[0]
-            # check to make sure this is an RGB image
-            if img.shape[0] == 3:
-                writer.add_image(f"{self.name}_patch", img, global_step=step)
+            if isinstance(x, dict):
+                for k in x:
+                    self._log_single_image(x[k], f"{self.name}_patch_{k}", writer, step)
+            else:
+                self._log_single_image(x, f"{self.name}_patch", writer, step)
 
 
 class PatchResizer(PatchSaver):
@@ -74,16 +83,24 @@ class PatchResizer(PatchSaver):
     
     def __init__(self, size, interpolation="bilinear", logviz=True):
         """
-        :size: length-2 tuple giving target size (H,W)
+        :size: length-2 tuple giving target size (H,W) or dictionary of tuples
         :interpolation: string; 'bilinear', 'nearest', 'linear', 'bicubic', 'trilinear', or 'area'
         :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
             is called.
         """
         super().__init__()
-        assert len(size) == 2, "expected a length-2 tuple (H,W) for the size"
+
+        self.params = {"interpolation":interpolation}
+        if isinstance(size, dict):
+            for k in size:
+                assert len(size[k]) == 2, "expected a length-2 tuple (H,W) for the size"
+            self.params["size"] = {k:list(size[k]) for k in size}
+        else:
+            assert len(size) == 2, "expected a length-2 tuple (H,W) for the size"
+            self.params["size"] = list(size)
         self.size = size
         
-        self.params = {"size":list(size), "interpolation":interpolation}
+
         self.lastsample = {}
         self._logviz = logviz
         
@@ -96,15 +113,25 @@ class PatchResizer(PatchSaver):
         :control: no effect on this function
         :kwargs: no effect on this function
         """
-        return kornia.geometry.resize(patches, self.size, 
-                                      interpolation=self.params["interpolation"]), kwargs
+        if isinstance(patches, dict):
+            resized = {k:kornia.geometry.resize(patches[k], self.size[k], 
+                                      interpolation=self.params["interpolation"])
+                                      for k in patches}
+        else:
+            resized = kornia.geometry.resize(patches, self.size, 
+                                      interpolation=self.params["interpolation"])
+        return resized, kwargs
     
     def get_description(self):
         """
         Return a markdown-formatted one-line string describing the pipeline step. Used for
         auto-populating a description for MLFlow.
         """
-        return f"**{self.name}:** resize to {self.size}"
+        if isinstance(self.size, dict):
+            newsize = ", ".join([f"{k}: {str(self.size[k])}" for k in self.size])
+        else:
+            newsize = self.size
+        return f"**{self.name}:** resize to {newsize}"
         
     
     

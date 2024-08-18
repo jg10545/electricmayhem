@@ -13,6 +13,19 @@ def test_patchresizer():
     assert "31, 29" in resizer.get_description()
 
 
+def test_patchresizer_with_multiple_patches():
+    patch_params = {"foo":torch.zeros((1,3,32,32)).type(torch.float32),
+                        "bar":torch.zeros((1,1,13,17)).type(torch.float32)}
+    sizes = {"foo":(31,29), "bar":(17,23)}
+    resizer = _create.PatchResizer(sizes)
+
+    output, _ = resizer(patch_params)
+    assert output["foo"].shape == (1,3,31,29)
+    assert output["bar"].shape == (1,1,17,23)
+    assert "31, 29" in resizer.get_description()
+    assert "17, 23" in resizer.get_description()
+
+
 def test_patchstacker():
         resizer = _create.PatchStacker(num_channels=3)
         
@@ -28,6 +41,18 @@ def test_patchsaver():
         patch_params = torch.zeros((1,1,32,32)).type(torch.float32)
         output, _ = resizer(patch_params)
         assert output.shape == (1,1,32,32)
+        
+        
+
+def test_patchsaver_with_multiple_patches():
+        resizer = _create.PatchSaver()
+        
+        patch_params = {"foo":torch.zeros((1,1,32,32)).type(torch.float32),
+                        "bar":torch.zeros((1,1,13,17)).type(torch.float32)}
+        output, _ = resizer(patch_params)
+        assert isinstance(output, dict)
+        assert output["foo"].shape == (1,1,32,32)
+        assert output["bar"].shape == (1,1,13,17)
         
         
     

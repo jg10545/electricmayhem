@@ -27,6 +27,7 @@ def test_patchwrapper_with_dict():
     assert batch["foo"].shape == (N, 3, 32, 32)
     assert isinstance(batch["bar"], torch.Tensor)
     assert batch["bar"].shape == (N, 1, 17, 13)
+    assert len(list(pw.parameters())) == 2
 
 
 """

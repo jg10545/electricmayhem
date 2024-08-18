@@ -50,6 +50,35 @@ class PipelineBase(torch.nn.Module):
         
     def forward(self, x, control=False, evaluate=False, **kwargs):
         return x, kwargs
+    
+    def _apply_forward_to_dict(self, x, control=False, evaluate=False, **kwargs):
+        """
+        For pipeline stages that might input and output a dictionary of tensors (for 
+        example, applying some transformation to several patches before implanting
+        them)
+        """
+        outdict = {}
+        outkwargs = kwargs
+        # are we using all the 
+        keys = list(x.keys())
+        if hasattr(self, "keys"):
+            if self.keys is not None:
+                keys = self.keys
+        # run all the tensors we're updating through the pipeline stage
+        for k in keys:
+            outdict[k], kw = self.forward(x[k], control=control, evaluate=evaluate, **kwargs)
+            # add any new kwargs to the dictionary, adding the key for this tensor to
+            # the label
+            for j in kw:
+                if j not in outkwargs:
+                    outkwargs[f"{k}_{j}"] = kw[j]
+        # any other tensors in the input dict that we're not operating on just get copied
+        # into the new dict
+        for k in x:
+            if k not in keys:
+                outdict[k] = x[k]
+
+        return outdict, outkwargs
         
     def get_last_sample_as_dict(self):
         """
