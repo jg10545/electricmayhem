@@ -18,17 +18,24 @@ class PatchWrapper(torch.nn.Module):
     """
     def __init__(self, patch, single_patch=True):
         """
-        :patch: pytorch tensor representing the patch or parameters to generate the patch
+        :patch: pytorch tensor representing the patch or parameters to generate the patch, or a dict of tensors
         :single_patch: bool; whether "patch" represents a single patch (that must be batched
             for training) or a batch of patches
         """
         super().__init__()
-        self.patch = torch.nn.Parameter(patch)
+        if isinstance(patch, dict):
+            self.patch = torch.nn.ParameterDict(patch)
+        else:
+            self.patch = torch.nn.Parameter(patch)
         self.single_patch = single_patch
         
     def forward(self, N=None):
         if self.single_patch:
-            return torch.stack([self.patch for _ in range(N)],0)
+            if isinstance(self.patch, torch.nn.ParameterDict):
+                return {x:torch.stack([self.patch[x] for _ in range(N)],0)
+                        for x in self.patch}
+            else:
+                return torch.stack([self.patch for _ in range(N)],0)
         else:
             return self.patch
         
@@ -37,7 +44,11 @@ class PatchWrapper(torch.nn.Module):
         clamp patch parameters to some interval
         """
         with torch.no_grad():
-            self.patch.clamp_(low, high)
+            if isinstance(self.patch, torch.nn.ParameterDict):
+                for k in self.patch:
+                    self.patch[k].clamp_(low, high)
+            else:
+                self.patch.clamp_(low, high)
             
             
 def _run_worker_training_loop(rank, world_size, devices, pipestring, queue, evt,
