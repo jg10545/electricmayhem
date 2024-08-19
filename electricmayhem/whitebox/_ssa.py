@@ -132,11 +132,13 @@ class SpectrumSimulationAttack(PipelineBase):
     """
     name = "SpectrumSimulationAttack"
     
-    def __init__(self, sigma=0.06, rho=0.5, clamp=(0,1)):
+    def __init__(self, sigma=0.06, rho=0.5, clamp=(0,1), keys=None):
         """
         :sigma: scale for spatial-domain additive noise
         :rho: scale for frequency-domain multiplicative noise
         :clamp: length-2 tuple or None; limits to clamp the patch to
+        :keys: if training multiple patches and only applying SSA to some, pass a list
+            of strings to specify which patches
         """
         super().__init__()
         
@@ -145,11 +147,18 @@ class SpectrumSimulationAttack(PipelineBase):
             "sigma":sigma,
             "clamp":clamp
         }
+        self.keys = keys
+        if keys is not None:
+            self.params["keys"] = keys
         
     def forward(self, x, control=False, evaluate=False, params={}, **kwargs):
         """
         Only apply noise during training steps
         """
+        # multi patch case
+        if isinstance(x, dict):
+            return self._apply_forward_to_dict(x, control=control, evaluate=evaluate,
+                                               params=params, **kwargs)
         if evaluate:
             return x, kwargs
         else:
