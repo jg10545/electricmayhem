@@ -66,7 +66,7 @@ def _unpack_rectangle_dataset(df):
         -xmin, mxax, ymin, ymax: box coordinates
 
     And may have columns:
-        -mode: train or eval
+        -mode: "train" or "eval"
         -patch: string giving patch key
     """
     df = df.copy()
@@ -82,8 +82,8 @@ def _unpack_rectangle_dataset(df):
         return df, patch_keys, img_keys, images, boxes, img_keys, images, boxes
     
     else:
-        img_keys_train, images_train, boxes_train = _unpack_rectangle_dataset(df[df["mode"]=="train"])
-        img_keys_eval, images_eval, boxes_eval = _unpack_rectangle_dataset(df[df["mode"]=="eval"])
+        img_keys_train, images_train, boxes_train = _unpack_rectangle_frame(df[df["mode"]=="train"])
+        img_keys_eval, images_eval, boxes_eval = _unpack_rectangle_frame(df[df["mode"]=="eval"])
         return df, patch_keys, img_keys_train, images_train, boxes_train, img_keys_eval, images_eval, boxes_eval
     
 def _prep_masks(patch_keys, mask):
@@ -266,27 +266,35 @@ class RectanglePatchImplanter(PipelineBase):
         """
         Check to see whether any of your patch/scale/image/box combinations could throw an error
         """
+        # if passed a single patch batch, wrap it in a dictionary
+        if isinstance(patch, torch.Tensor):
+            patch = {"patch":patch}
+
         all_validated = True
-        max_y = int(self.params["scale"][1]*patch.shape[1])
-        max_x = int(self.params["scale"][1]*patch.shape[2])
         
-        for i in range(len(self.images)):
-            for j in range(len(self.boxes[i])):
-                b = self.boxes[i][j]
-                dy = b[3] - b[1]
-                dx = b[2] - b[0]
-                if (max_y >= dy)|(max_x >= dx):
-                    logging.warning(f"{self.name}: box {j} of image {self.imgkeys[i]} is too small for this patch and scale")
-                    all_validated = False
+        # check each patch
+        for k in patch:
+            max_y = int(self.params["scale"][1]*patch[k].shape[1])
+            max_x = int(self.params["scale"][1]*patch[k].shape[2])
+            # in each image
+            for i in range(len(self.images)):
+                # in each box defined for that patch in that image
+                for j in range(len(self.boxes[i][k])):
+                    b = self.boxes[i][k][j]
+                    dy = b[3] - b[1]
+                    dx = b[2] - b[0]
+                    if (max_y >= dy)|(max_x >= dx):
+                        logging.warning(f"{self.name}: box {j} of image {self.imgkeys[i]} is too small for patch {k} and scale {self.params['scale'][1]}")
+                        all_validated = False
                     
-        for i in range(len(self.eval_images)):
-            for j in range(len(self.eval_boxes[i])):
-                b = self.eval_boxes[i][j]
-                dy = b[3] - b[1]
-                dx = b[2] - b[0]
-                if (max_y >= dy)|(max_x >= dx):
-                    logging.warning(f"{self.name}: box {j} of eval image {self.imgkeys[i]} is too small for this patch and scale")
-                    all_validated = False
+            for i in range(len(self.eval_images)):
+                for j in range(len(self.eval_boxes[i][k])):
+                    b = self.eval_boxes[i][k][j]
+                    dy = b[3] - b[1]
+                    dx = b[2] - b[0]
+                    if (max_y >= dy)|(max_x >= dx):
+                        logging.warning(f"{self.name}: box {j} of eval image {self.imgkeys[i]} is too small for patch {k} and scale {self.params['scale'][1]}")
+                        all_validated = False
         return all_validated
     
     def _get_mask(self, patch):  # DEPRECATE??
