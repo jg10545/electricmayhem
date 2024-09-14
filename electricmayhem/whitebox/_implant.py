@@ -106,10 +106,6 @@ class RectanglePatchImplanter(PipelineBase):
     one training images/boxes.
     """
     name = "RectanglePatchImplanter"
-    
-    #def __init__(self, imagedict, boxdict, eval_imagedict=None,
-    #             eval_boxdict=None, scale=(0.75,1.25), offset_frac_x=None,
-    #             offset_frac_y=None, mask=None, scale_brightness=False):
     def __init__(self, df, scale=(0.75,1.25), offset_frac_x=None,
                  offset_frac_y=None, mask=1, scale_brightness=False, dataset_name=None):
         """
@@ -151,29 +147,8 @@ class RectanglePatchImplanter(PipelineBase):
         self.mask = torch.nn.ParameterDict(_prep_masks(patch_keys, mask))
 
         self._dataset_name = dataset_name
-
-        #self.imgkeys = list(imagedict.keys())
-        #self.images = torch.nn.ParameterList([_img_to_tensor(imagedict[k]) for k in self.imgkeys])
-        #self.boxes = [boxdict[k] for k in self.imgkeys]
-        #if isinstance(mask, torch.Tensor):
-        #    self.mask = torch.nn.Parameter(mask.float()) # so it gets copied to the GPU along with this module.
-        #else:
-        #    self.mask = mask
-        #self.mask = mask
         self._sample_scale = True # whether self.sample() should sample a random scaling factor for patch
         self._sample_offsets = True # whether self.sample() should sample offsets relative to the box
-        
-        # save eval image/box information
-        #if eval_imagedict is None:
-        #    eval_imagedict = imagedict
-        #    eval_boxdict = boxdict
-            
-        #self.eval_imgkeys = list(eval_imagedict.keys())
-        #self.eval_images = torch.nn.ParameterList([_img_to_tensor(eval_imagedict[k]) for k in
-        #                                           self.eval_imgkeys])
-        #self.eval_boxes = [eval_boxdict[k] for k in self.eval_imgkeys]
-            
-        
         
         self.params = {"scale":list(scale), "imgkeys":self.imgkeys,
                        "eval_imgkeys":self.eval_imgkeys,
@@ -182,8 +157,6 @@ class RectanglePatchImplanter(PipelineBase):
                        "mask":self._get_mask_summary(mask),
                        "scale_brightness":scale_brightness}
         self.lastsample = {}
-        
-        #assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
 
     def _get_mask_summary(self, mask):
         """
@@ -204,19 +177,6 @@ class RectanglePatchImplanter(PipelineBase):
         else:
             assert mask >= 0 and mask <= 1, "mask should be between 0 and 1"
             return mask
-
-    def get_min_dimensions(self):
-        """
-        Find the minimum height and width of any training/eval box
-        """
-        minheight = 1e6
-        minwidth = 1e6
-        
-        for boxes in self.boxes+self.eval_boxes:
-            for b in boxes:
-                minheight = min(minheight, b[3]-b[1])
-                minwidth = min(minwidth, b[2]-b[0])
-        return {"minheight":minheight, "minwidth":minwidth}
         
     def sample(self, n, evaluate=False, **kwargs):
         """
@@ -363,7 +323,6 @@ class RectanglePatchImplanter(PipelineBase):
             implanted.append(imp)
         
         return implanted
-        #return torch.clamp(torch.stack(implanted,0), 0, 1) # brightness scaling could push above 1
     
     def forward(self, patches, control=False, evaluate=False, params={}, **kwargs):
         """
@@ -409,34 +368,6 @@ class RectanglePatchImplanter(PipelineBase):
                                          self.mask[k], self.params["scale_brightness"])
 
         return torch.clamp(torch.stack(images,0), 0, 1), kwargs
-            
-        """
-        # figure out offset of patches
-        bs = len(s["box"])
-        dx = torch.zeros(bs)
-        dy = torch.zeros(bs)
-        boxx = torch.zeros(bs)
-        boxy = torch.zeros(bs)
-        # for every element in the batch
-        for i in range(bs):
-            # get coordinates of the box we have to place the patch in
-            box = boxes[s["image"][i]][s["box"][i]]
-            # vertical range is the height of the box minus height of the patch
-            dy[i] = box[3] - box[1] - patchlist[i].shape[1]
-            # horizontal range is with width of the box minus width of the patch
-            dx[i] = box[2] - box[0] - patchlist[i].shape[2]
-            boxx[i] = box[0]
-            boxy[i] = box[1]
-            
-        offset_y = (dy*s["offset_frac_y"] + boxy).type(torch.IntTensor)
-        offset_x = (dx*s["offset_frac_x"] + boxx).type(torch.IntTensor)"""
-        #offset_x, offset_y = get_pixel_offsets_from_fractional_offsets(s, boxes, patchlist)
-        #images = [images[i] for i in s["image"]]
-        
-        #if control:
-        #    return torch.stack(images,0), kwargs
-        
-        #return self._implant_patch(images, patchlist, offset_x, offset_y, self.params["scale_brightness"]), kwargs
     
     def plot_boxes(self, evaluate=False):
         """
