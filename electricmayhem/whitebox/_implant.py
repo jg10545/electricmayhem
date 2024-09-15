@@ -112,14 +112,6 @@ class RectanglePatchImplanter(PipelineBase):
         :df: dataframe containing an "image" column with paths to images, xmin/ymin/xmax/ymax columns
             giving box coordinates, and (optionally) "patch" column (specifying which patch name the
             box is for) and "mode" column (train/eval)
-        :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
-        :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
-            {"img1":[[xmin1, ymin1, xmax1, ymax1], [xmin2, ymin2, xmax2, ymax2]]}
-            or, if implanting multiple patches per image,
-            {"img1":{"patch1":[[xmin1, ymin1, xmax1, ymax1], [xmin2, ymin2, xmax2, ymax2]],
-                    "patch2":[[xmin3, ymin3, xmax3, ymax3]]}}
-        :eval_imagedict: separate dictionary of images to evaluate on
-        :eval_boxdict: separate dictionary of lists of bounding boxes for evaluation
         :scale: tuple of floats; range of scaling factors
         :offset_frac_x: None or float between 0 and 1- optionally specify a relative x position within the target box for the patch.
         :offset_frac_y: None or float between 0 and 1- optionally specify a relative y position within the target box for the patch.
@@ -403,18 +395,6 @@ class RectanglePatchImplanter(PipelineBase):
                             ax.add_artist(rect)
                             ax.text(xw[0], xw[1], f"{k} {j}")
                         ax.set_title(imgkeys[i])
-
-
-                    """
-                    for j in range(len(boxes[i])):
-                        b = boxes[i][j]
-                        xw = (b[0], b[1])
-                        width = b[2]-b[0]
-                        height = b[3]-b[1]
-                        rect = matplotlib.patches.Rectangle(xw, width, height, linewidth=2, fill=False, color="r")
-                        ax.add_artist(rect)
-                        ax.text(xw[0], xw[1], str(j))
-                    ax.set_title(imgkeys[i])"""
                 
                 i += 1
         return fig
@@ -466,20 +446,12 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
     
     """
     name = "FixedRatioRectanglePatchImplanter"
-    
-    def __init__(self, imagedict, boxdict, eval_imagedict=None,
-                 eval_boxdict=None, frac=0.5, scale_by="min",
-                 offset_frac_x=None, offset_frac_y=None, mask=None,
-                 scale_brightness=False):
+    def __init__(self, df, frac, scale_by="min", offset_frac_x=None,
+                 offset_frac_y=None, mask=1, scale_brightness=False, dataset_name=None):
         """
-        :imagedict: dictionary mapping keys to images, as PIL.Image objects or 3D numpy arrays
-        :boxdict: dictionary mapping the same keys to lists of bounding boxes, i.e.
-            {"img1":[[xmin1, ymin1, xmax1, ymax1], [xmin2, ymin2, xmax2, ymax2]]}
-            or, if implanting multiple patches per image,
-            {"img1":{"patch1":[[xmin1, ymin1, xmax1, ymax1], [xmin2, ymin2, xmax2, ymax2]],
-                    "patch2":[[xmin3, ymin3, xmax3, ymax3]]}}
-        :eval_imagedict: separate dictionary of images to evaluate on
-        :eval_boxdict: separate dictionary of lists of bounding boxes for evaluation
+        :df: dataframe containing an "image" column with paths to images, xmin/ymin/xmax/ymax columns
+            giving box coordinates, and (optionally) "patch" column (specifying which patch name the
+            box is for) and "mode" column (train/eval)
         :frac: float; relative size
         :scale_by: str; whether to use the "height", "width", of the box, or "min" 
             of the two for scaling
@@ -488,85 +460,95 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
         :mask: None, scalar between 0 and 1, or torch.Tensor on the unit interval to use for masking the patch
         :scale_brightness: if True, adjust brightness of patch to match the average brightness of the section of
             image it's replacing
+        :dataset_name: None or str; name of dataset to be logged in mlflow
         """
         super(RectanglePatchImplanter, self).__init__()
+        df, patch_keys, img_keys_train, images_train, boxes_train, img_keys_eval, images_eval, boxes_eval = _unpack_rectangle_dataset(df)
+        self.df = df
+        self.patch_keys = patch_keys
         # save training image/box information
-        self.imgkeys = list(imagedict.keys())
-        self.images = torch.nn.ParameterList([_img_to_tensor(imagedict[k]) for k in self.imgkeys])
-        self.boxes = [boxdict[k] for k in self.imgkeys]
-        self.mask = mask
-        self._sample_scale = False # whether self.sample() should sample a random scaling factor for patch
+        self.imgkeys = img_keys_train
+        self.images = torch.nn.ParameterList(images_train)
+        self.boxes = boxes_train
+
+        self.eval_imgkeys = img_keys_eval
+        self.eval_images = torch.nn.ParameterList(images_eval)
+        self.eval_boxes = boxes_eval
+
+        # MASK STUFF
+        self.mask = torch.nn.ParameterDict(_prep_masks(patch_keys, mask))
+
+        self._dataset_name = dataset_name
+        self._sample_scale = False # scaling factor doesn't need to be sampled independently for this case
         self._sample_offsets = True # whether self.sample() should sample offsets relative to the box
         
-        # save eval image/box information
-        if eval_imagedict is None:
-            eval_imagedict = imagedict
-            eval_boxdict = boxdict
-            
-        self.eval_imgkeys = list(eval_imagedict.keys())
-        self.eval_images = torch.nn.ParameterList([_img_to_tensor(eval_imagedict[k]) for k in
-                                                   self.eval_imgkeys])
-        self.eval_boxes = [eval_boxdict[k] for k in self.eval_imgkeys]
-            
-        
-        
         self.params = {"frac":frac, "imgkeys":self.imgkeys,
-                       "eval_imgkeys":self.eval_imgkeys, 
-                       "scale_by":scale_by,
+                       "eval_imgkeys":self.eval_imgkeys,
                        "offset_frac_x":offset_frac_x,
                        "offset_frac_y":offset_frac_y,
-                       "scale_brightness":scale_brightness,
-                       "mask":self._get_mask_summary(mask)}
+                       "mask":self._get_mask_summary(mask),
+                       "scale_brightness":scale_brightness}
         self.lastsample = {}
         
         assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
         
-        
-    def DEPRECATED_sample(self, n, evaluate=False, **kwargs):
+    def _add_patch_scales_to_sampdict(self, s, patches, evaluate=False):
         """
-        Sample implantation parameters for batch size n, overwriting with
-        kwargs if necessary.
+        For this implanter, once we've sampled the target image for each batch element, and the box for each
+        patch and box element, then amount we have to scale each patch for each batch element is deterministic.
+
+        This function works out how much to resize each patch to hit a fixed fraction of the box size for every
+        patch in every batch element. It just shoehorns that info back into the sampled dictionary, which might not
+        be the most elegant approach.
+
+        :s: dictionary of sampled parameters created by self.sample(); should be missing elements like "scale_patch"
+        :patches: dictionary of patches (which we'll use to get the unscaled dimensions)
+        :evalute: bool; whether this is an evaluate step
         """
-        p = self.params
-        
         if evaluate:
             images = self.eval_images
             boxes = self.eval_boxes
-            self._eval_last = True
         else:
             images = self.images
             boxes = self.boxes
-            self._eval_last = False
-        
-        sampdict = {k:kwargs[k] for k in kwargs}
-        if "image" not in kwargs:
-            sampdict["image"] = torch.randint(low=0, high=len(images), size=[n])
-        if "box" not in kwargs:
-            i = torch.tensor([torch.randint(low=0, high=len(boxes[j]), size=[]) for j in sampdict["image"]])
-            sampdict["box"] = i
-        if "offset_frac_x" not in kwargs:
-            if p["offset_frac_x"] is None:
-                sampdict["offset_frac_x"] = torch.rand([n])
-            else:
-                sampdict["offset_frac_x"] = torch.tensor(n*[p["offset_frac_x"]])
-        if "offset_frac_y" not in kwargs:
-            if p["offset_frac_y"] is None:
-                sampdict["offset_frac_y"] = torch.rand([n])
-            else:
-                sampdict["offset_frac_y"] = torch.tensor(n*[p["offset_frac_y"]])
-            
-        self.lastsample = sampdict
-        
-    
+
+        bs = len(s["image"])
+        all_patch_scales = {}
+        for k in self.patch_keys:
+            N,C,H,W = patches[k].shape
+            patch_scales = []
+            for i in range(bs):
+                box = boxes[s["image"][i]][key][s[f"box_{key}"][i].item()]
+                box_width = box[2] - box[0]
+                box_height = box[3] - box[1]
+                # figure out which axis to scale by
+                scale_by = self.params["scale_by"]
+                if scale_by == "min":
+                    if box_width < box_height:
+                        scale_by = "width"
+                    else:
+                        scale_by = "height"
+                if scale_by == "width":
+                    factor = self.params["frac"]*box_width/W
+                else:
+                    factor = self.params["frac"]*box_height/H
+                patch_scales.append(factor)
+            s[f"scale_{k}"] = torch.Tensor(patch_scales) # does this need to be a tensor or could I 
+            # leave as a list?
+
     def forward(self, patches, control=False, evaluate=False, params={}, **kwargs):
         """
         Implant a batch of patches in a batch of images
         
-        :patches: torch Tensor; stack of patches
+        :patches: torch Tensor; stack of patches or a dictionary of patch batches
         :control: if True, leave the patches off (for diagnostics)
         :params: dictionary of params to override random sampling
         :kwargs: passed to self.sample()
         """
+        # if passed a single patch batch, wrap it in a dictionary
+        if isinstance(patches, torch.Tensor):
+            patches = {"patch":patches}
+
         if evaluate:
             images = self.eval_images
             boxes = self.eval_boxes
@@ -577,54 +559,26 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
         if control:
             params = self.lastsample
         # sample parameters if necessary
-        self.sample(patches.shape[0], evaluate=evaluate, **params)
+        self.sample(patches[self.patch_keys[0]].shape[0], evaluate=evaluate, **params)
         s = self.lastsample
         
-        patchlist = [patches[i] for i in range(patches.shape[0])]
-        patchlist= []
-            
-        # figure out offset of patches
-        bs = len(s["box"])
-        dx = torch.zeros(bs)
-        dy = torch.zeros(bs)
-        boxx = torch.zeros(bs)
-        boxy = torch.zeros(bs)
-        # for each image in the batch
-        for i in range(bs):
-            box = boxes[s["image"][i]][s["box"][i]]
-            box_width = box[2] - box[0]
-            box_height = box[3] - box[1]
-            # gotta rescale the patch
-            C,H,W = patches[i].shape
-            # figure out which axis to scale by
-            scale_by = self.params["scale_by"]
-            if scale_by == "min":
-                if box_width < box_height:
-                    scale_by = "width"
-                else:
-                    scale_by = "height"
-            if scale_by == "width":
-                factor = self.params["frac"]*box_width/W
-            else:
-                factor = self.params["frac"]*box_height/H
-            patchlist.append(
-                kornia.geometry.transform.rescale(patches[i].unsqueeze(0), 
-                                                  factor).squeeze(0))
-            
-            dy[i] = box[3] - box[1] - patchlist[i].shape[1]
-            dx[i] = box[2] - box[0] - patchlist[i].shape[2]
-            boxx[i] = box[0]
-            boxy[i] = box[1]
-            
-        offset_y = (dy*s["offset_frac_y"] + boxy).type(torch.IntTensor)
-        offset_x = (dx*s["offset_frac_x"] + boxx).type(torch.IntTensor)
         images = [images[i] for i in s["image"]]
-        
         if control:
-            return torch.stack(images,0)
+            return torch.stack(images,0), kwargs
         
-        return self._implant_patch(images, patchlist, offset_x, offset_y, self.params["scale_brightness"])
-    
+        # for this implanter the patch scales are deterministic
+        self._add_patch_scales_to_sampdict(s, patches, evaluate=evaluate)
+        patchlist = {k:[kornia.geometry.rescale(patches[k][i].unsqueeze(0), 
+                                                    (s[f"scale_{k}"][i], s[f"scale_{k}"][i])).squeeze(0) 
+                                  for i in range(patches[k].shape[0])] for k in patches}
+        
+        # iterate over patches, implanting one at a time
+        for k in patches:
+            offset_x, offset_y = get_pixel_offsets_from_fractional_offsets(s, boxes, patchlist[k], k)
+            images = self._implant_patch(images, patchlist[k], offset_x, offset_y, 
+                                         self.mask[k], self.params["scale_brightness"])
+
+        return torch.clamp(torch.stack(images,0), 0, 1), kwargs
     
     
 
