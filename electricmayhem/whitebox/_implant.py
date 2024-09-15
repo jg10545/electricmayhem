@@ -226,8 +226,12 @@ class RectanglePatchImplanter(PipelineBase):
         
         # check each patch
         for k in patch:
-            max_y = int(self.params["scale"][1]*patch[k].shape[1])
-            max_x = int(self.params["scale"][1]*patch[k].shape[2])
+            if "scale" in self.params:
+                scale = self.params["scale"]
+            else:
+                scale = (1,1)
+            max_y = int(scale[1]*patch[k].shape[1])
+            max_x = int(scale[1]*patch[k].shape[2])
             # in each image
             for i in range(len(self.images)):
                 # in each box defined for that patch in that image
@@ -482,15 +486,13 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
         self._sample_scale = False # scaling factor doesn't need to be sampled independently for this case
         self._sample_offsets = True # whether self.sample() should sample offsets relative to the box
         
-        self.params = {"frac":frac, "imgkeys":self.imgkeys,
+        self.params = {"frac":frac, "imgkeys":self.imgkeys, "scale_by":scale_by,
                        "eval_imgkeys":self.eval_imgkeys,
                        "offset_frac_x":offset_frac_x,
                        "offset_frac_y":offset_frac_y,
                        "mask":self._get_mask_summary(mask),
                        "scale_brightness":scale_brightness}
         self.lastsample = {}
-        
-        assert len(imagedict) == len(boxdict), "should be same number of images and boxes"
         
     def _add_patch_scales_to_sampdict(self, s, patches, evaluate=False):
         """
@@ -518,7 +520,7 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
             N,C,H,W = patches[k].shape
             patch_scales = []
             for i in range(bs):
-                box = boxes[s["image"][i]][key][s[f"box_{key}"][i].item()]
+                box = boxes[s["image"][i]][k][s[f"box_{k}"][i].item()]
                 box_width = box[2] - box[0]
                 box_height = box[3] - box[1]
                 # figure out which axis to scale by

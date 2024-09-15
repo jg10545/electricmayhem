@@ -465,93 +465,173 @@ def test_rectanglepatchimplanter_get_last_sample_as_dict_evaluate_mode(test_png_
         
         
 
-def test_fixedratiorectanglepatchimplanter_train_and_eval_images():
-    imp = FixedRatioRectanglePatchImplanter({"im1":testtensor, "im2":testtensor}, 
-                                  {"im1":[box], "im2":[box]}, 
-                                  eval_imagedict={"im3":testtensor2, "im4":testtensor2},
-                                  eval_boxdict={"im3":[box], "im4":[box]}, 
-                                  frac=0.5)
+def test_fixedratiorectanglepatchimplanter_train_and_eval_images(test_png_1, test_png_2):
+    box1 = [5, 5, 80, 80]
+    box2 = [10, 10, 90, 90]
+    df = pd.DataFrame({"image":[test_png_1, test_png_2, test_png_1, test_png_2],
+                   "xmin":[box1[0], box1[0], box2[0], box2[0]],
+                   "ymin":[box1[1], box1[1], box2[1], box2[1]],
+                   "xmax":[box1[2], box1[2], box2[2], box2[2]],
+                   "ymax":[box1[3], box1[3], box2[3], box2[3]],
+                   "mode":["train", "eval", "train", "eval"]})
+    imp = FixedRatioRectanglePatchImplanter(df, 0.5)
     # run a training image through
-    implanted = imp(colorpatch.unsqueeze(0))
+    implanted, _ = imp(colorpatch.unsqueeze(0))
+    assert implanted.shape == (1, 3,100,100)
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), control=True)
+    unimplanted, _ = imp(colorpatch.unsqueeze(0), control=True)
     assert (unimplanted.squeeze(0) == imp.images[0]).all()
     assert not (unimplanted.squeeze(0) == imp.eval_images[0]).all()
+    assert unimplanted.shape == (1,3,100,100)
     # run an eval image through
-    implanted = imp(colorpatch.unsqueeze(0), evaluate=True)
+    implanted, _ = imp(colorpatch.unsqueeze(0), evaluate=True)
+    assert implanted.shape == (1,3,100,100)
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
+    unimplanted, _ = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
+    assert not (unimplanted.squeeze(0) == imp.images[0]).all()
+    assert (unimplanted.squeeze(0) == imp.eval_images[0]).all()
+
+
+def test_fixedratiorectanglepatchimplanter_train_and_eval_images_multiple_patches(test_png_1, test_png_2):
+    box1 = [5, 5, 80, 80]
+    box2 = [10, 10, 90, 90]
+    df = pd.DataFrame({"image":[test_png_1, test_png_2, test_png_1, test_png_2],
+                   "xmin":[box1[0], box1[0], box2[0], box2[0]],
+                   "ymin":[box1[1], box1[1], box2[1], box2[1]],
+                   "xmax":[box1[2], box1[2], box2[2], box2[2]],
+                   "ymax":[box1[3], box1[3], box2[3], box2[3]],
+                   "mode":["train", "eval", "train", "eval"],
+                   "patch":["foo", "foo", "bar", "bar"]}
+                   )
+    imp = FixedRatioRectanglePatchImplanter(df, 0.5)
+    patches = {"foo":colorpatch.unsqueeze(0), "bar":bwpatch.unsqueeze(0)}
+    # run a training image through
+    implanted, _ = imp(patches)
+    assert implanted.shape == (1, 3,100,100)
+    # do it again without the patch
+    unimplanted, _ = imp(patches, control=True)
+    assert (unimplanted.squeeze(0) == imp.images[0]).all()
+    assert not (unimplanted.squeeze(0) == imp.eval_images[0]).all()
+    assert unimplanted.shape == (1,3,100,100)
+    # run an eval image through
+    implanted, _ = imp(patches, evaluate=True)
+    assert implanted.shape == (1,3,100,100)
+    # do it again without the patch
+    unimplanted, _ = imp(patches, evaluate=True, control=True)
     assert not (unimplanted.squeeze(0) == imp.images[0]).all()
     assert (unimplanted.squeeze(0) == imp.eval_images[0]).all()
     
 
-def test_fixedratiorectanglepatchimplanter_train_and_eval_images_with_brightness_scaling():
-    imp = FixedRatioRectanglePatchImplanter({"im1":testtensor, "im2":testtensor}, 
-                                  {"im1":[box], "im2":[box]}, 
-                                  eval_imagedict={"im3":testtensor2, "im4":testtensor2},
-                                  eval_boxdict={"im3":[box], "im4":[box]}, 
-                                  frac=0.5, scale_brightness=True)
+def test_fixedratiorectanglepatchimplanter_train_and_eval_images_with_brightness_scaling(test_png_1, test_png_2):
+    box1 = [5, 5, 80, 80]
+    box2 = [10, 10, 90, 90]
+    df = pd.DataFrame({"image":[test_png_1, test_png_2, test_png_1, test_png_2],
+                   "xmin":[box1[0], box1[0], box2[0], box2[0]],
+                   "ymin":[box1[1], box1[1], box2[1], box2[1]],
+                   "xmax":[box1[2], box1[2], box2[2], box2[2]],
+                   "ymax":[box1[3], box1[3], box2[3], box2[3]],
+                   "mode":["train", "eval", "train", "eval"],
+                   "patch":["foo", "foo", "bar", "bar"]}
+                   )
+    imp = FixedRatioRectanglePatchImplanter(df, 0.5, scale_brightness=True)
+    patches = {"foo":colorpatch.unsqueeze(0), "bar":bwpatch.unsqueeze(0)}
     # run a training image through
-    implanted = imp(colorpatch.unsqueeze(0))
+    implanted, _ = imp(patches)
+    assert implanted.shape == (1, 3,100,100)
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), control=True)
+    unimplanted, _ = imp(patches, control=True)
     assert (unimplanted.squeeze(0) == imp.images[0]).all()
     assert not (unimplanted.squeeze(0) == imp.eval_images[0]).all()
+    assert unimplanted.shape == (1,3,100,100)
     # run an eval image through
-    implanted = imp(colorpatch.unsqueeze(0), evaluate=True)
+    implanted, _ = imp(patches, evaluate=True)
+    assert implanted.shape == (1,3,100,100)
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
+    unimplanted, _ = imp(patches, evaluate=True, control=True)
     assert not (unimplanted.squeeze(0) == imp.images[0]).all()
     assert (unimplanted.squeeze(0) == imp.eval_images[0]).all()
-    
 
-def test_fixedratiorectanglepatchimplanter_train_and_eval_images_scale_by_height():
-    imp = FixedRatioRectanglePatchImplanter({"im1":testtensor, "im2":testtensor}, 
-                                  {"im1":[box], "im2":[box]}, 
-                                  eval_imagedict={"im3":testtensor2, "im4":testtensor2},
-                                  eval_boxdict={"im3":[box], "im4":[box]}, 
-                                  frac=0.5, scale_by="height")
+
+def test_fixedratiorectanglepatchimplanter_train_and_eval_images_scale_by_height(test_png_1, test_png_2):
+    box1 = [5, 5, 80, 80]
+    box2 = [10, 10, 90, 90]
+    df = pd.DataFrame({"image":[test_png_1, test_png_2, test_png_1, test_png_2],
+                   "xmin":[box1[0], box1[0], box2[0], box2[0]],
+                   "ymin":[box1[1], box1[1], box2[1], box2[1]],
+                   "xmax":[box1[2], box1[2], box2[2], box2[2]],
+                   "ymax":[box1[3], box1[3], box2[3], box2[3]],
+                   "mode":["train", "eval", "train", "eval"],
+                   "patch":["foo", "foo", "bar", "bar"]}
+                   )
+    imp = FixedRatioRectanglePatchImplanter(df, 0.5, scale_by="height")
+    patches = {"foo":colorpatch.unsqueeze(0), "bar":bwpatch.unsqueeze(0)}
     # run a training image through
-    implanted = imp(colorpatch.unsqueeze(0))
+    implanted, _ = imp(patches)
+    assert implanted.shape == (1, 3,100,100)
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), control=True)
+    unimplanted, _ = imp(patches, control=True)
     assert (unimplanted.squeeze(0) == imp.images[0]).all()
     assert not (unimplanted.squeeze(0) == imp.eval_images[0]).all()
+    assert unimplanted.shape == (1,3,100,100)
     # run an eval image through
-    implanted = imp(colorpatch.unsqueeze(0), evaluate=True)
+    implanted, _ = imp(patches, evaluate=True)
+    assert implanted.shape == (1,3,100,100)
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
+    unimplanted, _ = imp(patches, evaluate=True, control=True)
     assert not (unimplanted.squeeze(0) == imp.images[0]).all()
     assert (unimplanted.squeeze(0) == imp.eval_images[0]).all()
       
-def test_fixedratiorectanglepatchimplanter_train_and_eval_images_scale_by_width():
-    imp = FixedRatioRectanglePatchImplanter({"im1":testtensor, "im2":testtensor}, 
-                                  {"im1":[box], "im2":[box]}, 
-                                  eval_imagedict={"im3":testtensor2, "im4":testtensor2},
-                                  eval_boxdict={"im3":[box], "im4":[box]}, 
-                                  frac=0.5, scale_by="width")
+def test_fixedratiorectanglepatchimplanter_train_and_eval_images_scale_by_width(test_png_1, test_png_2):
+    box1 = [5, 5, 80, 80]
+    box2 = [10, 10, 90, 90]
+    df = pd.DataFrame({"image":[test_png_1, test_png_2, test_png_1, test_png_2],
+                   "xmin":[box1[0], box1[0], box2[0], box2[0]],
+                   "ymin":[box1[1], box1[1], box2[1], box2[1]],
+                   "xmax":[box1[2], box1[2], box2[2], box2[2]],
+                   "ymax":[box1[3], box1[3], box2[3], box2[3]],
+                   "mode":["train", "eval", "train", "eval"],
+                   "patch":["foo", "foo", "bar", "bar"]}
+                   )
+    imp = FixedRatioRectanglePatchImplanter(df, 0.5, scale_by="width")
+    patches = {"foo":colorpatch.unsqueeze(0), "bar":bwpatch.unsqueeze(0)}
     # run a training image through
-    implanted = imp(colorpatch.unsqueeze(0))
+    implanted, _ = imp(patches)
+    assert implanted.shape == (1, 3,100,100)
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), control=True)
+    unimplanted, _ = imp(patches, control=True)
     assert (unimplanted.squeeze(0) == imp.images[0]).all()
     assert not (unimplanted.squeeze(0) == imp.eval_images[0]).all()
+    assert unimplanted.shape == (1,3,100,100)
     # run an eval image through
-    implanted = imp(colorpatch.unsqueeze(0), evaluate=True)
+    implanted, _ = imp(patches, evaluate=True)
+    assert implanted.shape == (1,3,100,100)
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
+    unimplanted, _ = imp(patches, evaluate=True, control=True)
     assert not (unimplanted.squeeze(0) == imp.images[0]).all()
     assert (unimplanted.squeeze(0) == imp.eval_images[0]).all()
     
 
-def test_fixedratiorectanglepatchimplanter_sample_with_fixed_offset():
-    imp = FixedRatioRectanglePatchImplanter({"im1":testtensor}, {"im1":[box]},
-                                  offset_frac_x=0.5, offset_frac_y=0.25)
+def test_fixedratiorectanglepatchimplanter_sample_with_fixed_offset(test_png_1, test_png_2):
+    box1 = [5, 5, 80, 80]
+    box2 = [10, 10, 90, 90]
+    df = pd.DataFrame({"image":[test_png_1, test_png_2, test_png_1, test_png_2],
+                   "xmin":[box1[0], box1[0], box2[0], box2[0]],
+                   "ymin":[box1[1], box1[1], box2[1], box2[1]],
+                   "xmax":[box1[2], box1[2], box2[2], box2[2]],
+                   "ymax":[box1[3], box1[3], box2[3], box2[3]],
+                   "mode":["train", "eval", "train", "eval"],
+                   "patch":["foo", "foo", "bar", "bar"]}
+                   )
+    imp = FixedRatioRectanglePatchImplanter(df, 0.5, offset_frac_x=0.5, offset_frac_y=0.25)
+    patches = {"foo":colorpatch.unsqueeze(0), "bar":bwpatch.unsqueeze(0)}
+    # run a training image through
+    implanted, _ = imp(patches)
     imp.sample(3)
     
     for i in range(3):
-        assert imp.lastsample["offset_frac_x"][i] == 0.5
-        assert imp.lastsample["offset_frac_y"][i] == 0.25
+        for k in ["foo", "bar"]:
+            assert imp.lastsample[f"offset_frac_x_{k}"][i] == 0.5
+            assert imp.lastsample[f"offset_frac_y_{k}"][i] == 0.25
     
     
 def test_scaletoboxrectanglepatchimplanter_train_and_eval_images():
