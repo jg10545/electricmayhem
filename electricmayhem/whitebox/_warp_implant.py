@@ -165,6 +165,9 @@ class WarpPatchImplanter(RectanglePatchImplanter):
         super().__init__(imagedict, boxdict, eval_imagedict=eval_imagedict,
                          eval_boxdict=eval_boxdict, mask=mask,
                          scale_brightness=scale_brightness)
+        
+        self._sample_scale = False # whether self.sample() should sample a random scaling factor for patch
+        self._sample_offsets = False # whether self.sample() should sample offsets relative to the box
 
         # some of the parameters in the parent class aren't used here- let's remove some clutter
         for key in ["scale", "offset_frac_x", "offset_frac_y"]:
@@ -176,7 +179,7 @@ class WarpPatchImplanter(RectanglePatchImplanter):
     def get_min_dimensions(self):
         assert False, "not implemented for this implanter"
         
-    def sample(self, n, evaluate=False, **kwargs):
+    def DEPRECATED_sample(self, n, evaluate=False, **kwargs):
         """
         Sample implantation parameters for batch size n, overwriting with
         kwargs if necessary.
