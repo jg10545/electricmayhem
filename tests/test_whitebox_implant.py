@@ -634,42 +634,53 @@ def test_fixedratiorectanglepatchimplanter_sample_with_fixed_offset(test_png_1, 
             assert imp.lastsample[f"offset_frac_y_{k}"][i] == 0.25
     
     
-def test_scaletoboxrectanglepatchimplanter_train_and_eval_images():
-    imp = ScaleToBoxRectanglePatchImplanter({"im1":testtensor, "im2":testtensor}, 
-                                  {"im1":[box], "im2":[box]}, 
-                                  eval_imagedict={"im3":testtensor2, "im4":testtensor2},
-                                  eval_boxdict={"im3":[box], "im4":[box]})
-    
+def test_scaletoboxrectanglepatchimplanter_train_and_eval_images(test_png_1, test_png_2):
+    box1 = [5, 5, 80, 80]
+    box2 = [10, 10, 90, 90]
+    df = pd.DataFrame({"image":[test_png_1, test_png_2, test_png_1, test_png_2],
+                   "xmin":[box1[0], box1[0], box2[0], box2[0]],
+                   "ymin":[box1[1], box1[1], box2[1], box2[1]],
+                   "xmax":[box1[2], box1[2], box2[2], box2[2]],
+                   "ymax":[box1[3], box1[3], box2[3], box2[3]],
+                   "mode":["train", "eval", "train", "eval"],
+                   "patch":["foo", "foo", "bar", "bar"]}
+                   )
+    imp = ScaleToBoxRectanglePatchImplanter(df)
     # run a training image through
-    implanted = imp(colorpatch.unsqueeze(0))
+    implanted, _ = imp({"foo":colorpatch.unsqueeze(0), "bar":colorpatch.unsqueeze(0)})
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), control=True)
+    unimplanted, _ = imp({"foo":colorpatch.unsqueeze(0), "bar":colorpatch.unsqueeze(0)}, control=True)
     assert (unimplanted.squeeze(0) == imp.images[0]).all()
     assert not (unimplanted.squeeze(0) == imp.eval_images[0]).all()
     # run an eval image through
-    implanted = imp(colorpatch.unsqueeze(0), evaluate=True)
+    implanted, _ = imp({"foo":colorpatch.unsqueeze(0), "bar":colorpatch.unsqueeze(0)}, evaluate=True)
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
+    unimplanted, _ = imp({"foo":colorpatch.unsqueeze(0), "bar":colorpatch.unsqueeze(0)}, evaluate=True, control=True)
     assert not (unimplanted.squeeze(0) == imp.images[0]).all()
     assert (unimplanted.squeeze(0) == imp.eval_images[0]).all()
     
-def test_scaletoboxrectanglepatchimplanter_train_and_eval_images_with_brightness_scaling():
-    imp = ScaleToBoxRectanglePatchImplanter({"im1":testtensor, "im2":testtensor}, 
-                                  {"im1":[box], "im2":[box]}, 
-                                  eval_imagedict={"im3":testtensor2, "im4":testtensor2},
-                                  eval_boxdict={"im3":[box], "im4":[box]},
-                                  scale_brightness=True)
-    
+def test_scaletoboxrectanglepatchimplanter_train_and_eval_images_with_brightness_scaling(test_png_1, test_png_2):
+    box1 = [5, 5, 80, 80]
+    box2 = [10, 10, 90, 90]
+    df = pd.DataFrame({"image":[test_png_1, test_png_2, test_png_1, test_png_2],
+                   "xmin":[box1[0], box1[0], box2[0], box2[0]],
+                   "ymin":[box1[1], box1[1], box2[1], box2[1]],
+                   "xmax":[box1[2], box1[2], box2[2], box2[2]],
+                   "ymax":[box1[3], box1[3], box2[3], box2[3]],
+                   "mode":["train", "eval", "train", "eval"],
+                   "patch":["foo", "foo", "bar", "bar"]}
+                   )
+    imp = ScaleToBoxRectanglePatchImplanter(df, scale_brightness=True)
     # run a training image through
-    implanted = imp(colorpatch.unsqueeze(0))
+    implanted, _ = imp({"foo":colorpatch.unsqueeze(0), "bar":colorpatch.unsqueeze(0)})
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), control=True)
+    unimplanted, _ = imp({"foo":colorpatch.unsqueeze(0), "bar":colorpatch.unsqueeze(0)}, control=True)
     assert (unimplanted.squeeze(0) == imp.images[0]).all()
     assert not (unimplanted.squeeze(0) == imp.eval_images[0]).all()
     # run an eval image through
-    implanted = imp(colorpatch.unsqueeze(0), evaluate=True)
+    implanted, _ = imp({"foo":colorpatch.unsqueeze(0), "bar":colorpatch.unsqueeze(0)}, evaluate=True)
     # do it again without the patch
-    unimplanted = imp(colorpatch.unsqueeze(0), evaluate=True, control=True)
+    unimplanted, _ = imp({"foo":colorpatch.unsqueeze(0), "bar":colorpatch.unsqueeze(0)}, evaluate=True, control=True)
     assert not (unimplanted.squeeze(0) == imp.images[0]).all()
     assert (unimplanted.squeeze(0) == imp.eval_images[0]).all()
     

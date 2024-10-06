@@ -1,7 +1,8 @@
 import numpy as np
 import torch
+import kornia.geometry
 
-from electricmayhem.whitebox._warp_implant import warp_and_implant_batch, WarpPatchImplanter, get_mask
+from electricmayhem.whitebox._warp_implant import warp_and_implant_batch, WarpPatchImplanter, get_mask, warp_and_implant_single
 
 H = 40
 W = 27
@@ -16,7 +17,73 @@ boxdict_bad = {"foo":[[[10,10],[10,35],[20,35],[20]], [[0,10],[23,35],[20,10]]],
           "bar":[[[10,10],[10,38],[20,35],[20,10]], [[5,4],[10,35],[20,35],[20,10]]]}
 
 patch_batch = torch.tensor(np.random.uniform(0,1, (B,C,7,11)).astype(np.float32))
-mask = torch.tensor(np.random.uniform(0, 1, size=(11,13)).astype(np.float32))
+mask = torch.tensor(np.random.uniform(0, 1, size=(H,W)).astype(np.float32))
+
+patch_border = torch.tensor([[0.,0.],
+                                 [patch_batch.shape[3], 0], 
+                                 [patch_batch.shape[3], patch_batch.shape[2]], 
+                                 [0., patch_batch.shape[2]]]).unsqueeze(0) # (1,4,2)
+corners = torch.tensor([[1,2], [5,2], [5,7], [1,7]]).type(torch.float32).unsqueeze(0)
+tfm = kornia.geometry.transform.get_perspective_transform(patch_border, corners)
+target = torch.tensor(np.random.uniform(0,1,size=(3,H,W)).astype(np.float32))
+chromakey = kornia.geometry.transform.warp_perspective(patch_batch[0].unsqueeze(0), tfm,
+                                                      (target.shape[1], target.shape[2]),
+                                                      padding_mode="fill", 
+                                                      fill_value=torch.tensor([0,1,0])) # (B,C,H,W)
+# use the green background to create a mask for deciding where to overwrite the target image
+# with the patch
+warpmask = ((chromakey[:,0,:,:] == 0)&(chromakey[:,1,:,:] == 1)&(chromakey[:,2,:,:] == 0)).type(torch.float32) # (B,H,W)
+warpmask = warpmask.unsqueeze(1) # (1,1,H,W)
+
+
+def test_warp_and_implant_single_gives_correct_output_shape():
+    implanted = warp_and_implant_single(patch_batch[0], target, tfm[0].unsqueeze(0), warpmask)
+    # output should have the shape of the target batch
+    assert implanted.shape == target.shape
+    # some pixels in the target batch should be unchanged
+    assert torch.sum(target == implanted) > 0
+
+
+def test_warp_and_implant_single_gives_correct_output_shape_with_brightness_scaling():
+    implanted = warp_and_implant_single(patch_batch[0], target, tfm[0].unsqueeze(0), warpmask, scale_brightness=True)
+    # output should have the shape of the target batch
+    assert implanted.shape == target.shape
+    # some pixels in the target batch should be unchanged
+    assert torch.sum(target == implanted) > 0
+
+
+def test_warp_and_implant_single_gives_correct_output_shape_with_tensor_mask():
+    implanted = warp_and_implant_single(patch_batch[0], target, tfm[0].unsqueeze(0), warpmask, mask=mask)
+    # output should have the shape of the target batch
+    assert implanted.shape == target.shape
+    # some pixels in the target batch should be unchanged
+    assert torch.sum(target == implanted) > 0
+
+
+def test_warp_and_implant_single_gives_correct_output_shape_with_scalar_mask():
+    implanted = warp_and_implant_single(patch_batch[0], target, tfm[0].unsqueeze(0), warpmask, mask=0.5)
+    # output should have the shape of the target batch
+    assert implanted.shape == target.shape
+    # some pixels in the target batch should be unchanged
+    assert torch.sum(target == implanted) > 0
+
+
+def test_warp_and_implant_single_gives_correct_output_shape_with_tensor_mask_and_brightness_scaling():
+    implanted = warp_and_implant_single(patch_batch[0], target, tfm[0].unsqueeze(0), warpmask, mask=mask,
+                                        scale_brightness=True)
+    # output should have the shape of the target batch
+    assert implanted.shape == target.shape
+    # some pixels in the target batch should be unchanged
+    assert torch.sum(target == implanted) > 0
+
+
+def test_warp_and_implant_single_gives_correct_output_shape_with_scalar_mask_and_brightness_scaling():
+    implanted = warp_and_implant_single(patch_batch[0], target, tfm[0].unsqueeze(0), warpmask, mask=0.5,
+                                        scale_brightness=True)
+    # output should have the shape of the target batch
+    assert implanted.shape == target.shape
+    # some pixels in the target batch should be unchanged
+    assert torch.sum(target == implanted) > 0
 
 
 def test_warp_and_implant_batch_gives_correct_output_shape():

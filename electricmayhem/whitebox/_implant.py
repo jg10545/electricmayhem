@@ -629,23 +629,26 @@ class ScaleToBoxRectanglePatchImplanter(RectanglePatchImplanter):
         self._sample_scale = False # don't need to sample a scaling factor
         self._sample_offsets = False # or x/y offsets
         
-        self.params = {"scale":list(scale), "imgkeys":self.imgkeys,
+        self.params = {"imgkeys":self.imgkeys,
                        "eval_imgkeys":self.eval_imgkeys,
                        "mask":self._get_mask_summary(mask),
                        "scale_brightness":scale_brightness}
         self.lastsample = {}
-        
         
     
     def forward(self, patches, control=False, evaluate=False, params={}, **kwargs):
         """
         Implant a batch of patches in a batch of images
         
-        :patches: torch Tensor; stack of patches
+        :patches: torch Tensor; stack of patches or a dictionary of patch batches
         :control: if True, leave the patches off (for diagnostics)
         :params: dictionary of params to override random sampling
         :kwargs: passed to self.sample()
         """
+        # if passed a single patch batch, wrap it in a dictionary
+        if isinstance(patches, torch.Tensor):
+            patches = {"patch":patches}
+
         if evaluate:
             images = self.eval_images
             boxes = self.eval_boxes
@@ -656,36 +659,37 @@ class ScaleToBoxRectanglePatchImplanter(RectanglePatchImplanter):
         if control:
             params = self.lastsample
         # sample parameters if necessary
-        self.sample(patches.shape[0], evaluate=evaluate, **params)
+        self.sample(patches[self.patch_keys[0]].shape[0], evaluate=evaluate, **params)
         s = self.lastsample
         
-        patchlist = []
-            
-        # figure out offset of patches
-        bs = len(s["box"])
-        dx = torch.zeros(bs)
-        dy = torch.zeros(bs)
-        boxx = torch.zeros(bs)
-        boxy = torch.zeros(bs)
-        for i in range(bs):
-            box = boxes[s["image"][i]][s["box"][i]]
-            box_h = box[3] - box[1]
-            box_w = box[2] - box[0]
-            patchlist.append(
-                kornia.geometry.resize(patches[i].unsqueeze(0),
-                                        (box_h, box_w)).squeeze(0)
-                )
-            boxx[i] = box[0]
-            boxy[i] = box[1]
-            
-        offset_y = (dy + boxy).type(torch.IntTensor)
-        offset_x = (dx + boxx).type(torch.IntTensor)
         images = [images[i] for i in s["image"]]
-        
         if control:
-            return torch.stack(images,0)
+            return torch.stack(images,0), kwargs
         
-        return self._implant_patch(images, patchlist, offset_x, offset_y, self.params["scale_brightness"])
+        # for this implanter the patch scales are deterministic. for each
+        # patch, for each batch element, figure out what shape to resize
+        # it to
+        patchlist = {}
+        bs = len(images)
+        for k in patches:
+            patchbatch = []
+            for i in range(bs):
+                box = self.boxes[s["image"][i]][k][s[f"box_{k}"][i]]
+                box_h = box[3] - box[1]
+                box_w = box[2] - box[0]
+                patchbatch.append(
+                    kornia.geometry.resize(patches[k][i].unsqueeze(0),
+                                           (box_h, box_w)).squeeze(0))
+            patchlist[k] = patchbatch
+        
+        # iterate over patches, implanting one at a time
+        for k in patches:
+            offset_x, offset_y = get_pixel_offsets_from_fractional_offsets(s, boxes, patchlist[k], k)
+            images = self._implant_patch(images, patchlist[k], offset_x, offset_y,
+                                         self.mask[k], self.params["scale_brightness"])
+
+        return torch.clamp(torch.stack(images,0), 0, 1), kwargs
+        
     
     def validate(self, patch):
         """
