@@ -6,28 +6,81 @@ import matplotlib.pyplot as plt
 import matplotlib.patches
 
 from ._implant import RectanglePatchImplanter
+from electricmayhem._convenience import load_to_tensor
 
-def get_mask(shape, coords, scale=0):
+def get_warpmask_and_tfm(target_shape, patch_shape, coords):
     """
-    Get a black-and-white mask showing which pixels are inside the mask corners
-    :shape: length-3 tuple of mask shape; (C,H,W)
-    :coords: [4,2] array or nested list of corner coordinates
-    :scale: float; if set above zero it will extend the mask by this fraction
+    Precompute information we'll need for warping and implanting patches- the transformation tensor
+    for perspective transforms, and a binary mask showing which pixels are inside the distorted patch 
+    corners.
+
+    We use a separate masking step instead of just picking a weird color (like (0,255,0)) to use as a
+    chromakey, otherwise aliasing effects will cause the chromakey color to bleed into the patch
+    edges.
+
+    Get a black-and-white mask showing which pixels are inside the distorted quadrangle corners
+    :target_shape: length-3 tuple of target image shape; (C,H,W)
+    :patch_shape: length-3 tuple of the patch shape; (C', H', W')
+    :coords: [4,2] array or nested list of corner coordinates showing where the patch should go
+        within the target image
+
+    Returns
+    :warpmask: (1,1,H,W) tensor giving a mask of which pixels are inside
+    :tfm: (1,3,3) perspective transform tensor
     """
-    patch_batch = torch.ones(shape).unsqueeze(0)
+    #patch_batch = torch.ones(shape).unsqueeze(0)
+    patch_batch = torch.ones(patch_shape).unsqueeze(0)
     patch_border = torch.tensor([[0.,0.],
-                                 [patch_batch.shape[3], 0], 
-                                 [patch_batch.shape[3], patch_batch.shape[2]], 
-                                 [0., patch_batch.shape[2]]]).unsqueeze(0) # (1,4,2)
-    coord_batch = torch.tensor([scale_coordinate_list(coords, scale)]).float()
-
-    tfm = kornia.geometry.transform.get_perspective_transform(patch_border, coord_batch) # (B,3,3)
-    mask = kornia.geometry.transform.warp_perspective(patch_batch, tfm,
-                                                      (patch_batch.shape[2], patch_batch.shape[3]),
+                                 [patch_shape[2], 0], 
+                                 [patch_shape[2], patch_shape[1]], 
+                                 [0., patch_shape[1]]]).unsqueeze(0) # (1,4,2)
+    tfm = kornia.geometry.transform.get_perspective_transform(patch_border, coords) # (B,3,3)
+    chromakey = kornia.geometry.transform.warp_perspective(patch_batch, tfm,
+                                                      (target_shape[1], target_shape[2]),
                                                       padding_mode="fill", 
-                                                      fill_value=torch.tensor([0,0,0])) 
-    return mask.squeeze(0)
+                                                      fill_value=torch.tensor([0,1,0])) # (B,C,H,W)
+    # use the green background to create a mask for deciding where to overwrite the target image
+    # with the patch
+    warpmask = ((chromakey[:,0,:,:] == 0)&(chromakey[:,1,:,:] == 1)&(chromakey[:,2,:,:] == 0)).type(torch.float32) # (B,H,W)
+    warpmask = warpmask.unsqueeze(1) # (1,1,H,W)
+    return warpmask, tfm
 
+
+def unpack_warp_dataframe(df, patch_shapes):
+    """
+    Precompute and organize transformation matrices and warp masks for an entire dataset
+
+    :df: pandas dataframe containing box coordinates
+    :patch_shapes: 3-tuple giving patch shape, or dict of 3-tuples
+    """
+    im_filename_list = list(df.image.unique())
+
+    if not isinstance(patch_shapes, dict):
+        patch_shapes = {k:patch_shapes for k in df.patch.unique()}
+    
+    tfms = {}
+    warpmasks = {}
+    patchnames = {}
+    #patch_shapes = {"foo":(3,224,224)}#{"foo":(3,25, 40)}
+    target_images = {i:load_to_tensor(i) for i in im_filename_list}
+    target_shape = target_images[im_filename_list[0]].shape
+    # for each target image
+    for i in im_filename_list:
+        tfms[i] = []
+        warpmasks[i] = []
+        patchnames[i] = []
+        # precompute warp mask and perspective warp tensor for 
+        # each annotation for that target image
+        for e,r in df[df.image == i].iterrows():
+            coords = torch.tensor([[[r.uly, r.ulx], [r.lly, r.llx], [r.lry, r.lrx], [r.ury, r.urx]]]).type(torch.float32)
+            warpmask, tfm = get_warpmask_and_tfm(target_shape, patch_shapes[r.patch], coords)
+            warpmasks[i].append(warpmask)
+            tfms[i].append(tfm)
+            patchnames[i].append(r.patch)
+        warpmasks[i] = torch.stack(tfms[i], 0)
+        tfms[i] = torch.stack(tfms[i], 0)
+
+    return im_filename_list, tfms, warpmasks, patchnames, target_images
 
 def warp_and_implant_single(patch, target, tfm, warpmask, mask=None,
                            scale_brightness=False):
@@ -38,43 +91,17 @@ def warp_and_implant_single(patch, target, tfm, warpmask, mask=None,
     :patch: (C,H',W') tensor containing a patch
     :target: (C,H,W) tensor containing target image
     :tfm: (1,3,3) tensor containing transformation; generated by kornia.geometry.transform.get_perspective_transform()
-    :warpmask: (1,1,H,W) tensor containing a mask of where the patch should go within the image
+    :warpmask: (H,W) tensor containing a mask of where the patch should go within the image
     :mask: optional, (1,H',W') tensor or scalar transparency value for the patch
     :scale_brightness: if True, adjust brightness of patch to match the average brightness of the section of
             image it's replacing
     """
     patch = patch.unsqueeze(0)
     target = target.unsqueeze(0)
-    #assert patch_batch.shape[0] == target_batch.shape[0], "batch dimensions need to line up"
-    #assert target_batch.shape[0] == coord_batch.shape[0], "batch dimensions need to line up"
-    
-    # get transformation matrix
-    #patch_border = torch.tensor([[0.,0.],
-    #                             [patch_batch.shape[3], 0], 
-    #                             [patch_batch.shape[3], patch_batch.shape[2]], 
-    #                             [0., patch_batch.shape[2]]]) # (4,2)
-    #patch_border = torch.stack([patch_border for _ in range(patch_batch.shape[0])],0).to(patch_batch.device) # (B,4,2)
-    
-    #tfm = kornia.geometry.transform.get_perspective_transform(patch_border, coord_batch) # (B,3,3)
     # apply transformation to get a warped patch with green background
     warped_patch = kornia.geometry.transform.warp_perspective(patch, tfm,
                                                       (target.shape[2], target.shape[3]),
-                                                      padding_mode="border") # (B,C,H,W)
-    # do the transformation a second time- but with a "green screen" we can use to generate the mask
-    # we'll need to implant in the image (not to be confused with an additional optional mask for 
-    # within the boundaries of the patch itself). the reason we do this with a separate step is otherwise
-    # the image resampling causes some of the chromakey to leak into the implanted patch.
-    #with torch.no_grad():
-        #chromakey = kornia.geometry.transform.warp_perspective(patch.unsqueeze(0), tfm,
-        #                                              (target.shape[1], target.shape[2]),
-        #                                              padding_mode="fill", 
-        #                                              fill_value=torch.tensor([0,1,0])) # (B,C,H,W)
-        # use the green background to create a mask for deciding where to overwrite the target image
-        # with the patch
-        #warpmask = ((chromakey[:,0,:,:] == 0)&(chromakey[:,1,:,:] == 1)&(chromakey[:,2,:,:] == 0)).type(torch.float32) # (B,H,W)
-        #warpmask = warpmask.unsqueeze(1) # (B,1,H,W)
-        # so every place where warpmask=1 will be the target image; every place where it's 0 will be the patch
-    
+                                                      padding_mode="border") # (B,C,H,W)    
     # do we need to scale the patch's brightness?
     if scale_brightness:
         with torch.no_grad():
@@ -120,8 +147,6 @@ def warp_and_implant_single(patch, target, tfm, warpmask, mask=None,
                 warpmask = warpmask*mask + 1 - mask
 
     return (target*warpmask + warped_patch*(1-warpmask)*scale).squeeze(0)
-    #return torch.clamp(target_batch*warpmask + warped_patch*(1-warpmask)*scale, 0, 1) # brightness scaling could push above 1
-
 
 def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None,
                            scale_brightness=False):
@@ -229,7 +254,255 @@ def scale_coordinate_list(coord, scale=0.1):
     
     return newcoord
 
+
 class WarpPatchImplanter(RectanglePatchImplanter):
+    """
+    Class for adding a patches to target images, with arbitrary corners that may be warped from
+    a rectangle. Assume all target images are the same dimensions.
+    
+    
+    """
+    name = "WarpPatchImplanter"
+    
+    def __init__(self, df, patch_shapes, mask=None, scale_brightness=False, dataset_name=None):
+        """
+        :df: dataframe containing an "image" column with paths to images, x and y coordinates for 
+            each corner of the distorted box, and (optionally) "patch" column (specifying which patch name the
+            box is for) and "split" column (train/eval)
+        :patch_shapes: 3-tuple or dictionary of 3-tuples giving the shape of patches that will be passed. Used
+            to pre-compute transformation matrices.
+        :mask: None, scalar between 0 and 1, torch.Tensor on the unit interval, or dictionary of any of these values
+             to use for masking the patch
+        :scale_brightness: if True, adjust brightness of patch to match the average brightness of the section of
+            image it's replacing
+        :dataset_name: None or str; name of dataset to be logged in mlflow
+        """
+        super(RectanglePatchImplanter, self).__init__()
+        df = df.copy()
+        if "patch" not in df.columns:
+            df["patch"] = "patch"
+        if not isinstance(patch_shapes, dict):
+            patch_shapes = {"patch":patch_shapes}
+        self.patch_keys = list(patch_shapes.keys())
+        self.df = df
+        self._dataset_name = dataset_name
+        
+        with torch.no_grad():
+            # precompute transformation matrices and warp masks
+            if "split" not in df.columns:
+                logging.warning("no 'split' column found in dataset; using same images for train and eval")
+                self.im_filename_list, self.tfms, self.warpmasks, self.patch_names, self.target_images = unpack_warp_dataframe(df, patch_shapes)
+                #self.tfms = torch.nn.ParameterDict(self.tfms) # so automatically copied to GPU
+                self.eval_im_filename = self.im_filename_list
+                self.eval_tfms = self.tfms
+                self.eval_warpmasks = self.warpmasks
+                self.eval_target_images = self.target_images
+                self.eval_patch_names = self.patch_names
+            else:
+                self.im_filename_list, self.tfms, self.warpmasks, self.patch_names, self.target_images = unpack_warp_dataframe(df[df.split == "train"], patch_shapes)
+                #self.tfms = torch.nn.ParameterDict(self.tfms) # so automatically copied to GPU
+                self.eval_im_filename_list, self.eval_tfms, self.eval_warpmasks, self.eval_patch_names, self.eval_target_images = unpack_warp_dataframe(df[df.split != "train"], patch_shapes)
+            
+            # prepare masks! masks can be specified either as a float or a tensor. user can also
+            # specify one mask to use for all patches, or a dict mapping patch keys to separate masks.
+            # work those details out now and resize any tensor masks to the correct shape
+            maskdict = {}
+            for k in self.patch_keys:
+                if isinstance(mask, dict):
+                    m = mask[k]
+                else:
+                    m = mask
+                if m is None:
+                    #maskdict[k] = 1
+                    maskdict[k] = torch.tensor(1).type(torch.float32)
+                elif isinstance(m, torch.Tensor):
+                    maskdict[k] = kornia.geometry.resize(m, (patch_shapes[k].shape[1], patch_shapes[k].shape[2]))
+                else:
+                    maskdict[k] = m
+            self.mask = torch.nn.ParameterDict(maskdict)  # use a parameter dict so masks will get copied to GPU automatically
+        
+        # some of the parameters in the parent class aren't used here- let's remove some clutter
+        #for key in ["scale", "offset_frac_x", "offset_frac_y"]:
+        #    if key in self.params:
+        #        del(self.params[key])
+        self.params = {"scale_brightness":scale_brightness}
+
+
+
+    def get_min_dimensions(self):
+        assert False, "not implemented for this implanter"
+        
+        
+    def validate(self, patch):
+        """
+        Check to see whether any of your patch/scale/image/box combinations could throw an error
+
+        NOT YET UPDATED FOR NEW API
+        """
+        assert False, "not yet implemented"
+        all_validated = True
+        
+        for i in range(len(self.images)):
+            for j in range(len(self.boxes[i])):
+                b = self.boxes[i][j]
+                box_ok = True
+                # should be four corners in the box
+                if len(b) != 4:
+                    box_ok = False
+                # each corner should have two coordinates
+                for k in b:
+                    if len(k) != 2:
+                        box_ok = False
+                if not box_ok:
+                    logging.warning(f"{self.name}: box {j} of image {self.imgkeys[i]} has the wrong shape")
+                    all_validated = False
+        return all_validated
+    
+
+    
+    def forward(self, patches, control=False, evaluate=False, params={}, **kwargs):
+        """
+        Implant a batch of patches in a batch of images
+        
+        :patches: torch Tensor containing a batch of patches, or a dictionary of patch batches
+        :control: if True, leave the patches off (for diagnostics)
+        :params: dictionary of params to override random sampling
+        :kwargs: passed to self.sample()
+        """
+        if evaluate:
+            im_filename_list = self.eval_im_filename_list
+            target_images = self.eval_target_images
+            tfms = self.eval_tfms
+            warpmasks = self.eval_warpmasks
+            patch_names = self.eval_patch_names
+            #images = self.eval_images
+            #boxes = self.eval_boxes
+        else:
+            im_filename_list = self.im_filename_list
+            target_images = self.target_images
+            tfms = self.tfms
+            warpmasks = self.warpmasks
+            patch_names = self.patch_names
+            #images = self.images
+            #boxes = self.boxes
+
+        if isinstance(patches, torch.Tensor):
+            patches = {"patch":patches}
+
+        # find which device the patches are on
+        device = patches[self.patch_keys[0]].device
+
+        # infer batch size from input patch
+        N = patches[self.patch_keys[0]].shape[0]
+        
+        if control:
+            params = self.lastsample
+        else:
+            # sample parameters if necessary
+            if "image" not in params:
+                params["image"] = np.random.choice(im_filename_list, size=N, replace=True)
+            self.lastsample = params
+        #self.sample(patches.shape[0], evaluate=evaluate, **params)
+
+        # dictionary of sampled parameters
+        #s = self.lastsample
+
+        # get mask
+        #mask = self._get_mask(patches)
+
+        # copy all the target images in the batch to the right device
+        with torch.no_grad():
+            targets = torch.stack([target_images[params["image"][n]].clone().detach() 
+                                   for n in range(N)], 0).to(device)
+
+        # build a batch of target images
+        batch = []
+        # for each batch element
+        for n in range(N):
+            k = params["image"][n]
+            # grab the target image
+            #target = target_images[k]
+            target = targets[n]
+            if not control:
+                # for each patch we need to implant in the image. tfms should already be on the GPU
+                # but we copy warpmasks each time
+                for t, w, p in zip(tfms[k].clone().detach().to(device), 
+                                   warpmasks[k].clone().detach().to(device), patch_names[k]):
+                    target = warp_and_implant_single(patches[p], target, t, w, self.mask[p],
+                                                     scale_brightness=self.params["scale_brightness"])
+            batch.append(target)
+
+        #target_images = torch.stack([images[s["image"][i]] 
+        #                             for i in range(patches.shape[0])], 0).to(patches.device)
+        
+        # if it's a control batch, skip the implanting step
+        #if control:
+        #    return target_images, kwargs
+
+        # build a batch of box coordinates
+        #coords = torch.stack([torch.tensor(boxes[s["image"][i]][s["box"][i]]).type(torch.float32)
+        #                      for i in range(patches.shape[0]) ],0).to(patches.device)
+
+        # implant patch
+        #implanted_images = warp_and_implant_batch(patches, target_images, coords, mask=mask,
+        #                                          scale_brightness=self.params["scale_brightness"])
+        batch = torch.stack(batch, 0)
+        return torch.clamp(batch, 0, 1), kwargs
+        #return implanted_images, kwargs
+    
+    def plot_boxes(self, evaluate=False):
+        """
+        Quick visualization with matplotlib of the victim images and box regions
+        """
+        assert False, "not yet implemented"
+        if evaluate:
+            images = self.eval_images
+            boxes = self.eval_boxes
+            imgkeys = self.eval_imgkeys
+        else:
+            images = self.images
+            boxes = self.boxes
+            imgkeys = self.imgkeys
+            
+        n = len(images)
+        d = int(np.ceil(np.sqrt(n)))
+        fig, axs = plt.subplots(nrows=d, ncols=d, squeeze=False)
+
+        i = 0
+        for axrow in axs:
+            for ax in axrow:
+                ax.set_axis_off()
+                if i < n:
+                    ax.imshow((images[i].permute(1,2,0).detach().cpu().numpy()))
+                    
+                    for j in range(len(boxes[i])):
+                        b = boxes[i][j]
+                        ax.plot([f[0] for f in b], [f[1] for f in b], "o-")
+                    ax.set_title(imgkeys[i])
+                
+                i += 1
+        return fig
+    
+    def get_last_sample_as_dict(self):
+        """
+        Return last sample as a JSON-serializable dict
+        """
+        return self.lastsample
+        """
+        if self._eval_last:
+            imgkeys = self.eval_imgkeys
+        else:
+            imgkeys = self.imgkeys
+        outdict = {}
+        for k in self.lastsample:
+            if k == "image":
+                outdict["image"] = [imgkeys[i] for i in self.lastsample["image"].cpu().detach().numpy()]
+            else:
+                outdict[k] = [float(i) for i in self.lastsample[k].cpu().detach().numpy()]
+        return outdict"""
+    
+
+class DEPRECATEDWarpPatchImplanter(RectanglePatchImplanter):
     """
     Class for adding a patch to an image, with arbitrary corners that may be warped from
     a rectangle. Assume all target images are the same dimensions.

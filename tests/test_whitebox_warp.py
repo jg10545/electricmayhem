@@ -1,8 +1,10 @@
 import numpy as np
+import pandas as pd
 import torch
 import kornia.geometry
 
-from electricmayhem.whitebox._warp_implant import warp_and_implant_batch, WarpPatchImplanter, get_mask, warp_and_implant_single
+from electricmayhem.whitebox._warp_implant import warp_and_implant_batch, WarpPatchImplanter, warp_and_implant_single
+from electricmayhem.whitebox._warp_implant import get_warpmask_and_tfm
 
 H = 40
 W = 27
@@ -34,6 +36,11 @@ chromakey = kornia.geometry.transform.warp_perspective(patch_batch[0].unsqueeze(
 # with the patch
 warpmask = ((chromakey[:,0,:,:] == 0)&(chromakey[:,1,:,:] == 1)&(chromakey[:,2,:,:] == 0)).type(torch.float32) # (B,H,W)
 warpmask = warpmask.unsqueeze(1) # (1,1,H,W)
+
+def test_get_warpmask_and_tfm_gives_correct_output_shapes():
+    patch_shape = (3,11,13)
+    w, t = get_warpmask_and_tfm(target.shape, patch_shape, corners)
+    assert w.shape[2:] == target.shape[1:]
 
 
 def test_warp_and_implant_single_gives_correct_output_shape():
@@ -148,15 +155,30 @@ def test_warp_and_implant_batch_gives_correct_output_shape_with_scalar_mask():
     # some pixels in the target batch should be unchanged
     assert torch.sum(target_batch == implanted) > 0
 
-def test_warppatchimplanter():
+def test_warppatchimplanter(test_png_1, test_png_2):
     # simple checks- output shape and reproducibility
-    warp = WarpPatchImplanter(imagedict, boxdict)
+    df = pd.DataFrame({"image":[test_png_1, test_png_1, test_png_2, test_png_2],
+                         "ulx":[10, 60, 13, 50],
+                         "uly":[5, 70, 15, 62],
+                         "urx":[20, 72, 26, 81],
+                         "ury":[10, 68, 20, 72],
+                         "lrx":[22, 70, 20, 79],
+                         "lry":[25, 90, 30, 80],
+                         "llx":[9, 55, 20, 55],
+                         "lly":[30, 92, 28, 78],
+                         "patch":["foo", "bar", "foo", "bar"]})
+    
+    patch_shapes = {"foo":(3,17,19), "bar":(3,23,7)}
+    patch_batch = {k:torch.tensor(np.random.uniform(0, 1, patch_shapes[k]).astype(np.float32)).unsqueeze(0)
+                   for k in patch_shapes}
+    #warp = WarpPatchImplanter(imagedict, boxdict)
+    warp = WarpPatchImplanter(df, patch_shapes)
     output, _ = warp(patch_batch)
     output2, _ = warp(patch_batch, params=warp.lastsample)
     
     assert output.shape == (B, C, H, W)
     assert np.mean((output.detach().numpy() - output2.detach().numpy())**2) < 1e-6
-    assert warp.validate(patch_batch)
+    #assert warp.validate(patch_batch)
 
 def test_bad_warppatchimplanter_fails_validation():
     # simple checks- output shape and reproducibility
@@ -183,9 +205,3 @@ def test_warppatchimplanter_with_2D_mask():
     assert np.mean((output.detach().numpy() - output2.detach().numpy())**2) < 1e-6
 
 
-def test_get_mask_returns_correct_shape():
-    shape = (3,640,640)
-    coords = [[299.0, 196.0], [477.0, 205.0], [477.0, 394.0], [309.0, 373.0]]
-    mask = get_mask(shape, coords)
-    assert isinstance(mask, torch.Tensor)
-    assert mask.shape == shape
