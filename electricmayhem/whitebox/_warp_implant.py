@@ -455,6 +455,17 @@ class WarpPatchImplanter(RectanglePatchImplanter):
         num_targets = len(self.target_images)
         num_eval_targets = len(self.eval_target_images)
         return f"**{self.name}:** {num_targets} training and {num_eval_targets} eval images; patches {patches}"
+    
+    def log_params_to_mlflow(self):
+        """
+        In addition to logging whatever's in self.params, if there's a tensor mask we
+        should keep that someplace
+        """
+        if hasattr(self, "df"):
+            mlflow.log_inputs(mlflow.data.from_pandas(self.df, name=self._dataset_name))
+
+        super(RectanglePatchImplanter, self).log_params_to_mlflow()
+    
         
     
 
