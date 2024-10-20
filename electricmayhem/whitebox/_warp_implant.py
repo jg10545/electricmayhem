@@ -279,6 +279,7 @@ class WarpPatchImplanter(RectanglePatchImplanter):
         if not isinstance(patch_shapes, dict):
             patch_shapes = {"patch":patch_shapes}
         self.patch_keys = list(patch_shapes.keys())
+        self.patch_shapes = patch_shapes
         self.df = df
         self._dataset_name = dataset_name
         
@@ -287,7 +288,7 @@ class WarpPatchImplanter(RectanglePatchImplanter):
             if "split" not in df.columns:
                 logging.warning("no 'split' column found in dataset; using same images for train and eval")
                 self.im_filename_list, self.tfms, self.warpmasks, self.patch_names, self.target_images = unpack_warp_dataframe(df, patch_shapes, mask=mask)
-                self.eval_im_filename = self.im_filename_list
+                self.eval_im_filename_list = self.im_filename_list
                 self.eval_tfms = self.tfms
                 self.eval_warpmasks = self.warpmasks
                 self.eval_target_images = self.target_images
@@ -312,23 +313,34 @@ class WarpPatchImplanter(RectanglePatchImplanter):
 
         NOT YET UPDATED FOR NEW API
         """
-        assert False, "not yet implemented"
+        #assert False, "not yet implemented"
         all_validated = True
-        
-        for i in range(len(self.images)):
-            for j in range(len(self.boxes[i])):
-                b = self.boxes[i][j]
-                box_ok = True
-                # should be four corners in the box
-                if len(b) != 4:
-                    box_ok = False
-                # each corner should have two coordinates
-                for k in b:
-                    if len(k) != 2:
-                        box_ok = False
-                if not box_ok:
-                    logging.warning(f"{self.name}: box {j} of image {self.imgkeys[i]} has the wrong shape")
-                    all_validated = False
+        # infer batch size
+        if isinstance(patch, torch.Tensor):
+            N = patch.shape[0]
+        else:
+            N = patch[self.patch_keys[0]].shape[0]
+
+        for i in list(self.target_images):
+            try:
+                with torch.no_grad():
+                    params = {"image":np.array([i]*N)}
+                    implanted, _ = self(patch, params=params)
+                    assert isinstance(implanted, torch.Tensor)
+            except:
+                logging.warning(f"{self.name}: error implanting patches in training target image {i}")
+                all_validated = False
+
+        for i in list(self.eval_target_images):
+            try:
+                with torch.no_grad():
+                    params = {"image":np.array([i]*N)}
+                    implanted, _ = self(patch, params=params, evaluate=True)
+                    assert isinstance(implanted, torch.Tensor)
+            except:
+                logging.warning(f"{self.name}: error implanting patches in eval target image {i}")
+                all_validated = False
+
         return all_validated
     
 
@@ -435,19 +447,15 @@ class WarpPatchImplanter(RectanglePatchImplanter):
         """
         Return last sample as a JSON-serializable dict
         """
-        return self.lastsample
-        """
-        if self._eval_last:
-            imgkeys = self.eval_imgkeys
-        else:
-            imgkeys = self.imgkeys
-        outdict = {}
-        for k in self.lastsample:
-            if k == "image":
-                outdict["image"] = [imgkeys[i] for i in self.lastsample["image"].cpu().detach().numpy()]
-            else:
-                outdict[k] = [float(i) for i in self.lastsample[k].cpu().detach().numpy()]
-        return outdict"""
+        img_arr = self.lastsample["image"]
+        return {"image":list(img_arr)}
+    
+    def get_description(self):
+        patches = ", ".join(self.patch_keys)
+        num_targets = len(self.target_images)
+        num_eval_targets = len(self.eval_target_images)
+        return f"**{self.name}:** {num_targets} training and {num_eval_targets} eval images; patches {patches}"
+        
     
 
 class DEPRECATEDWarpPatchImplanter(RectanglePatchImplanter):

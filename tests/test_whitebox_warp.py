@@ -3,6 +3,7 @@ import pandas as pd
 import torch
 import kornia.geometry
 from PIL import Image
+import json
 
 from electricmayhem.whitebox._warp_implant import warp_and_implant_batch, WarpPatchImplanter, warp_and_implant_single
 from electricmayhem.whitebox._warp_implant import get_warpmask_and_tfm, unpack_warp_dataframe
@@ -71,39 +72,6 @@ def test_warp_and_implant_single_gives_correct_output_shape_with_brightness_scal
     # some pixels in the target batch should be unchanged
     assert torch.sum(target == implanted) > 0
 
-"""
-def test_warp_and_implant_single_gives_correct_output_shape_with_tensor_mask():
-    implanted = warp_and_implant_single(patch_batch[0], target, tfm[0].unsqueeze(0), warpmask, mask=mask)
-    # output should have the shape of the target batch
-    assert implanted.shape == target.shape
-    # some pixels in the target batch should be unchanged
-    assert torch.sum(target == implanted) > 0"""
-
-"""
-def test_warp_and_implant_single_gives_correct_output_shape_with_scalar_mask():
-    implanted = warp_and_implant_single(patch_batch[0], target, tfm[0].unsqueeze(0), warpmask, mask=0.5)
-    # output should have the shape of the target batch
-    assert implanted.shape == target.shape
-    # some pixels in the target batch should be unchanged
-    assert torch.sum(target == implanted) > 0"""
-
-
-"""def test_warp_and_implant_single_gives_correct_output_shape_with_tensor_mask_and_brightness_scaling():
-    implanted = warp_and_implant_single(patch_batch[0], target, tfm[0].unsqueeze(0), warpmask, mask=mask,
-                                        scale_brightness=True)
-    # output should have the shape of the target batch
-    assert implanted.shape == target.shape
-    # some pixels in the target batch should be unchanged
-    assert torch.sum(target == implanted) > 0"""
-
-"""
-def test_warp_and_implant_single_gives_correct_output_shape_with_scalar_mask_and_brightness_scaling():
-    implanted = warp_and_implant_single(patch_batch[0], target, tfm[0].unsqueeze(0), warpmask, mask=0.5,
-                                        scale_brightness=True)
-    # output should have the shape of the target batch
-    assert implanted.shape == target.shape
-    # some pixels in the target batch should be unchanged
-    assert torch.sum(target == implanted) > 0"""
 
 
 def test_warp_and_implant_batch_gives_correct_output_shape():
@@ -314,12 +282,6 @@ def test_warppatchimplanter(test_png_1, test_png_2):
     patch_batch = {k:torch.tensor(np.random.uniform(0, 1, patch_shapes[k]).astype(np.float32)).unsqueeze(0)
                    for k in patch_shapes}
     
-
-    im_filename_list, tfms, warpmasks, patchnames, target_images = unpack_warp_dataframe(df, patch_shapes)
-    implanted = warp_and_implant_single(patch_batch["foo"][0], target_images[test_png_1], tfms[test_png_1][0], 
-                                        warpmasks[test_png_1][0].unsqueeze(0))
-    assert implanted.shape == (3,100,100)
-    
     warp = WarpPatchImplanter(df, patch_shapes)
     output, _ = warp(patch_batch)
     output2, _ = warp(patch_batch, params=warp.lastsample)
@@ -331,12 +293,8 @@ def test_warppatchimplanter(test_png_1, test_png_2):
     W = img.shape[1]
     assert output.shape == (B, C, H, W)
     assert np.mean((output.detach().numpy() - output2.detach().numpy())**2) < 1e-6
+    assert warp.validate(patch_batch)
 
-#def test_bad_warppatchimplanter_fails_validation():
-#    # simple checks- output shape and reproducibility
-#    warp = WarpPatchImplanter(imagedict, boxdict_bad)
-#    
-#    assert not warp.validate(patch_batch)
     
 def test_warppatchimplanter_with_scalar_mask(test_png_1, test_png_2):
     df = pd.DataFrame({"image":[test_png_1, test_png_1, test_png_2, test_png_2],
@@ -396,3 +354,65 @@ def test_warppatchimplanter_with_2D_mask(test_png_1, test_png_2):
     assert np.mean((output.detach().numpy() - output2.detach().numpy())**2) < 1e-6
 
 
+
+def test_warppatchimplanter_is_differentiable(test_png_1, test_png_2):
+    df = pd.DataFrame({"image":[test_png_1, test_png_1, test_png_2, test_png_2],
+                         "ulx":[10, 60, 13, 50],
+                         "uly":[5, 70, 15, 62],
+                         "urx":[20, 72, 26, 81],
+                         "ury":[10, 68, 20, 72],
+                         "lrx":[22, 70, 20, 79],
+                         "lry":[25, 90, 30, 80],
+                         "llx":[9, 55, 20, 55],
+                         "lly":[30, 92, 28, 78],
+                         "patch":["foo", "bar", "foo", "bar"]})
+    
+    patch_shapes = {"foo":(3,17,19), "bar":(3,23,7)}
+    patch_batch = {k:torch.tensor(np.random.uniform(0, 1, patch_shapes[k]).astype(np.float32)).unsqueeze(0).requires_grad_(True)
+                   for k in patch_shapes}
+    img = np.array(Image.open(test_png_1))
+    B = 1
+    C = img.shape[2]
+    H = img.shape[0]
+    W = img.shape[1]
+    m = torch.tensor(np.random.uniform(0, 1, patch_shapes["foo"]).astype(np.float32))
+    
+    warp = WarpPatchImplanter(df, patch_shapes, mask={"foo":m, "bar":1.})
+    output, _ = warp(patch_batch)
+
+    loss = torch.sum(output**2)
+    loss.backward()
+
+    assert patch_batch["foo"].grad is not None
+
+
+
+def test_warppatchimplanter_get_last_sample_as_dict(test_png_1, test_png_2):
+    # simple checks- output shape and reproducibility
+    df = pd.DataFrame({"image":[test_png_1, test_png_1, test_png_2, test_png_2],
+                         "ulx":[10, 60, 13, 50],
+                         "uly":[5, 70, 15, 62],
+                         "urx":[20, 72, 26, 81],
+                         "ury":[10, 68, 20, 72],
+                         "lrx":[22, 70, 20, 79],
+                         "lry":[25, 90, 30, 80],
+                         "llx":[9, 55, 20, 55],
+                         "lly":[30, 92, 28, 78],
+                         "patch":["foo", "bar", "foo", "bar"]})
+    
+    patch_shapes = {"foo":(3,17,19), "bar":(3,23,7)}
+    patch_batch = {k:torch.tensor(np.random.uniform(0, 1, patch_shapes[k]).astype(np.float32)).unsqueeze(0)
+                   for k in patch_shapes}
+    
+
+    im_filename_list, tfms, warpmasks, patchnames, target_images = unpack_warp_dataframe(df, patch_shapes)
+    implanted = warp_and_implant_single(patch_batch["foo"][0], target_images[test_png_1], tfms[test_png_1][0], 
+                                        warpmasks[test_png_1][0].unsqueeze(0))
+    assert implanted.shape == (3,100,100)
+    
+    warp = WarpPatchImplanter(df, patch_shapes)
+    output, _ = warp(patch_batch)
+
+    lastsamp = warp.get_last_sample_as_dict()
+
+    assert isinstance(json.dumps(lastsamp), str)
