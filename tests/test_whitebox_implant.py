@@ -93,7 +93,7 @@ def test_rectanglepatchimplanter_train_and_eval_images(test_png_1, test_png_2):
                    "xmax":[box1[2], box1[2], box2[2], box2[2]],
                    "ymax":[box1[3], box1[3], box2[3], box2[3]],
                    "patch":["foo", "foo", "bar", "bar"],
-                   "mode":["train", "eval", "train", "eval"]})
+                   "split":["train", "eval", "train", "eval"]})
     imp = RectanglePatchImplanter(df, scale=(0.75, 1.25))
     val = imp.validate({"foo":colorpatch, "bar":colorpatch})
     assert val
@@ -119,7 +119,7 @@ def test_rectanglepatchimplanter_train_and_eval_images_single_patch(test_png_1, 
                    "ymin":[box1[1], box1[1], box2[1], box2[1]],
                    "xmax":[box1[2], box1[2], box2[2], box2[2]],
                    "ymax":[box1[3], box1[3], box2[3], box2[3]],
-                   "mode":["train", "eval", "train", "eval"]})
+                   "split":["train", "eval", "train", "eval"]})
     imp = RectanglePatchImplanter(df, scale=(0.75, 1.25))
     val = imp.validate(colorpatch)
     assert val
@@ -432,7 +432,7 @@ def test_rectanglepatchimplanter_get_last_sample_as_dict_with_eval_targets(test_
                    "ymin":[box1[1], box1[1], box2[1], box2[1]],
                    "xmax":[box1[2], box1[2], box2[2], box2[2]],
                    "ymax":[box1[3], box1[3], box2[3], box2[3]],
-                   "mode":["train", "eval", "train", "eval"]})
+                   "split":["train", "eval", "train", "eval"]})
     imp = RectanglePatchImplanter(df, scale=(0.75, 1.25))
     implanted = imp(torch.stack([colorpatch]*10, 0))
     
@@ -452,7 +452,7 @@ def test_rectanglepatchimplanter_get_last_sample_as_dict_evaluate_mode(test_png_
                    "ymin":[box1[1], box1[1], box2[1], box2[1]],
                    "xmax":[box1[2], box1[2], box2[2], box2[2]],
                    "ymax":[box1[3], box1[3], box2[3], box2[3]],
-                   "mode":["train", "eval", "train", "eval"]})
+                   "split":["train", "eval", "train", "eval"]})
     imp = RectanglePatchImplanter(df, scale=(0.75, 1.25))
     implanted = imp(torch.stack([colorpatch]*10, 0), evaluate=True)
     
@@ -473,7 +473,7 @@ def test_fixedratiorectanglepatchimplanter_train_and_eval_images(test_png_1, tes
                    "ymin":[box1[1], box1[1], box2[1], box2[1]],
                    "xmax":[box1[2], box1[2], box2[2], box2[2]],
                    "ymax":[box1[3], box1[3], box2[3], box2[3]],
-                   "mode":["train", "eval", "train", "eval"]})
+                   "split":["train", "eval", "train", "eval"]})
     imp = FixedRatioRectanglePatchImplanter(df, 0.5)
     # run a training image through
     implanted, _ = imp(colorpatch.unsqueeze(0))
@@ -500,7 +500,7 @@ def test_fixedratiorectanglepatchimplanter_train_and_eval_images_multiple_patche
                    "ymin":[box1[1], box1[1], box2[1], box2[1]],
                    "xmax":[box1[2], box1[2], box2[2], box2[2]],
                    "ymax":[box1[3], box1[3], box2[3], box2[3]],
-                   "mode":["train", "eval", "train", "eval"],
+                   "split":["train", "eval", "train", "eval"],
                    "patch":["foo", "foo", "bar", "bar"]}
                    )
     imp = FixedRatioRectanglePatchImplanter(df, 0.5)
@@ -530,7 +530,7 @@ def test_fixedratiorectanglepatchimplanter_train_and_eval_images_with_brightness
                    "ymin":[box1[1], box1[1], box2[1], box2[1]],
                    "xmax":[box1[2], box1[2], box2[2], box2[2]],
                    "ymax":[box1[3], box1[3], box2[3], box2[3]],
-                   "mode":["train", "eval", "train", "eval"],
+                   "split":["train", "eval", "train", "eval"],
                    "patch":["foo", "foo", "bar", "bar"]}
                    )
     imp = FixedRatioRectanglePatchImplanter(df, 0.5, scale_brightness=True)
@@ -560,7 +560,7 @@ def test_fixedratiorectanglepatchimplanter_train_and_eval_images_scale_by_height
                    "ymin":[box1[1], box1[1], box2[1], box2[1]],
                    "xmax":[box1[2], box1[2], box2[2], box2[2]],
                    "ymax":[box1[3], box1[3], box2[3], box2[3]],
-                   "mode":["train", "eval", "train", "eval"],
+                   "split":["train", "eval", "train", "eval"],
                    "patch":["foo", "foo", "bar", "bar"]}
                    )
     imp = FixedRatioRectanglePatchImplanter(df, 0.5, scale_by="height")
@@ -589,7 +589,7 @@ def test_fixedratiorectanglepatchimplanter_train_and_eval_images_scale_by_width(
                    "ymin":[box1[1], box1[1], box2[1], box2[1]],
                    "xmax":[box1[2], box1[2], box2[2], box2[2]],
                    "ymax":[box1[3], box1[3], box2[3], box2[3]],
-                   "mode":["train", "eval", "train", "eval"],
+                   "split":["train", "eval", "train", "eval"],
                    "patch":["foo", "foo", "bar", "bar"]}
                    )
     imp = FixedRatioRectanglePatchImplanter(df, 0.5, scale_by="width")
@@ -619,7 +619,7 @@ def test_fixedratiorectanglepatchimplanter_sample_with_fixed_offset(test_png_1, 
                    "ymin":[box1[1], box1[1], box2[1], box2[1]],
                    "xmax":[box1[2], box1[2], box2[2], box2[2]],
                    "ymax":[box1[3], box1[3], box2[3], box2[3]],
-                   "mode":["train", "eval", "train", "eval"],
+                   "split":["train", "eval", "train", "eval"],
                    "patch":["foo", "foo", "bar", "bar"]}
                    )
     imp = FixedRatioRectanglePatchImplanter(df, 0.5, offset_frac_x=0.5, offset_frac_y=0.25)
@@ -642,7 +642,7 @@ def test_scaletoboxrectanglepatchimplanter_train_and_eval_images(test_png_1, tes
                    "ymin":[box1[1], box1[1], box2[1], box2[1]],
                    "xmax":[box1[2], box1[2], box2[2], box2[2]],
                    "ymax":[box1[3], box1[3], box2[3], box2[3]],
-                   "mode":["train", "eval", "train", "eval"],
+                   "split":["train", "eval", "train", "eval"],
                    "patch":["foo", "foo", "bar", "bar"]}
                    )
     imp = ScaleToBoxRectanglePatchImplanter(df)
@@ -667,7 +667,7 @@ def test_scaletoboxrectanglepatchimplanter_train_and_eval_images_with_brightness
                    "ymin":[box1[1], box1[1], box2[1], box2[1]],
                    "xmax":[box1[2], box1[2], box2[2], box2[2]],
                    "ymax":[box1[3], box1[3], box2[3], box2[3]],
-                   "mode":["train", "eval", "train", "eval"],
+                   "split":["train", "eval", "train", "eval"],
                    "patch":["foo", "foo", "bar", "bar"]}
                    )
     imp = ScaleToBoxRectanglePatchImplanter(df, scale_brightness=True)

@@ -77,7 +77,7 @@ def unpack_warp_dataframe(df, patch_shapes):
             warpmasks[i].append(warpmask)
             tfms[i].append(tfm)
             patchnames[i].append(r.patch)
-        warpmasks[i] = torch.stack(tfms[i], 0)
+        warpmasks[i] = torch.concatenate(warpmasks[i], 0)
         tfms[i] = torch.stack(tfms[i], 0)
 
     return im_filename_list, tfms, warpmasks, patchnames, target_images
@@ -96,7 +96,7 @@ def warp_and_implant_single(patch, target, tfm, warpmask, mask=None,
     :scale_brightness: if True, adjust brightness of patch to match the average brightness of the section of
             image it's replacing
     """
-    patch = patch.unsqueeze(0)
+    patch = patch.unsqueeze(0) # (B, C, H', W')
     target = target.unsqueeze(0)
     # apply transformation to get a warped patch with green background
     warped_patch = kornia.geometry.transform.warp_perspective(patch, tfm,
@@ -122,7 +122,7 @@ def warp_and_implant_single(patch, target, tfm, warpmask, mask=None,
     if mask is not None:
         with torch.no_grad():
             # IMAGE MASK CASE
-            if isinstance(mask, torch.Tensor):
+            if isinstance(mask, torch.Tensor)&len(mask.shape) > 0:#isinstance(mask, torch.Tensor):
                 # add batch dimension if necessary
                 if len(mask.shape) == 3:
                     #mask = torch.stack([mask for _ in range(patch_batch.shape[0])], 0)
@@ -131,7 +131,7 @@ def warp_and_implant_single(patch, target, tfm, warpmask, mask=None,
                     mask = mask.unsqueeze(0).unsqueeze(0)
                 # apply same transforms to batch of masks, but fill with zeros. patch will only show through
                 # in places where mask > 0
-                mask_pw = kornia.geometry.transform.warp_perspective(mask, tfm,
+                mask_pw = kornia.geometry.transform.warp_perspective(1-mask, tfm,
                                                       (target.shape[2], target.shape[3]),
                                                        padding_mode="fill", 
                                                       fill_value=torch.tensor([1,1,1]))
@@ -145,7 +145,6 @@ def warp_and_implant_single(patch, target, tfm, warpmask, mask=None,
                 # we want every place where warpmask=0 to be the scalar mask value
                 # mask=1 should leave warpmask unchanged and mask=0 should be 1 everywhere
                 warpmask = warpmask*mask + 1 - mask
-
     return (target*warpmask + warped_patch*(1-warpmask)*scale).squeeze(0)
 
 def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None,
@@ -316,9 +315,10 @@ class WarpPatchImplanter(RectanglePatchImplanter):
                     #maskdict[k] = 1
                     maskdict[k] = torch.tensor(1).type(torch.float32)
                 elif isinstance(m, torch.Tensor):
-                    maskdict[k] = kornia.geometry.resize(m, (patch_shapes[k].shape[1], patch_shapes[k].shape[2]))
+                    #maskdict[k] = kornia.geometry.resize(m, (patch_shapes[k].shape[1], patch_shapes[k].shape[2]))
+                    maskdict[k] = kornia.geometry.resize(m, (patch_shapes[k][1], patch_shapes[k][2]))
                 else:
-                    maskdict[k] = m
+                    maskdict[k] = torch.tensor(m)
             self.mask = torch.nn.ParameterDict(maskdict)  # use a parameter dict so masks will get copied to GPU automatically
         
         # some of the parameters in the parent class aren't used here- let's remove some clutter
@@ -428,7 +428,8 @@ class WarpPatchImplanter(RectanglePatchImplanter):
                 # but we copy warpmasks each time
                 for t, w, p in zip(tfms[k].clone().detach().to(device), 
                                    warpmasks[k].clone().detach().to(device), patch_names[k]):
-                    target = warp_and_implant_single(patches[p], target, t, w, self.mask[p],
+                    print(patches[p][n].shape)
+                    target = warp_and_implant_single(patches[p][n], target, t, w, self.mask[p],
                                                      scale_brightness=self.params["scale_brightness"])
             batch.append(target)
 
