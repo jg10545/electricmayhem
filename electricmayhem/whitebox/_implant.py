@@ -66,7 +66,7 @@ def _unpack_rectangle_dataset(df):
         -xmin, mxax, ymin, ymax: box coordinates
 
     And may have columns:
-        -mode: "train" or "eval"
+        -split: "train" or "eval"
         -patch: string giving patch key
     """
     df = df.copy()
@@ -76,14 +76,14 @@ def _unpack_rectangle_dataset(df):
     patch_keys = list(df["patch"].unique())
 
     # if no train/eval split
-    if "mode" not in df.columns:
-        logging.warning("no 'mode' column found in dataset; using same images for train and eval")
+    if "split" not in df.columns:
+        logging.warning("no 'split' column found in dataset; using same images for train and eval")
         img_keys, images, boxes = _unpack_rectangle_frame(df)
         return df, patch_keys, img_keys, images, boxes, img_keys, images, boxes
     
     else:
-        img_keys_train, images_train, boxes_train = _unpack_rectangle_frame(df[df["mode"]=="train"])
-        img_keys_eval, images_eval, boxes_eval = _unpack_rectangle_frame(df[df["mode"]=="eval"])
+        img_keys_train, images_train, boxes_train = _unpack_rectangle_frame(df[df["split"]=="train"])
+        img_keys_eval, images_eval, boxes_eval = _unpack_rectangle_frame(df[df["split"]=="eval"])
         return df, patch_keys, img_keys_train, images_train, boxes_train, img_keys_eval, images_eval, boxes_eval
     
 def _prep_masks(patch_keys, mask):
@@ -111,7 +111,7 @@ class RectanglePatchImplanter(PipelineBase):
         """
         :df: dataframe containing an "image" column with paths to images, xmin/ymin/xmax/ymax columns
             giving box coordinates, and (optionally) "patch" column (specifying which patch name the
-            box is for) and "mode" column (train/eval)
+            box is for) and "split" column (train/eval)
         :scale: tuple of floats; range of scaling factors
         :offset_frac_x: None or float between 0 and 1- optionally specify a relative x position within the target box for the patch.
         :offset_frac_y: None or float between 0 and 1- optionally specify a relative y position within the target box for the patch.
@@ -428,7 +428,8 @@ class RectanglePatchImplanter(PipelineBase):
         In addition to logging whatever's in self.params, if there's a tensor mask we
         should keep that someplace
         """
-        mlflow.log_inputs(mlflow.data.from_pandas(self.df, name=self._dataset_name))
+        if hasattr(self, "df"):
+            mlflow.log_inputs(mlflow.data.from_pandas(self.df, name=self._dataset_name))
         if self.mask is not None:
             if isinstance(self.mask, torch.Tensor):
                 mask = self.mask.cpu().detach()
@@ -455,7 +456,7 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
         """
         :df: dataframe containing an "image" column with paths to images, xmin/ymin/xmax/ymax columns
             giving box coordinates, and (optionally) "patch" column (specifying which patch name the
-            box is for) and "mode" column (train/eval)
+            box is for) and "split" column (train/eval)
         :frac: float; relative size
         :scale_by: str; whether to use the "height", "width", of the box, or "min" 
             of the two for scaling
@@ -596,9 +597,9 @@ class ScaleToBoxRectanglePatchImplanter(RectanglePatchImplanter):
     name = "ScaleToBoxRectanglePatchImplanter"
     def __init__(self, df, mask=1, scale_brightness=False, dataset_name=None):
         """
-        :df: dataframe containing an "image" column with paths to images, xmin/ymin/xmax/ymax columns
+        :df: dataframe containing an "image" column with paths to images, x and y coordinates for columns
             giving box coordinates, and (optionally) "patch" column (specifying which patch name the
-            box is for) and "mode" column (train/eval)
+            box is for) and "split" column (train/eval)
         :scale: tuple of floats; range of scaling factors
         :offset_frac_x: None or float between 0 and 1- optionally specify a relative x position within the target box for the patch.
         :offset_frac_y: None or float between 0 and 1- optionally specify a relative y position within the target box for the patch.
