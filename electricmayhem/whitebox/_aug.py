@@ -133,6 +133,9 @@ class KorniaAugmentationPipeline(PipelineBase):
         """
         if self._logviz:
             img = self(x)[0]
+            # if this is a batch of images, take the first one
+            if len(img.shape) == 4:
+                img = img[0]
             # check to make sure this is an RGB image
             if img.shape[0] == 3:
                 writer.add_image("augmented_image", img, global_step=step)
