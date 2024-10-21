@@ -549,8 +549,8 @@ class Pipeline(PipelineBase):
             for s in self.steps:
                 s.log_vizualizations(x, x_control, self.writer, self.global_step,
                                      logging_to_mlflow=self._logging_to_mlflow)
-                x = s(x, evaluate=True)
-                x_control = s(x_control, control=True, evaluate=True)
+                x, _ = s(x, evaluate=True)
+                x_control, _ = s(x_control, control=True, evaluate=True)
         
     def evaluate(self, batch_size, num_eval_steps, patchbatch=None):
         """
