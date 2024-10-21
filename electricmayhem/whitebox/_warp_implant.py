@@ -4,6 +4,7 @@ import kornia.geometry.transform
 import logging
 import matplotlib.pyplot as plt
 import matplotlib.patches
+import mlflow
 
 from ._implant import RectanglePatchImplanter
 from electricmayhem._convenience import load_to_tensor
