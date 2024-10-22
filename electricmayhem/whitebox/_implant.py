@@ -428,7 +428,7 @@ class RectanglePatchImplanter(PipelineBase):
         should keep that someplace
         """
         if hasattr(self, "df"):
-            mlflow.log_inputs(mlflow.data.from_pandas(self.df, name=self._dataset_name))
+            mlflow.log_input(mlflow.data.from_pandas(self.df, name=self._dataset_name))
     
     
 
