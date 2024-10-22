@@ -58,8 +58,10 @@ class SoftProofer(PipelineBase):
 
         # make sure both the source and target profiles are loaded as ImageCmsProfiles
         if isinstance(target_profile, str):
+            self.params["target_profile"] = target_profile
             target_profile = ImageCms.getOpenProfile(target_profile)
         if isinstance(screen_profile, str):
+            self.params["screen_profile"] = screen_profile
             screen_profile = ImageCms.getOpenProfile(screen_profile)
         elif screen_profile is None:
             screen_profile = ImageCms.createProfile("sRGB")
