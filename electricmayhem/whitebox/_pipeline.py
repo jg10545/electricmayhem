@@ -152,8 +152,6 @@ class ModelWrapper(PipelineBase):
             self.eval_wraptype = self.wraptype
         
         self.params = {}
-        #if model.training:
-        #    logging.warn("model appears to be set to train mode. was this intentional?")
             
     def _wrap(self, x):
         """
@@ -325,6 +323,10 @@ class Pipeline(PipelineBase):
         if not issubclass(type(y), PipelineBase):
             y = ModelWrapper(y)
         self.steps.append(y)
+        # update parameter dict
+        self.params = {"version":__version__}
+        for e,s in enumerate(self.steps):
+            self.params[f"{e}_{s.name}"] = s.params
         return self
     
     def save_yaml(self):
