@@ -78,7 +78,8 @@ def unpack_warp_dataframe(df, patch_shapes, mask=1.):
         # precompute warp mask and perspective warp tensor for 
         # each annotation for that target image
         for e,r in df[df.image == i].iterrows():
-            coords = torch.tensor([[[r.uly, r.ulx], [r.lly, r.llx], [r.lry, r.lrx], [r.ury, r.urx]]]).type(torch.float32)
+            #coords = torch.tensor([[[r.uly, r.ulx], [r.lly, r.llx], [r.lry, r.lrx], [r.ury, r.urx]]]).type(torch.float32)
+            coords = torch.tensor([[[r.ulx, r.uly], [r.urx, r.ury], [r.lrx, r.lry], [r.llx, r.lly]]]).type(torch.float32)
             if isinstance(mask, dict):
                 m = mask[r.patch]
             else:
