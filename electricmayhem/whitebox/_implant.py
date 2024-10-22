@@ -420,7 +420,6 @@ class RectanglePatchImplanter(PipelineBase):
         return outdict
     
     def get_description(self):
-        #mask_desc= self.params["mask"]
         return f"**{self.name}:** {len(self.imgkeys)} training and {len(self.eval_imgkeys)} eval images"#, mask: {mask_desc}"
         
     def log_params_to_mlflow(self):
@@ -430,17 +429,6 @@ class RectanglePatchImplanter(PipelineBase):
         """
         if hasattr(self, "df"):
             mlflow.log_inputs(mlflow.data.from_pandas(self.df, name=self._dataset_name))
-        if self.mask is not None:
-            if isinstance(self.mask, torch.Tensor):
-                mask = self.mask.cpu().detach()
-                # if mask is 2D add a channel dimension
-                if len(mask.shape) == 2:
-                    mask = mask.unsqueeze(0)
-                # if mask is single-channel, make it RGB
-                if mask.shape[0] == 1:
-                    mask = mask.repeat(3, 1, 1)
-                self._log_image_to_mlflow(mask, "mask.png")
-        super(self).log_params_to_mlflow()
     
     
 

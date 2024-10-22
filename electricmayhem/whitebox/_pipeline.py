@@ -43,10 +43,14 @@ class PipelineBase(torch.nn.Module):
         return yaml.dump(self.params, default_flow_style=False)
     
     def log_params_to_mlflow(self):
-        p = _flatten_dict(self.params)
-        # mlflow has a limit of 500 characters for params. 
-        p = {k:p[k] for k in p if len(str(p[k])) < 500}
-        mlflow.log_params(p)
+        """
+        When a Pipeline object saves its parameters to MLflow, it'll automatically pull
+        together the self.params dictionaries for each stage in the pipeline.
+
+        Is there anything OUTSIDE OF THE PARAMS DICT that this stage should record for all
+        posterity when that happens? If so, put it here.
+        """
+        pass
         
     def forward(self, x, control=False, evaluate=False, **kwargs):
         return x, kwargs
@@ -339,6 +343,14 @@ class Pipeline(PipelineBase):
                 open(os.path.join(self.logdir, "config.yml"),
                      "w").write(yamltext)
         return 
+    
+    def log_params_to_mlflow(self):
+        p = _flatten_dict(self.params)
+        # mlflow has a limit of 500 characters for params. 
+        p = {k:p[k] for k in p if len(str(p[k])) < 500}
+        mlflow.log_params(p)
+        for s in self.steps:
+            s.log_params_to_mlflow()
     
     def get_last_sample_as_dict(self):
         """
