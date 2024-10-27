@@ -121,9 +121,6 @@ class SpectrumSimulationAttack(PipelineBase):
     Implements the augmentation method described in "Frequency Domain Model Augmentation 
     for Adversarial Attack" by Long et al (2022) DURING TRAINING STEPS ONLY
 
-    Note that unlike other pipeline stages this one is not fully reproducible in its
-    current implementation.
-
     The method basically does a discrete cosine transform on the image, adds noise in the
     frequency domain, then does an inverse DCT to get back to the spatial domain.
 
