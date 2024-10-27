@@ -22,7 +22,7 @@ def scroll_single_image(x, offset_x=0, offset_y=0):
 
 class PatchSaver(PipelineBase):
     """
-    Pass-through for a patch that'll log it to tensorboard
+    Pipeline stage that does nothing except log the patch to tensorboard
     """
     name = "PatchSaver"
     
