@@ -11,15 +11,20 @@ from ._util import to_paramitem, from_paramitem
         
 class KorniaAugmentationPipeline(PipelineBase):
     """
-    Wrapper to manage augmentations from the kornia API.
+    Wrapper to manage augmentations from the kornia API. This pipeline stage lets you configure
+    any tools in the kornia.augmentation module by converting them into a nested dictionary, e.g.
+
+    augmentations = {
+        "ColorJiggle":{"brightness":0.2, "contrast":0.2, "saturation":0.1},
+        "RandomAffine":{"degrees":10, "scale":(0.5, 1.5), "padding_mode":"reflection"}
+    }
+    aug = em.KorniaAugmentationPipeline(augmentations)
     
-    Use check_reproducibility() to make sure the augmentations chosen
-    are repeatable.
+    Use check_reproducibility() or validate() to make sure the augmentations chosen
+    are repeatable. Everything in kornia is supposed to be but I've found cases that weren't.
     
-    DO NOT USE p < 1.0 FOR ANY AUGMENTATIONS
-    
-    Tracking parameters is more complicated in this case and not currently
-    implemented. 
+    DO NOT USE p < 1.0 FOR ANY AUGMENTATIONS. Tracking parameters is more complicated in this 
+    case and not currently implemented. 
     """
     name = "KorniaAugmentationPipeline"
     
