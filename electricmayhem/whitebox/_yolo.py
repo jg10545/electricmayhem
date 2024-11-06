@@ -100,7 +100,7 @@ def plot_detections(image, detections, k, classnames=None, thresh=0.1, iouthresh
     :image: (N,C,H,W) pytorch tensor
     :detections: (N,M,5+num_classes) pytorch tensor of detections. model will only
         output this if it's in .eval() mode
-    :k: which batch index to pull from
+    :k: int; which batch index to pull from
     :classnames: optional; list of class names for display
     :thresh: minimum objectness score for plotting
     :iousthresh: minimum IoU threshold for non-maximal suppression
@@ -181,16 +181,40 @@ def _plot_detection_pair_to_array(im1, dets1, im2, dets2, k, classnames=None,
 
 class YOLOWrapper(ModelWrapper):
     """
-    Subclass of ModelWrapper to include visualizations specific to
-    YOLO models
+    ModelWrapper subclass for YOLO object detection models. This pipeline stage will
+    add some tensorboard visualizations showing images with bounding box detections.
+
+    Remember to set your model to eval() mode; YOLO uses batch normalization which will
+    do weird things to your patch training if you don't freeze it.
+
+    This has been tested on a few YOLO variants:
+
+    -YOLOv4: The official YOLOv4 implementation still relies on DarkNet, but there are
+        a couple unofficial PyTorch variants. We tested on the one at
+        https://github.com/Tianxaomo/pytorch-YOLOv4 , which outputs results in a different
+        forma than other YOLO implementations. If you use this version of YOLO models- set
+        the v4 flag to True, and YOLOWrapper will check outputs for the different format and 
+        attempt to convert them.
+    -YOLOv5: models loaded with the official Ultralytics pytorch codebase should work fine.
+    -YOLOv8 and later: models loaded with the ultralytics python package have a wrapper layer
+        with a bunch of automation and postprocessing that doesn't all preserve gradients in
+        inference. After loading, pull out the "model" attribute and pass that to ModelWrapper.
+        For example:
+
+        nano = ultralytics.YOLO("yolo11n.pt").model
+        small = ultralytics.YOLO("yolo11s.pt").model
+        nano.eval()
+        small.eval()
+        yolo = em.YOLOWrapper({"nano":nano, "small":small})
+
     """
-    name = "ModelWrapper"
+    name = "YOLOWrapper"
     
     def __init__(self, model, eval_model=None, logviz=True, classnames=None, 
                  thresh=0.1, iouthresh=0.5, v4=False):
         """
-        :model: pytorch model or list/dict of models, in eval mode
-        :eval_model: optional model or list/dict of models to use in eval steps
+        :model: pytorch model or dict of models, in eval mode
+        :eval_model: optional model or dict of models to use in eval steps
         :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
             is called.
         :classnames: list of output category names. if models with different output
