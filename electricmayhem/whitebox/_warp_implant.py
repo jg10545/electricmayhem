@@ -5,6 +5,7 @@ import logging
 import matplotlib.pyplot as plt
 import matplotlib.patches
 import mlflow
+from PIL import Image
 
 from ._implant import RectanglePatchImplanter
 from electricmayhem._convenience import load_to_tensor
@@ -78,7 +79,6 @@ def unpack_warp_dataframe(df, patch_shapes, mask=1.):
         # precompute warp mask and perspective warp tensor for 
         # each annotation for that target image
         for e,r in df[df.image == i].iterrows():
-            #coords = torch.tensor([[[r.uly, r.ulx], [r.lly, r.llx], [r.lry, r.lrx], [r.ury, r.urx]]]).type(torch.float32)
             coords = torch.tensor([[[r.ulx, r.uly], [r.urx, r.ury], [r.lrx, r.lry], [r.llx, r.lly]]]).type(torch.float32)
             if isinstance(mask, dict):
                 m = mask[r.patch]
@@ -216,24 +216,24 @@ def warp_and_implant_batch(patch_batch, target_batch, coord_batch, mask=None,
     return torch.clamp(target_batch*warpmask + warped_patch*(1-warpmask)*scale, 0, 1) # brightness scaling could push above 1
 
 
-def scale_coordinate_list(coord, scale=0.1):
+def scale_coordinate_list(coord, scale=0.1): 
     """
     Utility function to scale a list of corner coordinates out by a fraction
     of its width
     """
     newcoord = [[0,0], [0,0], [0,0], [0,0]] # upper left, upper right, lower right, lower left
 
-    newcoord[0][0] = int(coord[0][0] - scale*(coord[1][0]-coord[0][0])) # upper left x
-    newcoord[0][1] = int(coord[0][1] - scale*(coord[3][1]-coord[0][1])) # upper left y
+    newcoord[0][0] = int(coord[0][0] - scale*(coord[2][0]-coord[0][0])) # upper left x: shift wrt lower right
+    newcoord[0][1] = int(coord[0][1] - scale*(coord[2][1]-coord[0][1])) # upper left y
 
-    newcoord[1][0] = int(coord[1][0] - scale*(coord[0][0]-coord[1][0])) # upper right x
-    newcoord[1][1] = int(coord[1][1] - scale*(coord[3][1]-coord[0][1])) # upper right y
+    newcoord[1][0] = int(coord[1][0] - scale*(coord[3][0]-coord[1][0])) # upper right x: shift wrt lower left
+    newcoord[1][1] = int(coord[1][1] - scale*(coord[3][1]-coord[1][1])) # upper right y
 
-    newcoord[3][0] = int(coord[3][0] - scale*(coord[1][0]-coord[0][0])) # lower left x
-    newcoord[3][1] = int(coord[3][1] - scale*(coord[0][1]-coord[3][1])) # lower left y
+    newcoord[3][0] = int(coord[3][0] - scale*(coord[1][0]-coord[3][0])) # lower left x
+    newcoord[3][1] = int(coord[3][1] - scale*(coord[1][1]-coord[3][1])) # lower left y
 
-    newcoord[2][0] = int(coord[2][0] - scale*(coord[0][0]-coord[1][0])) # upper right x
-    newcoord[2][1] = int(coord[2][1] - scale*(coord[0][1]-coord[3][1])) # upper right y
+    newcoord[2][0] = int(coord[2][0] - scale*(coord[0][0]-coord[2][0])) # upper right x
+    newcoord[2][1] = int(coord[2][1] - scale*(coord[0][1]-coord[2][1])) # upper right y
     
     return newcoord
 
@@ -416,34 +416,28 @@ class WarpPatchImplanter(RectanglePatchImplanter):
         """
         Quick visualization with matplotlib of the victim images and box regions
         """
-        assert False, "not yet implemented"
-        if evaluate:
-            images = self.eval_images
-            boxes = self.eval_boxes
-            imgkeys = self.eval_imgkeys
+        # choose which images to sample from
+        if "split" in self.df.columns:
+            if evaluate:
+                data = self.df[self.df.split != "train"]
+            else:
+                data = self.df[self.df.split != "train"]
         else:
-            images = self.images
-            boxes = self.boxes
-            imgkeys = self.imgkeys
-            
-        n = len(images)
-        d = int(np.ceil(np.sqrt(n)))
-        fig, axs = plt.subplots(nrows=d, ncols=d, squeeze=False)
+            data = self.df
 
-        i = 0
-        for axrow in axs:
-            for ax in axrow:
-                ax.set_axis_off()
-                if i < n:
-                    ax.imshow((images[i].permute(1,2,0).detach().cpu().numpy()))
-                    
-                    for j in range(len(boxes[i])):
-                        b = boxes[i][j]
-                        ax.plot([f[0] for f in b], [f[1] for f in b], "o-")
-                    ax.set_title(imgkeys[i])
-                
-                i += 1
-        return fig
+        ims = data.image.unique()
+        sampled_ims = np.random.choice(ims, replace=False, size=min(len(ims),9))
+        for i in range(9):
+            plt.subplot(3,3,i+1)
+            plt.axis(False)
+            if i < len(sampled_ims):
+                plt.imshow(Image.open(sampled_ims[i]))
+                subdata = data[data.image == sampled_ims[i]]
+                for e,r in subdata.iterrows():
+                    plt.plot([r.ulx, r.urx, r.lrx, r.llx], [r.uly, r.ury, r.lry, r.lly], "o-")
+                    plt.text(r.ulx, r.uly, r.patch)
+                plt.title(sampled_ims[i])
+
     
     def get_last_sample_as_dict(self):
         """

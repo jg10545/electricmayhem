@@ -39,6 +39,7 @@ def get_pixel_offsets_from_fractional_offsets(s, boxes, patchlist, key="patch"):
             
     offset_y = (dy*s.get(f"offset_frac_y_{key}", 0) + boxy).type(torch.IntTensor)
     offset_x = (dx*s.get(f"offset_frac_x_{key}", 0) + boxx).type(torch.IntTensor)
+    
     return offset_x, offset_y
 
 def _unpack_rectangle_frame(df):
@@ -289,9 +290,8 @@ class RectanglePatchImplanter(PipelineBase):
         for i in range(len(image)):
             C, H, W = image[i].shape
             pC, pH, pW = patch[i].shape
-        
+            
             imp = image[i].clone().detach()
-
             # get a copy of the part of the image we're cutting out
             with torch.no_grad():
                 cutout = imp.clone().detach()[:, offset_y[i]:offset_y[i]+pH, offset_x[i]:offset_x[i]+pW]
@@ -310,7 +310,6 @@ class RectanglePatchImplanter(PipelineBase):
                 if isinstance(mask, torch.Tensor):
                     with torch.no_grad():
                         mask = kornia.geometry.resize(mask, (patch[i].shape[1], patch[i].shape[2]))
-
                 replace = scale*patch[i]*mask + cutout*(1-mask)
             # otherwise we're just replacing with the patch
             else:
