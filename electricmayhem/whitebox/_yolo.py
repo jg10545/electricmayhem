@@ -91,6 +91,20 @@ def convert_v4_to_v5_format(output, H, W):
                                confs], -1)]
     
 
+def convert_ultralytics_to_v5_format(detections):
+    """
+    Convert newer ultralytics detections to the old v5 format
+    
+    :detections: [batch_size, 4+num_classes, num_boxes] torch.Tensor
+    """
+    maxdetect = torch.max(detections[:,4:,:], 1)[0].unsqueeze(1) # [batch_size, 1, num_boxes]
+    newdets = torch.concat([detections[:,:4,:], # [batch_size, 4, num_boxes]
+                         maxdetect,  # [batch_size, 1, num_boxes]
+                         detections[:,4:,:]], # [batch_size, num_classes, num_boxes]
+                           1) # [batch_size, 5+num_classes, num_boxes]
+    return newdets.permute(0,2,1) # [batch_size, num_boxes, 5+num_classes]
+
+
 def plot_detections(image, detections, k, classnames=None, thresh=0.1, iouthresh=0.5):
     """
     visualize the detections from one element of a batch.

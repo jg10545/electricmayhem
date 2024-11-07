@@ -80,6 +80,15 @@ def test_convert_v4_to_v5_correct_output_shape():
     assert v5_output[0].shape == (batch, num_boxes, 5+num_classes)
     
     
+def test_convert_ultralytics_to_v5_format_correct_output_shape():
+    N = 3
+    num_classes = 7
+    num_boxes = 13
+
+    input = torch.tensor(np.random.uniform(0, 1, size=(N, 4+num_classes, num_boxes)).astype(int))
+    output = _yolo.convert_ultralytics_to_v5_format(input)
+
+    assert output.shape == (N, num_boxes, 5+num_classes)
     
 def test_yolowrapper_single_v5_model(tmp_path_factory):
     num_classes = 7
