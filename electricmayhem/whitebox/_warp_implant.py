@@ -435,7 +435,6 @@ class WarpPatchImplanter(RectanglePatchImplanter):
                 for e,r in subdata.iterrows():
                     plt.plot([r.ulx, r.urx, r.lrx, r.llx], [r.uly, r.ury, r.lry, r.lly], "o-")
                     plt.text(r.ulx, r.uly, r.patch)
-                plt.title(sampled_ims[i])
 
     
     def get_last_sample_as_dict(self):
