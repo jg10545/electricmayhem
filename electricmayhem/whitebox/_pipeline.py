@@ -765,8 +765,14 @@ class Pipeline(PipelineBase):
                 
         # wrap up mlflow logging
         if self._logging_to_mlflow:
-            self._log_image_to_mlflow(patch_params.patch, "patch.png")
-        #return self.patch_params.patch
+            p = patch_params.patch
+            # single patch case
+            if isinstance(p, torch.Tensor):
+                self._log_image_to_mlflow(p, "patch.png")
+            else:
+                for k in p:
+                    self._log_image_to_mlflow(p[k], "patch_{k}.png")
+            
         if self._single_patch:
             p = self.patch_params(1)
             if isinstance(p, dict):
@@ -815,8 +821,8 @@ class Pipeline(PipelineBase):
         :objective: string; name of objective to use for black-box optimization.
             Should be one of the keys from your loss dictionary.
         :logdir: string; top-level directory trials will be saved under
-        :patch_shape: tuple; shape of patch parameter to initialize. should look
-            like what you pass to initialize_patch_params().
+        :patch_shape: tuple or dict of tuples; shape of patch parameter(s) to initialize. 
+            should look like what you pass to initialize_patch_params().
         :N: int; number of trials to run.
         :num_steps: int; budget in number of steps per trial
         :batch_size: int; batch size for training and eval
