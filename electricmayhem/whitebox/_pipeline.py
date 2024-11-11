@@ -768,7 +768,11 @@ class Pipeline(PipelineBase):
             self._log_image_to_mlflow(patch_params.patch, "patch.png")
         #return self.patch_params.patch
         if self._single_patch:
-            return self.patch_params(1).squeeze(0)
+            p = self.patch_params(1)
+            if isinstance(p, dict):
+                return {k:p[k].squeeze(0) for k in p}
+            else:
+                return p.squeeze(0)
         else:
             return self.patch_params()
     
