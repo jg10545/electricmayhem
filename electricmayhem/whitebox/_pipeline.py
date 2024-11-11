@@ -294,7 +294,7 @@ class Pipeline(PipelineBase):
         self.steps = torch.nn.ModuleList() #[]
         for a in args:
             _ = self.__add__(a)
-        self._defaults = {}
+        #self._defaults = {} # TODO remove this?
         self.global_step = 0
         self._logging_to_mlflow = False
         self._profiling = False
@@ -440,7 +440,7 @@ class Pipeline(PipelineBase):
             else:
                 patch = torch.zeros(patch_shape, dtype=torch.float32).uniform_(0,1)
 
-        self._defaults["patch_param_shape"] = patch.shape    
+        #self._defaults["patch_param_shape"] = patch.shape   # TODO remove this?
         # now wrap the patch in a torch.nn.Module subclass so that we can
         # distribute it if we need to
         if not isinstance(patch, PatchWrapper):
@@ -642,7 +642,7 @@ class Pipeline(PipelineBase):
         
     def train_patch(self, batch_size, num_steps, learning_rate=1e-2, eval_every=1000,
                     num_eval_steps=10, accumulate=1, lr_decay='cosine', 
-                    optimizer="bim", profile=0, progressbar=True, 
+                    optimizer='adam', profile=0, progressbar=True, 
                     clamp_to=(0,1), rho=0, **kwargs):
         """
         Patch training loop. Expects that you've already called initialize_patch_params() and
@@ -691,6 +691,7 @@ class Pipeline(PipelineBase):
         if profile > 0:
             prof = self._get_profiler(active=profile)
         
+        assert hasattr(self, "patch_params"), "patch_params attribute not found- did you call Pipeline.initialize_patch_params()?"
         patch_params = self.patch_params
         # initialize optimizer and scheduler
         optimizer, scheduler = _get_optimizer_and_scheduler(optimizer,
