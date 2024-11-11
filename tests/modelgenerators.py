@@ -75,3 +75,27 @@ class DummyYOLOv4(torch.nn.Module):
         x_class = torch.reshape(x_class, (x_class.shape[0], self.num_boxes,
                                           self.num_classes))
         return [x_box, x_class]
+    
+class DummyYOLOv8(torch.nn.Module):
+    """
+    Module that inputs an image and outputs something that looks like the
+    standard YOLO format. 
+    
+    Output is a list of length 2; the firt element is a tensor of 
+    shape (batch_size, num_boxes, 5+num_classes)
+    """
+    def __init__(self, num_boxes=11, num_classes=7):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 5, 3)
+        self.dense = torch.nn.Linear(5,(4+num_classes)*num_boxes)
+        self.num_boxes = num_boxes
+        self.num_classes = num_classes
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = torch.nn.functional.relu(x)
+        x = torch.nn.functional.max_pool2d(x, kernel_size=x.size()[2:])
+        x = torch.reshape(x, x.shape[:2])
+        x = self.dense(x)
+        x = torch.reshape(x, (x.shape[0], 4+self.num_classes, self.num_boxes))
+        return [x, None]

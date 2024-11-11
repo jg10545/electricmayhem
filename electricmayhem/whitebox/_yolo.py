@@ -102,7 +102,7 @@ def convert_ultralytics_to_v5_format(detections):
                          maxdetect,  # [batch_size, 1, num_boxes]
                          detections[:,4:,:]], # [batch_size, num_classes, num_boxes]
                            1) # [batch_size, 5+num_classes, num_boxes]
-    return newdets.permute(0,2,1) # [batch_size, num_boxes, 5+num_classes]
+    return [newdets.permute(0,2,1)] # [batch_size, num_boxes, 5+num_classes]
 
 
 def plot_detections(image, detections, k, classnames=None, thresh=0.1, iouthresh=0.5):
@@ -206,9 +206,7 @@ class YOLOWrapper(ModelWrapper):
     -YOLOv4: The official YOLOv4 implementation still relies on DarkNet, but there are
         a couple unofficial PyTorch variants. We tested on the one at
         https://github.com/Tianxaomo/pytorch-YOLOv4 , which outputs results in a different
-        forma than other YOLO implementations. If you use this version of YOLO models- set
-        the v4 flag to True, and YOLOWrapper will check outputs for the different format and 
-        attempt to convert them.
+        format than other YOLO implementations. 
     -YOLOv5: models loaded with the official Ultralytics pytorch codebase should work fine.
     -YOLOv8 and later: models loaded with the ultralytics python package have a wrapper layer
         with a bunch of automation and postprocessing that doesn't all preserve gradients in
@@ -224,11 +222,12 @@ class YOLOWrapper(ModelWrapper):
     """
     name = "YOLOWrapper"
     
-    def __init__(self, model, eval_model=None, logviz=True, classnames=None, 
-                 thresh=0.1, iouthresh=0.5, v4=False):
+    def __init__(self, model, eval_model=None, yolo_version=5, logviz=True, 
+                 classnames=None, thresh=0.1, iouthresh=0.5, ):
         """
         :model: pytorch model or dict of models, in eval mode
         :eval_model: optional model or dict of models to use in eval steps
+        :yolo_version: integer or dictionary mapping model names to integers. 
         :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
             is called.
         :classnames: list of output category names. if models with different output
@@ -236,17 +235,26 @@ class YOLOWrapper(ModelWrapper):
             of category names
         :thresh: objectness score threshold for plotting
         :iouthresh: IoU threshold for non maximal suppression during plotting
-        :v4: bool; if True outputs are expected in VOLOv4 format instead of v5
         """
         super().__init__(model, eval_model)
+        if isinstance(yolo_version, dict):
+            if 10 in yolo_version:
+                assert False, "YOLOv10 has a different output format- not yet implemented"
+            self.params = yolo_version
+        else:
+            self.params = {"yolo_version":yolo_version}
+            if yolo_version == 10:
+                assert False, "YOLOv10 has a different output format- not yet implemented"
+
         self._logviz = logviz
         self.classnames = classnames
         self.thresh = thresh
         self.iouthresh = iouthresh
-        self.params = {"v4":v4}
+
         
     def _convert_v4_to_v5_if_you_can(self, x, H, W):
         """
+        DEPRECATED 
         only convert format from the non-official v4 codebase outputs if
         necessary
         """
@@ -256,6 +264,14 @@ class YOLOWrapper(ModelWrapper):
                     if x[0].shape[3] == 4:
                         return convert_v4_to_v5_format(x, H, W)
         return x
+    
+    def _convert_outputs(self, outputs, yolotype, H=640, W=640):
+        if yolotype == 5:
+            return outputs
+        elif yolotype == 4:
+            return convert_v4_to_v5_format(outputs, H, W)
+        else:
+            return convert_ultralytics_to_v5_format(outputs[0])
         
         
     def forward(self, x, control=False, evaluate=False, **kwargs):
@@ -271,18 +287,22 @@ class YOLOWrapper(ModelWrapper):
             model = self.model
             wraptype = self.wraptype
             outputs = self._call_wrapped(model,x)
-        
-        # for the non-official v4 format, we might need to convert the results.
-        # but in case we're mixing different formats- only run the conversion function
-        # on the outputs that appear to be in that format.
-        if self.params["v4"]:
-            if wraptype == "list":
-                outputs = [self._convert_v4_to_v5_if_you_can(o,H,W) for o in outputs]
-            elif wraptype == "dict":
-                outputs = {o:self._convert_v4_to_v5_if_you_can(outputs[o],H,W)
+
+        if wraptype == "list":
+            assert False, "wrapping models as a list no longer supported; please use a dictionary"
+        # dictionary of models
+        elif wraptype == "dict":
+            # every model has same YOLO version case
+            if "yolo_version" in self.params:
+                outputs = {o: self._convert_outputs(outputs[o], self.params["yolo_version"], H, W)
                            for o in outputs}
+            # different YOLO verions for different models case
             else:
-                outputs = self._convert_v4_to_v5_if_you_can(outputs,H,W)
+                outputs = {o: self._convert_outputs(outputs[o], self.params[o], H, W)
+                           for o in outputs}
+        # single model
+        else:
+            outputs = self._convert_outputs(outputs, self.params["yolo_version"], H, W)
 
         return outputs, kwargs
     
@@ -335,15 +355,6 @@ class YOLOWrapper(ModelWrapper):
                                                        detects_control[0], writer, 
                                                        step, self.classnames,
                                                        logging_to_mlflow=logging_to_mlflow)
-            # or a list of models- indicate each model by its list index
-            elif self.eval_wraptype == "list":
-                for i in range(len(detects)):
-                    self._vizualize_and_log_one_model_detection(x, x_control, detects[i][0],
-                                                           detects_control[i][0], writer, 
-                                                           step, self.classnames,
-                                                           suffix=i,
-                                                           logging_to_mlflow=logging_to_mlflow)
-            
             # or a dict of models
             elif self.eval_wraptype == "dict":
                 for k in detects:
