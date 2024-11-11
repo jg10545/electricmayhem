@@ -315,7 +315,6 @@ class WarpPatchImplanter(RectanglePatchImplanter):
 
         NOT YET UPDATED FOR NEW API
         """
-        #assert False, "not yet implemented"
         all_validated = True
         # infer batch size
         if isinstance(patch, torch.Tensor):
@@ -421,7 +420,7 @@ class WarpPatchImplanter(RectanglePatchImplanter):
             if evaluate:
                 data = self.df[self.df.split != "train"]
             else:
-                data = self.df[self.df.split != "train"]
+                data = self.df[self.df.split == "train"]
         else:
             data = self.df
 
