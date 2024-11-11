@@ -545,15 +545,17 @@ class Pipeline(PipelineBase):
             if isinstance(test_patch_shape, dict):
                 test_patch = {k:torch.ones(test_patch_shape[k], dtype=torch.float32).uniform_(0,1)
                               for k in test_patch_shape}
+                batch_size = test_patch_shape[list(test_patch_shape.keys())[0]][0]
             # single patch case
             else:
                 test_patch = torch.ones(test_patch_shape, dtype=torch.float32).uniform_(0,1)
+                batch_size = test_patch_shape[0]
             model_output, kwargs = self(test_patch)
             lossdict = lossfunc(model_output, **kwargs)
             assert isinstance(lossdict, dict), "this loss function doesn't appear to generate a dictionary"
             for k in lossdict:
                 assert isinstance(lossdict[k], torch.Tensor), f"loss function output {k} doesn't appear to be a Tensor"
-                assert lossdict[k].shape == (test_patch_shape[0],), f"loss function output {k} doesn't appear to return the correct shape; returned {lossdict[k].shape}"
+                assert lossdict[k].shape == (batch_size,), f"loss function output {k} doesn't appear to return the correct shape; returned {lossdict[k].shape}"
             # record loss dictionary keys
             self._lossdictkeys = list(lossdict.keys())
             
