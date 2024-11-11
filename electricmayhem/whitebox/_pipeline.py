@@ -415,10 +415,12 @@ class Pipeline(PipelineBase):
         """
         Generate parameters for an untrained patch uniformly on the unit interval.
         
-        :patch_shape: tuple; dimensions of patch parameters. will be sampled on the
-            unit interval
+        :patch_shape: dimensions of the patch or patches, WITHOUT batch dimension. when training a
+            single patch this should be a tuple in channel-first format (e.g. (C,H,W)); when training
+            multiple patches this should be a dictionary of tuples. patches will be sampled uniformly
+            on the unit interval
         :patch: torch.Tensor; instead of passing parameters you can just pass your
-            own initialized patch
+            own initialized patch or dictionary of patches. will supercede patch_shape.
         :single_patch: bool; True if this is a single patch param and False if it's
             a batch of them.
         :device: which device to initialize to
@@ -532,17 +534,18 @@ class Pipeline(PipelineBase):
         
     def set_loss(self, lossfunc, test_patch_shape=(2,3,64,64)):
         """
-        Set a loss function for training a patch. lossfunc should input:
-            :outputs: model outputs
-            :patchparam: the parameterization of the batch of patches
-            
-        lossfunc should output a dictionary containing one key for each term in
-        the loss function (or other metrics you want to compute) and each value
-        should be elementwise values of that measure.
+        Set a loss function for training a patch and run a test batch through.
+
+        :lossfunc: python function to compute loss function and evaluation metric terms. should
+            input the pipeline outputs and have a **kwargs input for any additional data the 
+            pipeline creates. It should output a dictionary of 1D tensors (of length batchsize)
+            giving the UNAGGREGATED values of each metric or loss term.
+        :test_patch_shape: tuple (single patch) or dictionary of tuples (multi patch)
+            giving the shape of a BATCH of patches to test the loss function with. Will
+            generally be a 4-tuple (batchsize, C, H, W)
         
         When using loss functions from torch.nn, make sure to set
         "reduce=False" so that it returns elementwise loss.
-        
         """
         self.loss = lossfunc
         
@@ -577,7 +580,12 @@ class Pipeline(PipelineBase):
             return
         with torch.no_grad():
             x = patchbatch 
-            x_control = patchbatch.clone()
+            # multi patch case
+            if isinstance(patchbatch, dict):
+                x_control = {k:patchbatch[k].clone() for k in patchbatch}
+            # single patch case
+            else:
+                x_control = patchbatch.clone()
             # run through each stage, running diagnostics on the
             # interim steps
             for s in self.steps:
