@@ -734,7 +734,7 @@ class Pipeline(PipelineBase):
                 if clamp_to is not None:
                     with torch.no_grad():
                         if isinstance(self.patch_params, PatchWrapper):
-                            self.patch_params.patch.clamp_(clamp_to[0], clamp_to[1])
+                            self.patch_params.clamp(clamp_to[0], clamp_to[1])
                         else:
                             # distributed case: type should be
                             # torch.nn.parallel.distributed.DistributedDataParallel
