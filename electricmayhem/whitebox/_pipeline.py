@@ -432,7 +432,13 @@ class Pipeline(PipelineBase):
                 device = n.device
                 break
         if (patch_shape is not None)&(patch is None):
-            patch = torch.zeros(patch_shape, dtype=torch.float32).uniform_(0,1)
+            # multi-patch case
+            if isinstance(patch_shape, dict):
+                patch = {k:torch.zeros(patch_shape[k], dtype=torch.float32).uniform_(0,1)
+                         for k in patch_shape}
+            # single patch case
+            else:
+                patch = torch.zeros(patch_shape, dtype=torch.float32).uniform_(0,1)
 
         self._defaults["patch_param_shape"] = patch.shape    
         # now wrap the patch in a torch.nn.Module subclass so that we can
@@ -535,7 +541,13 @@ class Pipeline(PipelineBase):
         self.loss = lossfunc
         
         if test_patch_shape is not None:
-            test_patch = torch.ones(test_patch_shape, dtype=torch.float32).uniform_(0,1)
+            # multi-patch case
+            if isinstance(test_patch_shape, dict):
+                test_patch = {k:torch.ones(test_patch_shape[k], dtype=torch.float32).uniform_(0,1)
+                              for k in test_patch_shape}
+            # single patch case
+            else:
+                test_patch = torch.ones(test_patch_shape, dtype=torch.float32).uniform_(0,1)
             model_output, kwargs = self(test_patch)
             lossdict = lossfunc(model_output, **kwargs)
             assert isinstance(lossdict, dict), "this loss function doesn't appear to generate a dictionary"
