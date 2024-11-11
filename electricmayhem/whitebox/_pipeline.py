@@ -444,7 +444,13 @@ class Pipeline(PipelineBase):
         # now wrap the patch in a torch.nn.Module subclass so that we can
         # distribute it if we need to
         if not isinstance(patch, PatchWrapper):
-            patch = patch.clone().detach().requires_grad_(True)
+            # multi patch case
+            if isinstance(patch, dict):
+                patch = {k:patch[k].clone().detach().requires_grad_(True)
+                         for k in patch}
+            # single patch case
+            else:
+                patch = patch.clone().detach().requires_grad_(True)
             patch_wrapped = PatchWrapper(patch,
                                          single_patch=single_patch)
        
