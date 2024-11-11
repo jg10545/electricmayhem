@@ -771,7 +771,7 @@ class Pipeline(PipelineBase):
                 self._log_image_to_mlflow(p, "patch.png")
             else:
                 for k in p:
-                    self._log_image_to_mlflow(p[k], "patch_{k}.png")
+                    self._log_image_to_mlflow(p[k], f"patch_{k}.png")
             
         if self._single_patch:
             p = self.patch_params(1)
