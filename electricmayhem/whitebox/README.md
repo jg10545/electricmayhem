@@ -19,11 +19,6 @@
   * loss function weights- you'll need to pass at least one of the keys from the dictionary your loss function outputs (summary stats on all the loss dict outputs will still be stored in TensorBoard though)
 
 
-```
-import electricmayhem.whitebox as emw
-
-
-```
 
 ### To optimize hyperparameters
 
@@ -36,6 +31,7 @@ import electricmayhem.whitebox as emw
   * replace with a tuple `(low, high, 'log')` to optimize on a log scale
   * replace with a tuple `(low, high, 'int')` to optimize as an integer (for example, for the number of gradient accumulation steps)
   * replace with a list of strings `['option1', 'option2']` to optimize categorical hyperparameters like the optimizer (`'adam'`, `'bim'`, or `'mifgsm'`) or learning rate decay schedule (`'none'`, `'cosine'`, `'exponential'`, or `'plateau'`) 
+
 
 
 ## General pipeline stages
@@ -94,6 +90,8 @@ Every pipeline step should subclass `electricmayhem._pipeline.PipelineBase`, whi
   * If called with `control=True`, runs a control batch (same configuration as previous batch but without the patch)
   * If called with `evaluate=True`, runs an evaluation batch (for example possibly using holdout images or a separate model)
   * If a dictionary of paramaters is passed to the `params` kwarg, overrules any randomly-sampled parameters with these values.
+  * Can input `**kwargs`
+  * Returns a 2-tuple containing that stages' output and the input `kwargs` dictionary (possible with more information added to it)
 * There should be a `get_last_sample_as_dict()` method. It should return any stochastic parameters sampled for the last batch as a dictionary containing lists or 1D `numpy` arrays of length `batchsize`
 
 ### Optional steps
