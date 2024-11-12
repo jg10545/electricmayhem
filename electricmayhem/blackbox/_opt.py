@@ -1,4 +1,4 @@
-import numpy as np 
+import numpy as np
 import torch
 from tqdm import tqdm
 import json
@@ -7,42 +7,49 @@ import time
 import kornia.geometry.transform
 
 from ax.service.ax_client import AxClient, ObjectiveProperties
-import ax.plot.diagnostic, ax.plot.scatter,  ax.plot.contour
+import ax.plot.diagnostic, ax.plot.scatter, ax.plot.contour
 import ax.utils.notebook.plotting
 import ax.modelbridge.cross_validation
-import ax.modelbridge.generation_strategy 
-import ax.modelbridge.registry 
-
+import ax.modelbridge.generation_strategy
+import ax.modelbridge.registry
 
 
 from electricmayhem.blackbox._graphite import BlackBoxPatchTrainer
 from electricmayhem.blackbox._perlin import BayesianPerlinNoisePatchTrainer
 
 
-
-
-
-class BlackBoxOptimizer():
+class BlackBoxOptimizer:
     """
     Wrapper class that uses AX to search hyperparameter space for
     the BlackBoxPatchTrainer class
     """
-    
-    def __init__(self, img, initial_mask, final_mask, detect_func, logdir,
-                 budget=20000,
-                 num_augments=[10,200], q=[5,50], 
-                 beta=[0.01, 5], downsample=[1,2,4,8,16],
-                 aug_params={}, eval_augments=1000, 
-                 num_channels=3, perturbation=None, 
-                 tr_thresh=0.25,
-                 reduce_mask=True,
-                 num_sobol=10,
-                 include_error_as_positive=False,
-                 eval_func=None,
-                 fixed_augs=None,
-                 mlflow_uri=None,
-                 experiment_name="graphite_optimization", 
-                 load_from_json_file=None):
+
+    def __init__(
+        self,
+        img,
+        initial_mask,
+        final_mask,
+        detect_func,
+        logdir,
+        budget=20000,
+        num_augments=[10, 200],
+        q=[5, 50],
+        beta=[0.01, 5],
+        downsample=[1, 2, 4, 8, 16],
+        aug_params={},
+        eval_augments=1000,
+        num_channels=3,
+        perturbation=None,
+        tr_thresh=0.25,
+        reduce_mask=True,
+        num_sobol=10,
+        include_error_as_positive=False,
+        eval_func=None,
+        fixed_augs=None,
+        mlflow_uri=None,
+        experiment_name="graphite_optimization",
+        load_from_json_file=None,
+    ):
         """
         :img: torch.Tensor in channel-first format; victim image
         :initial_mask: torch.Tensor in channel-first format; initial mask
@@ -63,7 +70,7 @@ class BlackBoxOptimizer():
         :num_channels: 1 or 3; number of channels for the perturbation
         :perturbation: torch.Tensor in channel-first format; perturbation to start
             from. if None, initialize a gray tensor for each run.
-        :tr_thresh:  float; transform robustness threshold to aim for 
+        :tr_thresh:  float; transform robustness threshold to aim for
             during mask reudction step
         :reduce_mask: whether to include GRAPHITE mask reduction step
         :num_sobol: how many Sobol-sampled steps to take before starting to fit
@@ -90,7 +97,7 @@ class BlackBoxOptimizer():
         self.eval_func = eval_func
         self.tr_thresh = tr_thresh
         self.reduce_mask = reduce_mask
-        
+
         # if we're resuming from a previous experiment, load it here.
         if load_from_json_file is not None:
             self.client = AxClient.load_from_json_file(load_from_json_file)
@@ -100,155 +107,165 @@ class BlackBoxOptimizer():
                     # Quasi-random initialization step
                     ax.modelbridge.generation_strategy.GenerationStep(
                         model=ax.modelbridge.registry.Models.SOBOL,
-                        num_trials=num_sobol,  
-                        ),
+                        num_trials=num_sobol,
+                    ),
                     # Bayesian optimization step using the custom acquisition function
                     ax.modelbridge.generation_strategy.GenerationStep(
                         model=ax.modelbridge.registry.Models.GPEI,
-                        num_trials=-1, 
-                        ),
-                    ]
-                )
-            
+                        num_trials=-1,
+                    ),
+                ]
+            )
+
             self.client = AxClient(generation_strategy=gs)
-            #self.client = AxClient()    
+            # self.client = AxClient()
             # set up the experiment!
             self.params = self._build_params(num_augments, q, beta, downsample)
             self.client.create_experiment(
                 name=experiment_name,
                 parameters=self.params,
-                objectives={"eval_transform_robustness":ObjectiveProperties(minimize=False)},
+                objectives={
+                    "eval_transform_robustness": ObjectiveProperties(minimize=False)
+                },
             )
-        
 
-        
-    
     def _build_params(self, num_augments, q, beta, downsample):
         """
         Format parameter ranges for AX
         """
         return [
-            {"name":"num_augments",
-             "type":"range",
-             "bounds":num_augments,
-             "value_type":"int",
-             "log_scale":True},
-            
-            {"name":"q",
-             "type":"range",
-             "bounds":q,
-             "value_type":"int",
-             "log_scale":True},
-            
-            {"name":"beta",
-             "type":"range",
-             "bounds":beta,
-             "value_type":"float",
-             "log_scale":True},
-            
-            {"name":"downsample",
-             "type":"choice", #"range",
-             #"bounds":downsample,
-             "value_type":"int",
-             "values":downsample,
-             "is_ordered":True},
-             #"log_scale":False},
-         ]
-    
+            {
+                "name": "num_augments",
+                "type": "range",
+                "bounds": num_augments,
+                "value_type": "int",
+                "log_scale": True,
+            },
+            {
+                "name": "q",
+                "type": "range",
+                "bounds": q,
+                "value_type": "int",
+                "log_scale": True,
+            },
+            {
+                "name": "beta",
+                "type": "range",
+                "bounds": beta,
+                "value_type": "float",
+                "log_scale": True,
+            },
+            {
+                "name": "downsample",
+                "type": "choice",  # "range",
+                # "bounds":downsample,
+                "value_type": "int",
+                "values": downsample,
+                "is_ordered": True,
+            },
+            # "log_scale":False},
+        ]
 
-    
     def _evaluate_trial(self, p):
-        """
-        
-        """
+        """ """
         # build a trainer for this step of the experiment
         logdir = os.path.join(self.logdir, str(len(list(os.listdir(self.logdir)))))
-        
+
         # initialize a new perturbation
-        H = int(self.H/p["downsample"])
-        W = int(self.W/p["downsample"])
+        H = int(self.H / p["downsample"])
+        W = int(self.W / p["downsample"])
         if self.perturbation is None:
-            perturbation = 0.5*np.ones((self.num_channels, H, W))
+            perturbation = 0.5 * np.ones((self.num_channels, H, W))
             perturbation = torch.Tensor(perturbation)
         else:
             perturbation = self.perturbation.clone().unsqueeze(0)
-            perturbation = kornia.geometry.transform.resize(perturbation, (H,W))
+            perturbation = kornia.geometry.transform.resize(perturbation, (H, W))
             perturbation = perturbation.squeeze(0)
-        
-        trainer = BlackBoxPatchTrainer(*self.inputs, logdir,
-                                       num_augments=p["num_augments"],
-                                       q=p["q"],
-                                       beta=p["beta"],
-                                       aug_params=self.aug_params,
-                                       eval_augments=self.eval_augments,
-                                       perturbation=perturbation,
-                                       tr_thresh=self.tr_thresh,
-                                       extra_params={"downsample":p["downsample"]},
-                                       fixed_augs=self.fixed_augs,
-                                       reduce_mask=self.reduce_mask,
-                                       mlflow_uri=self.mlflow_uri,
-                                       experiment_name=self.experiment_name,
-                                       include_error_as_positive=self.include_error_as_positive,
-                                       eval_func=self.eval_func)
+
+        trainer = BlackBoxPatchTrainer(
+            *self.inputs,
+            logdir,
+            num_augments=p["num_augments"],
+            q=p["q"],
+            beta=p["beta"],
+            aug_params=self.aug_params,
+            eval_augments=self.eval_augments,
+            perturbation=perturbation,
+            tr_thresh=self.tr_thresh,
+            extra_params={"downsample": p["downsample"]},
+            fixed_augs=self.fixed_augs,
+            reduce_mask=self.reduce_mask,
+            mlflow_uri=self.mlflow_uri,
+            experiment_name=self.experiment_name,
+            include_error_as_positive=self.include_error_as_positive,
+            eval_func=self.eval_func
+        )
         # fit the patch
-        trainer.fit(budget=self.budget, eval_every=10*self.budget)
+        trainer.fit(budget=self.budget, eval_every=10 * self.budget)
         trainer.evaluate()
         trainer._log_image()
-        
+
         # get TR and SEM results to send back to Bayesian optimizer. If we didn't
         # get through at least one epoch, return zero for both
         if hasattr(trainer, "tr_dict"):
-            d = {"eval_transform_robustness":(trainer.tr_dict["tr"],
-                                              trainer.tr_dict["sem"])}
+            d = {
+                "eval_transform_robustness": (
+                    trainer.tr_dict["tr"],
+                    trainer.tr_dict["sem"],
+                )
+            }
         else:
-            d = {"eval_transform_robustness":(0,0)}
+            d = {"eval_transform_robustness": (0, 0)}
         # get the trainer out of memory- had issues with mlflow getting confused if
         # we just do this in a for loop
-        del(trainer)
+        del trainer
         time.sleep(5)
         # save metadata about the AX client to JSON
         j = self.client.to_json_snapshot()
         json.dump(j, open(os.path.join(self.logdir, "log.json"), "w"))
-            
+
         return d
-    
-    
+
     def fit(self, n=100):
         """
         Run optimization experiments
-        
+
         :n: int; number of runs
         """
         for i in tqdm(range(n)):
             parameters, trial_index = self.client.get_next_trial()
             # Local evaluation here can be replaced with deployment to external system.
-            self.client.complete_trial(trial_index=trial_index,
-                                       raw_data=self._evaluate_trial(parameters))
-            
-            
-            
-            
-            
+            self.client.complete_trial(
+                trial_index=trial_index, raw_data=self._evaluate_trial(parameters)
+            )
 
-class PerlinOptimizer():
+
+class PerlinOptimizer:
     """
     Wrapper class that uses AX to search hyperparameter space for
     the BayesianPerlinNoisePatchTrainer class
     """
-    
-    def __init__(self, img, final_mask, detect_func, logdir,
-                 budget=20000,
-                 num_augments=[10,200], 
-                 num_sobol=[5,25],
-                 max_freq=[0.01,1],
-                 aug_params={}, eval_augments=1000, 
-                 num_channels=3,  
-                 include_error_as_positive=False,
-                 eval_func=None,
-                 fixed_augs=None,
-                 mlflow_uri=None,
-                 experiment_name="perlin_optimization", 
-                 load_from_json_file=None):
+
+    def __init__(
+        self,
+        img,
+        final_mask,
+        detect_func,
+        logdir,
+        budget=20000,
+        num_augments=[10, 200],
+        num_sobol=[5, 25],
+        max_freq=[0.01, 1],
+        aug_params={},
+        eval_augments=1000,
+        num_channels=3,
+        include_error_as_positive=False,
+        eval_func=None,
+        fixed_augs=None,
+        mlflow_uri=None,
+        experiment_name="perlin_optimization",
+        load_from_json_file=None,
+    ):
         """
         :img: torch.Tensor in channel-first format; victim image
         :initial_mask: torch.Tensor in channel-first format; initial mask
@@ -259,7 +276,7 @@ class PerlinOptimizer():
         :budget: int; query budget for each run
         :num_augments: list of two integers; range of values for num_augments
         :num_sobol: number of Sobol steps for each trainer to take before switching to GPEI
-        :max_freq: maximum value for the sine frequency for each trainer to optimize. I've found some cases where large values cause the objective to be 
+        :max_freq: maximum value for the sine frequency for each trainer to optimize. I've found some cases where large values cause the objective to be
             highly nonmonotic and the GP has trouble fitting it
         :aug_params: dictionary of augmentation paramaters
         :eval_augments: int or list of dictionaries; number of augmentations to
@@ -292,93 +309,98 @@ class PerlinOptimizer():
         if load_from_json_file is not None:
             self.client = AxClient.load_from_json_file(load_from_json_file)
         else:
-            self.client = AxClient()    
+            self.client = AxClient()
             # set up the experiment!
             self.params = self._build_params(num_augments, num_sobol, max_freq)
             self.client.create_experiment(
                 name=experiment_name,
                 parameters=self.params,
-                objectives={"eval_transform_robustness":ObjectiveProperties(minimize=False)},
+                objectives={
+                    "eval_transform_robustness": ObjectiveProperties(minimize=False)
+                },
             )
-        
 
-        
-    
     def _build_params(self, num_augments, num_sobol, max_freq):
         """
         Format parameter ranges for AX
         """
         return [
-            {"name":"num_augments",
-             "type":"range",
-             "bounds":num_augments,
-             "value_type":"int",
-             "log_scale":False},
-            
-            {"name":"num_sobol",
-             "type":"range",
-             "bounds":num_sobol,
-             "value_type":"int",
-             "log_scale":True},
-            
-            {"name":"max_freq",
-             "type":"range",
-             "bounds":max_freq,
-             "value_type":"float",
-             "log_scale":True},
-         ]
-    
+            {
+                "name": "num_augments",
+                "type": "range",
+                "bounds": num_augments,
+                "value_type": "int",
+                "log_scale": False,
+            },
+            {
+                "name": "num_sobol",
+                "type": "range",
+                "bounds": num_sobol,
+                "value_type": "int",
+                "log_scale": True,
+            },
+            {
+                "name": "max_freq",
+                "type": "range",
+                "bounds": max_freq,
+                "value_type": "float",
+                "log_scale": True,
+            },
+        ]
 
-    
     def _evaluate_trial(self, p):
-        """
-        
-        """
+        """ """
         print(p)
         # build a trainer for this step of the experiment
         logdir = os.path.join(self.logdir, str(len(list(os.listdir(self.logdir)))))
 
         trainer = BayesianPerlinNoisePatchTrainer(
-            *self.inputs, logdir,
+            *self.inputs,
+            logdir,
             **p,
-            aug_params = self.aug_params,
-            eval_augments = self.eval_augments,
-            fixed_augs = self.fixed_augs,
-            include_error_as_positive = self.include_error_as_positive,
-            mlflow_uri = self.mlflow_uri,
-            experiment_name = self.experiment_name,
-            eval_func = self.eval_func)
-        trainer.fit(budget=self.budget, eval_every=10*self.budget)
+            aug_params=self.aug_params,
+            eval_augments=self.eval_augments,
+            fixed_augs=self.fixed_augs,
+            include_error_as_positive=self.include_error_as_positive,
+            mlflow_uri=self.mlflow_uri,
+            experiment_name=self.experiment_name,
+            eval_func=self.eval_func
+        )
+        trainer.fit(budget=self.budget, eval_every=10 * self.budget)
         trainer.evaluate(use_best=True)
         trainer._log_image()
-        
+
         # get TR and SEM results to send back to Bayesian optimizer. If we didn't
         # get through at least one epoch, return zero for both
         if hasattr(trainer, "tr_dict"):
-            d = {"eval_transform_robustness":(trainer.tr_dict["tr"],
-                                              trainer.tr_dict["sem"])}
+            d = {
+                "eval_transform_robustness": (
+                    trainer.tr_dict["tr"],
+                    trainer.tr_dict["sem"],
+                )
+            }
         else:
-            d = {"eval_transform_robustness":(0,0)}
+            d = {"eval_transform_robustness": (0, 0)}
         # get the trainer out of memory- had issues with mlflow getting confused if
         # we just do this in a for loop
-        del(trainer)
+        del trainer
         time.sleep(5)
         # save metadata about the AX client to JSON
         j = self.client.to_json_snapshot()
         json.dump(j, open(os.path.join(self.logdir, "log.json"), "w"))
-            
+
         return d
-    
-    
+
     def fit(self, n=100):
         """
         Run optimization experiments
-        
+
         :n: int; number of runs
         """
         for i in tqdm(range(n)):
-            #"""
+            # """
             parameters, trial_index = self.client.get_next_trial()
             # Local evaluation here can be replaced with deployment to external system.
-            self.client.complete_trial(trial_index=trial_index,
-                                       raw_data=self._evaluate_trial(parameters))#"""
+            self.client.complete_trial(
+                trial_index=trial_index, raw_data=self._evaluate_trial(parameters)
+            )  # """

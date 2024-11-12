@@ -33,7 +33,7 @@ def plot(i):
     if isinstance(i, dict):
         k = len(i)
         for j in range(k):
-            plt.subplot(1,k,j+1)
+            plt.subplot(1, k, j + 1)
             plot(i[j])
             plt.title(j)
     # in case it's on the GPU

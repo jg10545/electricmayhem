@@ -1,173 +1,261 @@
 import numpy as np
-import dask
 import torch
-import torch.utils.tensorboard
-import kornia.geometry
-import matplotlib.pyplot as plt
-from tqdm import tqdm
+import collections
 import mlflow
-import os
-import yaml
+import kornia.geometry
 
-import electricmayhem.blackbox.mask
 from electricmayhem.blackbox import _augment
 
-
-def estimate_transform_robustness(
-    detect_func,
-    augments,
-    img,
-    mask=None,
-    pert=None,
-    return_outcomes=False,
-    include_error_as_positive=False,
-    use_agresti_coull=True,
-    use_scores=False,
-):
-    """
-    Estimate transform robustness as an expectation over transformations.
-
-    :detect_func: detection function to wrap; should input a (C,H,W) torch Tensor and
-        output a string
-    :augments: list of dictionaries giving augmentation parameters
-    :img: (C,H,W) torch Tensor containing the original image
-    :mask: (C,H,W) torch Tensor containing the mask as 0/1 values
-    :pert: (C,H',W') torch Tensor containing the adversarial perturbation
-    :return_outcomes: bool; whether to return a list of results for every
-        augmentation
-    :include_error_as_positive: bool; whether to count -1s from the detect function
-        as a positive detection
-    :use_scores: if True, use soft scores instead of hard labels
-
-    Returns a dictionary containing:
-        :crash_frac: fraction of augments where function returned an empty string
-        :detect_frac: fraction of augments where the correct license plate was detected
-        :no_plates_frac: fraction of augments where no plates were detected
-        :tr: transform robustness estimate; fraction of non-crash cases where the plate was
-            not detected
-    """
-
-    def _augment_and_detect(i, m, p, a):
-        if use_scores:
-            return detect_func(
-                _augment.augment_image(i, mask=m, perturbation=p, **a),
-                return_raw=return_outcomes,
-                return_scores=True,
-            )
-        else:
-            return detect_func(
-                _augment.augment_image(i, mask=m, perturbation=p, **a),
-                return_raw=return_outcomes,
-            )
-
-    tasks = [dask.delayed(_augment_and_detect)(img, mask, pert, a) for a in augments]
-    if return_outcomes:
-        result = dask.compute(*tasks)
-        outcomes = [r[0] for r in result]
-        raw = [r[1] for r in result]
-    else:
-        outcomes = dask.compute(*tasks)
-
-    # how often did openALPR crap out?
-    crash_frac = np.mean([o == -1 for o in outcomes])
-    if include_error_as_positive:
-        # num_positives = np.sum([o in (1,-1) for o in outcomes])
-        num_positives = np.sum([abs(o) for o in outcomes])  # to work with scores
-        n = len(outcomes)
-    else:
-        # how often did it detect the plate?
-        # num_positives = np.sum([o == 1 for o in outcomes])
-        num_positives = np.sum([o for o in outcomes if o > 0])  # to work with scores
-        n = len([o for o in outcomes if o >= 0])
-        # detect_frac = np.mean([o == 1 for o in outcomes])
-        # tr = 1-detect_frac/max((1-crash_frac), 1e-5)
-    detect_frac = num_positives / n  # if using scores, this becomes the mean score
-    tr = 1 - detect_frac
-
-    # Agresti-Coull interval for z=1
-    if use_agresti_coull:
-        n_tilde = n + 1
-        p_tilde = (num_positives + 0.5) / n_tilde
-        sem = np.sqrt((p_tilde * (1 - p_tilde)) / n_tilde)
-
-    # Wald interval for z=1
-    else:
-        sem = np.sqrt((tr * (1 - tr)) / n)
-
-    outdict = {
-        "crash_frac": crash_frac,
-        "detect_frac": detect_frac,
-        "tr": tr,
-        "sem": sem,
-    }
-    if return_outcomes:
-        return outdict, outcomes, raw
-    else:
-        return outdict
+from .blackbox._graphite import BlackBoxPatchTrainer, estimate_transform_robustness
+from electricmayhem import _mask
 
 
-def reduce_mask(
-    img,
-    priority_mask,
-    perturbation,
-    detect_func,
-    augs,
-    n=10,
-    tr_threshold=0.75,
-    maxval=0.9999,
-    minval=0,
-    use_scores=False,
-):
-    """
-    Method for interpolating between the initial and final masks- DIFFERENT FROM THE GRAPHITE PAPER
-
-    Input a "priority_mask" where all pixels we ultimately need to turn off are assigned a number between 0 and 1, and pick a threshold below which to disable them- so our goal is to eventually get the threshold to 1.
-
-    The threshold is chosen by binary search aiming for a target transform
-    robustness.
-
-    :img: torch.Tensor in channel-first format, containing the original image
-    :priority_mask: torch.Tensor in channel-first format containing mask
-        with random values for interpolating between init and final masks
-    :perturbation: torch.Tensor in channel-first format containing the
-        adversarial perturbation
-    :detect_func: function; inputs an image and returns 1, 0, or -1 depending on whether the black-box algorithm correctly detected, missed, or threw an error
-    :augs: list of augmentation parameters
-    :n: int; number of steps to take in binary search
-    :tr_threshold: transform robustness threshold to aim for
-    :maxval: float; max value to search over
-    :minval: float; min value to search over
-    :use_scores:
-
-    Returns final threshold a and a list of dictionaries containing the TR
-        results at each search step.
-    """
-    results = []
-    for i in range(n):
-        # pick a mask threshold right between the max and min values
-        a = 0.5 * (maxval + minval)
-        # compute the mask
-        M = (priority_mask > a).float()
-        # estimate transform robustness
-        estimate = estimate_transform_robustness(
-            detect_func, augs, img, mask=M, pert=perturbation, use_scores=use_scores
+class DepthwiseSeparableConv(torch.nn.Module):
+    def __init__(self, nin, nout, dilation=1):
+        super().__init__()
+        self.depthwise = torch.nn.Conv2d(
+            nin, nin, kernel_size=3, groups=nin, dilation=dilation, padding="same"
         )
-        estimate["a"] = a
-        results.append(estimate)
+        self.pointwise = torch.nn.Conv2d(nin, nout, kernel_size=1)
 
-        #  if the robustness is too low, lower the maxval
-        if estimate["tr"] < tr_threshold:
-            maxval = a
-        # if robustness is too low, raise the minval
+    def forward(self, x):
+        out = self.depthwise(x)
+        out = self.pointwise(out)
+        return out
+
+
+class DepthwiseSeparableConvTranspose(torch.nn.Module):
+    def __init__(self, nin, nout, dilation=1):
+        super().__init__()
+        self.upsample = torch.nn.Upsample(scale_factor=2)
+        self.depthwise = torch.nn.Conv2d(
+            nin, nin, kernel_size=3, groups=nin, dilation=dilation, padding="same"
+        )
+        self.pointwise = torch.nn.Conv2d(nin, nout, kernel_size=1)
+
+    def forward(self, x):
+        x = self.upsample(x)
+        x = self.depthwise(x)
+        out = self.pointwise(x)
+        return out
+
+
+class Block(torch.nn.Module):
+    def __init__(self, inChannels, outChannels, dilation=1, separable=True):
+        super().__init__()
+        # store the convolution and RELU layers
+        if separable:
+            self.conv1 = DepthwiseSeparableConv(
+                inChannels, outChannels, dilation=dilation
+            )
+            self.conv2 = DepthwiseSeparableConv(
+                outChannels, outChannels, dilation=dilation
+            )
         else:
-            minval = a
-    return a, results
+            self.conv1 = torch.nn.Conv2d(
+                inChannels, outChannels, 3, dilation=dilation, padding="same"
+            )
+            self.conv2 = torch.nn.Conv2d(
+                outChannels, outChannels, 3, dilation=dilation, padding="same"
+            )
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        # apply CONV => RELU => CONV block to the inputs and return it
+        return self.conv2(self.relu(self.conv1(x)))
+
+
+class MiniUNet(torch.nn.Module):
+    """
+    Barebones segmentation network in the style of UNet
+    """
+
+    def __init__(
+        self,
+        inchannels=5,
+        outchannels=1,
+        start_filters=32,
+        depth=2,
+        dilation=1,
+        verbose=False,
+        separable=True,
+    ):
+        """
+        :inchannels: int; number of input channels
+        :outchannels: int; number of output channels
+        :start_filters: int; number of filters in first hidden layer. Filters will double after every pooling layer
+        :depth: int; number of spatial scales for network (counting the first)
+        :dilation: int; dilation argument passed to all convolutions
+        :verbose: bool; for diagnostics
+        """
+        super().__init__()
+        self.depth = depth
+        self.verbose = verbose
+        # BUILD THE ENCODER
+        self.pool = torch.nn.MaxPool2d(2)
+        self.encoderblocks = torch.nn.ModuleList()
+        for d in range(depth):
+            if d == 0:
+                block = Block(inchannels, start_filters, dilation, separable=separable)
+            else:
+                infilt = start_filters * (2 ** (d - 1))
+                outfilt = start_filters * (2 ** (d))
+                block = Block(infilt, outfilt, dilation)
+            self.encoderblocks.append(block)
+
+        # BUILD THE DECODER
+        self.deconvolutions = torch.nn.ModuleList()
+        self.decoderblocks = torch.nn.ModuleList()
+        for d in range(depth - 1):
+            # deconvolutions
+            if separable:
+                self.deconvolutions.append(
+                    DepthwiseSeparableConvTranspose(
+                        int(start_filters * (2 ** (d))),
+                        int(start_filters * (2 ** (d - 1))),
+                    )
+                )
+            else:
+                self.deconvolutions.append(
+                    torch.nn.ConvTranspose2d(
+                        int(start_filters * (2 ** (d))),
+                        int(start_filters * (2 ** (d - 1))),
+                        2,
+                        2,
+                        # dilation=dilation
+                    )
+                )
+            # convolution blocks- last one outputs our output channels
+            if d == 0:
+                block = Block(
+                    4 * start_filters,
+                    outchannels,
+                    dilation=dilation,
+                    separable=separable,
+                )
+            else:
+                block = Block(
+                    start_filters * (2 ** (d)),
+                    start_filters * (2 ** (d - 1)),
+                    dilation=dilation,
+                    separable=separable,
+                )
+            self.decoderblocks.append(block)
+        self.outputconv = torch.nn.Conv2d(
+            start_filters, outchannels, 1, dilation=dilation, padding="same"
+        )
+        self.outputsigmoid = torch.nn.Sigmoid()
+
+    def forward(self, x):
+        # ENCODER
+        if self.verbose:
+            print(x.shape)
+        block_outputs = []
+        if self.verbose:
+            print("encoding")
+        for i in range(self.depth - 1):
+            x = self.encoderblocks[i](x)
+            if self.verbose:
+                print("after block", x.shape)
+            block_outputs.append(x)
+            if i < self.depth - 2:
+                x = self.pool(x)
+                if self.verbose:
+                    print("pool", x.shape)
+        if self.verbose:
+            print("block_outputs:", len(block_outputs))
+        # DECODER
+        for i in list(range(1, self.depth - 1))[::-1]:
+            if self.verbose:
+                print(i)
+            x = self.deconvolutions[i](x)
+            if self.verbose:
+                print("after deconv", x.shape)
+            x = torch.cat([x, block_outputs[i - 1]], dim=1)
+            if self.verbose:
+                print("after cat", x.shape)
+            x = self.decoderblocks[i](x)
+            if self.verbose:
+                print("after decode block", x.shape)
+
+        x = self.outputconv(x)
+        x = self.outputsigmoid(x)
+        if self.verbose:
+            print("after sigmoid", x.shape)
+        return x
+
+
+class StateDict:
+    """
+    Wrapper for the state dict returned by pytorch models, with
+    convenience functions to allow multiplying by scalars
+    and adding
+    """
+
+    def __init__(self, sd):
+        self.sd = sd
+
+    def __getitem__(self, k):
+        return self.sd[k]
+
+    def to_dict(self):
+        return self.sd
+
+    def __call__(self):
+        return self.sd
+
+    def param_count(self):
+        paramcount = 0
+        for k in self.sd:
+            paramcount += np.prod(self.sd[k].data.shape)
+        return paramcount
+
+    def __rmul__(self, a):
+        newsd = collections.OrderedDict()
+        for k in self.sd:
+            newsd[k] = a * self.sd[k]
+        return StateDict(newsd)
+
+    def __add__(self, a):
+        newsd = collections.OrderedDict()
+        for k in self.sd:
+            newsd[k] = self[k] + a[k]
+        return StateDict(newsd)
+
+    def __eq__(self, a):
+        if set(self.sd.keys()) != set(a.sd.keys()):
+            return False
+        else:
+            for k in self.sd:
+                if not (self.sd[k].numpy() == a.sd[k].numpy()).all():
+                    return False
+        return True
+
+    def weight_decay(self, a):
+        newsd = collections.OrderedDict()
+        for k in self.sd:
+            if "bias" in k:
+                newsd[k] = self.sd[k]
+            else:
+                newsd[k] = (1 - a) * self.sd[k]
+        return StateDict(newsd)
+
+    def random(self):
+        """
+        Generate a new StateDict with tensors of the same shapes, but
+        with values drawn uniformly from the unit hypersphere
+        """
+        newsd = collections.OrderedDict()
+        for k in self.sd:
+            u = torch.randn(self.sd.shape).type(torch.FloatTensor)
+            newsd[k] = u / torch.norm(u)
+        return StateDict(newsd)
 
 
 def estimate_gradient(
-    img,
-    mask,
-    pert,
+    images,
+    init_masks,
+    final_masks,
     augs,
     detect_func,
     tr_estimate,
@@ -229,79 +317,18 @@ def estimate_gradient(
     return gradient
 
 
-def update_perturbation(
-    img,
-    mask,
-    pert,
-    augs,
-    detect_func,
-    gradient,
-    lrs=None,
-    include_error_as_positive=False,
-    use_scores=False,
-):
-    """
-    TO DO replace this with backtracking line search
-
-    Update the perturbation by computing transform robustness at several different step sizes. Final perturbation is clamped between -1 and 1.
-
-    :img: torch.Tensor in channel-first format, containing the original image
-    :mask: torch.Tensor in channel-first format containing mask
-        as 0,1 values
-    :pert torch.Tensor in channel-first format containing the
-        adversarial perturbation
-    :augs: list of augmentation parameters
-    :detect_func: function; inputs an image and returns 1, 0, or -1 depending on whether the black-box algorithm correctly detected, missed, or threw an error
-    :gradient: gradient estimate as a torch.Tensor in (C,H,W) format
-    :lrs: optional list of learning rates to test
-    :angle_scale: float; standard deviation, in degrees, of normal
-        distribution angle will be chosen from
-    :translate_scale: float; standard deviation, in pixels, of normal
-        distribution x and y translations
-    :include_error_as_positive: bool; hether to count -1s from the detect function
-        as a positive detection
-    :use_scores:
-
-    Returns updated perturbation as a (C,H,W) torch Tensor, and a dictionary
-        containing the chosen learning rate
-    """
-    if lrs is None:
-        lrs = [0.0, 0.3, 1, 3, 10, 30, 100, 300]
-
-    # measure transform robustness at each
-    updated_trs = []
-    for l in lrs:
-        est = estimate_transform_robustness(
-            detect_func,
-            augs,
-            img,
-            mask=mask,
-            pert=pert + l * gradient,
-            use_scores=use_scores,
-        )
-        updated_trs.append(est["tr"])
-
-    # now just pick whatever value worked best.
-    final_lr = lrs[np.argmax(updated_trs)]
-    updated_pert = pert + final_lr * gradient
-    # there's almost certainly a more sophisticated way to clamp this. but just sticking it to [0,1]
-    # will prevent it from slowly accumulating enormous values anywhere
-    updated_pert = torch.clamp(updated_pert, 0, 1)
-    return updated_pert, {"lr": final_lr}
-
-
-class BlackBoxPatchTrainer:
-    """
-    Class to wrap together all the pieces needed for black-box training
-    of a physical adversarial patch, following the OpenALPR example in
-    the GRAPHITE paper.
-    """
+class InductivePatchTrainer(BlackBoxPatchTrainer):
+    """ """
 
     def __init__(
         self,
-        img,
-        initial_mask,
-        final_mask,
+        model,
+        train_images,
+        train_initial_masks,
+        train_final_masks,
+        test_images,
+        test_initial_masks,
+        test_final_masks,
         detect_func,
         logdir,
         num_augments=100,
@@ -319,15 +346,19 @@ class BlackBoxPatchTrainer:
         include_error_as_positive=False,
         extra_params={},
         fixed_augs=None,
-        reduce_mask=True,
         mlflow_uri=None,
         experiment_name=None,
         eval_func=None,
     ):
         """
-        :img: torch.Tensor in (C,H,W) format representing the image being modified
-        :initial_mask: torch.Tensor in (C,H,W) starting mask as an image with 0,1 values
-        :final mask: torch.Tensor in (C,H,W) starting mask as an image with 0,1 values
+        :model:
+        :train_images:
+        :train_initial_masks:
+        :train_final_masks:
+        :test_images:
+        :test_initial_masks:
+        :test_final_masks:
+
         :detect_func: function; inputs an image and returns 1, 0, or -1 depending on whether the black-box algorithm correctly detected, missed, or threw an error
         :logdir: string; location to save tensorboard logs in
         :num_augments: int; number of augmentations to sample for each mask reduction, RGF, and line search step
@@ -358,31 +389,34 @@ class BlackBoxPatchTrainer:
 
         """
         self.query_counter = 0
-        if reduce_mask:
-            self.a = 0
-        else:
-            self.a = 1
+
         self.tr = 0
         self.mask_thresh = 0.99
         self.fixed_augs = fixed_augs
         self.eval_func = eval_func
 
-        self.img = img
-        self.initial_mask = initial_mask
-        self.final_mask = final_mask
-        self.priority_mask = electricmayhem.blackbox.mask.generate_priority_mask(
-            initial_mask, final_mask
-        )
-        self.detect_func = detect_func
+        self.model = model
+        self.train_images = train_images
+        self.train_initial_masks = train_initial_masks
+        self.train_final_masks = train_final_masks
+        self.test_images = test_images
+        self.test_initial_masks = test_initial_masks
+        self.test_final_masks = test_final_masks
+
+        # self.img = img
+        # self.initial_mask = initial_mask
+        # self.final_mask = final_mask
+        # self.priority_mask = electricmayhem.mask.generate_priority_mask(initial_mask, final_mask)
+        # self.detect_func = detect_func
 
         if isinstance(eval_augments, int):
             eval_augments = [
                 _augment.generate_aug_params(**aug_params) for _ in range(eval_augments)
             ]
         self.eval_augments = eval_augments
-        if perturbation is None:
-            perturbation = torch.Tensor(np.random.uniform(0, 1, size=img.shape))
-        self.perturbation = perturbation
+        # if perturbation is None:
+        #    perturbation = torch.Tensor(np.random.uniform(0, 1, size=img.shape))
+        # self.perturbation = perturbation
 
         self.logdir = logdir
         self.writer = torch.utils.tensorboard.SummaryWriter(logdir)
@@ -513,7 +547,7 @@ class BlackBoxPatchTrainer:
         # check to see if we need to take a random subset of the mask
         subset_frac = self.params["subset_frac"]
         if subset_frac > 0:
-            mask = electricmayhem.blackbox.mask.random_subset_mask(mask, subset_frac)
+            mask = electricmayhem.mask.random_subset_mask(mask, subset_frac)
             self._subset_mask = mask
             self.writer.add_image("subset_mask", mask, global_step=self.query_counter)
         self.tr = estimate_transform_robustness(

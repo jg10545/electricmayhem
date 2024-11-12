@@ -3,7 +3,6 @@ import torch
 from ._pipeline import PipelineBase
 
 
-
 def dct(x, norm=None):
     """
     Discrete Cosine Transform, Type II (a.k.a. the DCT)
@@ -23,13 +22,13 @@ def dct(x, norm=None):
 
     Vc = torch.fft.fft(v)
 
-    k = - torch.arange(N, dtype=x.dtype, device=x.device)[None, :] * np.pi / (2 * N)
+    k = -torch.arange(N, dtype=x.dtype, device=x.device)[None, :] * np.pi / (2 * N)
     W_r = torch.cos(k)
     W_i = torch.sin(k)
 
     # V = Vc[:, :, 0] * W_r - Vc[:, :, 1] * W_i
     V = Vc.real * W_r - Vc.imag * W_i
-    if norm == 'ortho':
+    if norm == "ortho":
         V[:, 0] /= np.sqrt(N) * 2
         V[:, 1:] /= np.sqrt(N / 2) * 2
 
@@ -57,11 +56,15 @@ def idct(X, norm=None):
 
     X_v = X.contiguous().view(-1, x_shape[-1]) / 2
 
-    if norm == 'ortho':
+    if norm == "ortho":
         X_v[:, 0] *= np.sqrt(N) * 2
         X_v[:, 1:] *= np.sqrt(N / 2) * 2
 
-    k = torch.arange(x_shape[-1], dtype=X.dtype, device=X.device)[None, :] * np.pi / (2 * N)
+    k = (
+        torch.arange(x_shape[-1], dtype=X.dtype, device=X.device)[None, :]
+        * np.pi
+        / (2 * N)
+    )
     W_r = torch.cos(k)
     W_i = torch.sin(k)
 
@@ -76,8 +79,8 @@ def idct(X, norm=None):
     v = torch.fft.ifft(tmp)
 
     x = v.new_zeros(v.shape)
-    x[:, ::2] += v[:, :N - (N // 2)]
-    x[:, 1::2] += v.flip([1])[:, :N // 2]
+    x[:, ::2] += v[:, : N - (N // 2)]
+    x[:, 1::2] += v.flip([1])[:, : N // 2]
 
     return x.view(*x_shape).real
 
@@ -118,7 +121,7 @@ def idct_2d(X, norm=None):
 
 class SpectrumSimulationAttack(PipelineBase):
     """
-    Implements the augmentation method described in "Frequency Domain Model Augmentation 
+    Implements the augmentation method described in "Frequency Domain Model Augmentation
     for Adversarial Attack" by Long et al (2022) DURING TRAINING STEPS ONLY
 
     The method basically does a discrete cosine transform on the image, adds noise in the
@@ -127,9 +130,10 @@ class SpectrumSimulationAttack(PipelineBase):
     Warning: Unlike other pipeline stages, this does NOT generate reproducible results
     when you pass the get_last_sample_as_dict() results as a kwarg to forward().
     """
+
     name = "SpectrumSimulationAttack"
-    
-    def __init__(self, sigma=0.06, rho=0.5, clamp=(0,1), keys=None):
+
+    def __init__(self, sigma=0.06, rho=0.5, clamp=(0, 1), keys=None):
         """
         :sigma: scale for spatial-domain additive noise
         :rho: scale for frequency-domain multiplicative noise
@@ -138,24 +142,21 @@ class SpectrumSimulationAttack(PipelineBase):
             of strings to specify which patches
         """
         super().__init__()
-        
-        self.params = {
-            "rho":rho,
-            "sigma":sigma,
-            "clamp":clamp
-        }
+
+        self.params = {"rho": rho, "sigma": sigma, "clamp": clamp}
         self.keys = keys
         if keys is not None:
             self.params["keys"] = keys
-        
+
     def forward(self, x, control=False, evaluate=False, params={}, **kwargs):
         """
         Only apply noise during training steps
         """
         # multi patch case
         if isinstance(x, dict):
-            return self._apply_forward_to_dict(x, control=control, evaluate=evaluate,
-                                               params=params, **kwargs)
+            return self._apply_forward_to_dict(
+                x, control=control, evaluate=evaluate, params=params, **kwargs
+            )
         if evaluate:
             return x, kwargs
         else:
@@ -166,32 +167,35 @@ class SpectrumSimulationAttack(PipelineBase):
                 if "epsilon" in kwargs:
                     epsilon = torch.tensor(kwargs["epsilon"]).to(x.device)
                 else:
-                    epsilon = (torch.randn(x.shape)*sigma).to(x.device)
+                    epsilon = (torch.randn(x.shape) * sigma).to(x.device)
                 if "mask" in kwargs:
                     mask = torch.tensor(kwargs["mask"]).to(x.device)
                 else:
-                    mask = (1 + 2*torch.rand_like(x)*rho - rho).to(x.device)
+                    mask = (1 + 2 * torch.rand_like(x) * rho - rho).to(x.device)
                 self.epsilon = epsilon
                 self.mask = mask
 
             # first map to frequency domain
             x_with_noise = x + epsilon
-            x_freq = dct_2d(x+epsilon)
+            x_freq = dct_2d(x + epsilon)
             # multiply by mask and map back to spatial domain
-            x_new = idct_2d(x_freq*mask)
+            x_new = idct_2d(x_freq * mask)
             if self.params["clamp"] is not None:
-                x_new = torch.clamp(x_new, self.params["clamp"][0], self.params["clamp"][1])
+                x_new = torch.clamp(
+                    x_new, self.params["clamp"][0], self.params["clamp"][1]
+                )
             return x_new, kwargs
 
     def _tensor_to_list(self, x):
         return x.detach().cpu().numpy().tolist()
-    
+
     def get_last_sample_as_dict(self):
         """
         Return last sample as a JSON-serializable dict
         """
         return {}
-    
-    def get_description(self):
-        return f"**{self.name}:** sigma={self.params['sigma']}, rho={self.params['rho']}"
 
+    def get_description(self):
+        return (
+            f"**{self.name}:** sigma={self.params['sigma']}, rho={self.params['rho']}"
+        )
