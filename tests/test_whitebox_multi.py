@@ -13,6 +13,23 @@ def test_patchwrapper():
     assert batch.shape == (N, 3, 32, 32)
 
 
+def test_patchwrapper_with_dict():
+    N = 5
+    patches = {"foo":torch.tensor(np.random.uniform(0,1,size=(3,32,32))),
+               "bar":torch.tensor(np.random.uniform(0,1,size=(1,17,13)))
+               }
+    pw = _multi.PatchWrapper(patches)
+
+    batch = pw(N)
+    assert isinstance(batch, dict)
+
+    assert isinstance(batch["foo"], torch.Tensor)
+    assert batch["foo"].shape == (N, 3, 32, 32)
+    assert isinstance(batch["bar"], torch.Tensor)
+    assert batch["bar"].shape == (N, 1, 17, 13)
+    assert len(list(pw.parameters())) == 2
+
+
 """
 def test_pipeline_distributed_training_loop_runs():
     # This is a pretty minimal test just to see

@@ -3,8 +3,9 @@ import torch
 import torch.utils.tensorboard
 import dask
 
-from electricmayhem import _augment, mask
-from electricmayhem._graphite import *
+from electricmayhem.blackbox import _augment
+from electricmayhem.blackbox._graphite import *
+from electricmayhem.blackbox import mask
 
 dask.config.set(scheduler='threads')
 
