@@ -306,7 +306,7 @@ class PatchScroller(PipelineBase):
             )
         # eval case:
         if evaluate:
-            return x
+            return x, kwargs
         # if this isn't a control step, sample new offsets for each
         # image in the batch
         if not control:
