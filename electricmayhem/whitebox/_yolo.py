@@ -6,6 +6,35 @@ import torch
 from ._pipeline import ModelWrapper
 from electricmayhem._convenience import _plt_figure_to_image
 
+class ONNXWrapper(torch.nn.Module):
+    """
+    YOLO models exported as ONNX, and loaded back to pytorch using
+    onnx2torch, output results in a slightly different format.
+
+    This wrapper class will make it more consistent with YOLO models
+    generated directly by the ultralytics package.
+    """
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+    def forward(self, x):
+        return [self.model(x)]
+
+
+def load_yolo_from_onnx(filepath):
+    """
+    THIS FUNCTION REQUIRES THE onnx2torch PACKAGE
+    https://github.com/ENOT-AutoDL/onnx2torch
+
+    Load a YOLO model exported as an ONNX file back to pytorch,
+    and put a light wrapper around it so it has a consistent output
+    format to models generated directly by the ultralytics package.
+    """
+    import onnx2torch
+    model = onnx2torch.convert(filepath)
+    return ONNXWrapper(model)
+
+
 
 def xywh2xyxy(x):
     """
