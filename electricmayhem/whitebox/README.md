@@ -98,7 +98,7 @@ Every pipeline step should subclass `electricmayhem._pipeline.PipelineBase`, whi
 
 * Overwrite the `get_description()` method to generate a more useful markdown description for MLFlow.
 * Overwrite the `log_vizualizations()` method with any diagnostics that would be useful to log to TensorBoard. This method will get called whenever `pipeline.evaluate()` is run.
-* Overwrite the `validate()` method to check for anything specific that could go wrong with that step. When the user calles `Pipeline.validate()` it will run the `validate()` method for each step. Use the `logging` library to record check results at the `info` or `warning` level.
+* Overwrite the `validate()` method to check for anything specific that could go wrong with that step. When the user calls `Pipeline.validate()` it will run the `validate()` method for each step. Use the `logging` library to record check results at the `info` or `warning` level.
 
 ```
 class MyPipelineStage(PipelineBase):
@@ -111,12 +111,12 @@ class MyPipelineStage(PipelineBase):
     def forward(self, x, control=False, evaluate=False, params=None, **kwargs):
         <stuff here>
         y = f(x)
-        return y
+        return y, kwargs
         
     def get_last_sample_as_dict(self):
         return dict(<some stuff>)
         
-    def log_vizualizations(self, x, x_control, writer, step):
+    def log_vizualizations(self, x, x_control, writer, step, logging_to_mlflow=False):
         """
         """
         writer.add_image("stacked_patch", <some stuff>, global_step=step,
