@@ -46,15 +46,15 @@ def sample_perspective_transforms(N,H,W, max_relative_height=0.5, max_relative_w
 
 class PerspectiveTilter(PipelineBase):
     """
-    
+    Pipeline compose stage for "tilting" a batch of images so they look like they're captured at an angle.
     """
     name = "PerspectiveTilter"
 
     def __init__(self, max_relative_height=0.5, max_relative_width=0.2, min_distortion=0, logviz=True):
         """
-        :max_relative_height:
-        :max_relative_width:
-        :min_distortion:
+        :max_relative_height: float on unit interval; how high up the image the "horizon" will be at max distortion
+        :max_relative_width: float between 0.2 and 1; relative width of the distorted image at the "horizon"
+        :min_distortion: float on unit interval; minimum amount of distortion to sample.
         """
         super().__init__()
         self.params = {"max_relative_height":max_relative_height,
@@ -96,6 +96,7 @@ class PerspectiveTilter(PipelineBase):
         
     def log_vizualizations(self, x, x_control, writer, step):
         """
+        If self._logviz is True, record the first tilted image in the batch to TensorBoard
         """
         if self._logviz:
             img = self(x)[0]
