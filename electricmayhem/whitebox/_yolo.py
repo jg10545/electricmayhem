@@ -232,9 +232,6 @@ class YOLOWrapper(ModelWrapper):
         yolo = em.YOLOWrapper({"nano":nano, "small":small})
 
     """
-
-    name = "YOLOWrapper"
-
     def __init__(
         self,
         model,

@@ -18,9 +18,6 @@ class HighPassFilter(PipelineBase):
     """
     Apply a 2D high pass filter DURING TRAINING STEPS ONLY
     """
-
-    name = "HighPassFilter"
-
     def __init__(self, limit=None, limit_x=None, limit_y=None, keys=None):
         """
         :limit: int; frequency limit in pixels
@@ -64,4 +61,4 @@ class HighPassFilter(PipelineBase):
         return {}
 
     def get_description(self):
-        return f"**{self.name}:** cutoffs at x={self.params['limit_x']}, y={self.params['limit_y']}"
+        return f"**{self.__class__.__name__}:** cutoffs at x={self.params['limit_x']}, y={self.params['limit_y']}"

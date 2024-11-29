@@ -24,9 +24,6 @@ class KorniaAugmentationPipeline(PipelineBase):
     DO NOT USE p < 1.0 FOR ANY AUGMENTATIONS. Tracking parameters is more complicated in this
     case and not currently implemented.
     """
-
-    name = "KorniaAugmentationPipeline"
-
     def __init__(self, augmentations, ordering=None, logviz=True):
         """
         :augmentations: dict mapping augmentation names (as they appear in the
@@ -100,7 +97,7 @@ class KorniaAugmentationPipeline(PipelineBase):
                 failures += 1
         if failures > 0:
             logging.warning(
-                f"{self.name}: reproducibility check failed {failures} out of {N} times"
+                f"{self.__class__.__name__}: reproducibility check failed {failures} out of {N} times"
             )
         return failures
 
@@ -138,7 +135,7 @@ class KorniaAugmentationPipeline(PipelineBase):
         return outdict
 
     def get_description(self):
-        return f"**{self.name}:** {', '.join(self.params['ordering'])}"
+        return f"**{self.__class__.__name__}:** {', '.join(self.params['ordering'])}"
 
     def log_vizualizations(self, x, x_control, writer, step, logging_to_mlflow=False):
         """ """

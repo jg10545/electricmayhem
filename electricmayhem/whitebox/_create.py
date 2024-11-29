@@ -25,9 +25,6 @@ class PatchSaver(PipelineBase):
     """
     Pipeline stage that does nothing except log the patch to tensorboard
     """
-
-    name = "PatchSaver"
-
     def __init__(self, logviz=True):
         """
         :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
@@ -68,9 +65,9 @@ class PatchSaver(PipelineBase):
         if self._logviz:
             if isinstance(x, dict):
                 for k in x:
-                    self._log_single_image(x[k], f"{self.name}_patch_{k}", writer, step)
+                    self._log_single_image(x[k], f"{self.__class__.__name__}_patch_{k}", writer, step)
             else:
-                self._log_single_image(x, f"{self.name}_patch", writer, step)
+                self._log_single_image(x, f"{self.__class__.__name__}_patch", writer, step)
 
 
 class PatchResizer(PatchSaver):
@@ -78,9 +75,6 @@ class PatchResizer(PatchSaver):
     Class for resizing a batch of patches to a fixed size. Wraps
     kornia.geometry.
     """
-
-    name = "PatchResizer"
-
     def __init__(self, size, interpolation="bilinear", logviz=True):
         """
         :size: length-2 tuple giving target size (H,W). for resizing multiple patches use
@@ -142,16 +136,13 @@ class PatchResizer(PatchSaver):
             newsize = ", ".join([f"{k}: {str(self.size[k])}" for k in self.size])
         else:
             newsize = self.size
-        return f"**{self.name}:** resize to {newsize}"
+        return f"**{self.__class__.__name__}:** resize to {newsize}"
 
 
 class PatchStacker(PatchSaver):
     """
     Turn a 1-channel patch into a 3-channel patch
     """
-
-    name = "PatchStacker"
-
     def __init__(self, num_channels=3, logviz=True, keys=None):
         """
         :size: length-2 tuple giving target size (H,W)
@@ -194,16 +185,13 @@ class PatchStacker(PatchSaver):
         Return a markdown-formatted one-line string describing the pipeline step. Used for
         auto-populating a description for MLFlow.
         """
-        return f"**{self.name}:** stack to {self.params['num_channels']} channels"
+        return f"**{self.__class__.__name__}:** stack to {self.params['num_channels']} channels"
 
 
 class PatchTiler(PatchSaver):
     """
     Class for tiling a batch of tiny patches to a fixed size.
     """
-
-    name = "PatchTiler"
-
     def __init__(self, size, logviz=True):
         """
         :size: length-2 tuple giving target size (H,W) or dictionary of tuples if using
@@ -266,7 +254,7 @@ class PatchTiler(PatchSaver):
 
         else:
             tileto = self.size
-        return f"**{self.name}:** tile to {tileto}"
+        return f"**{self.__class__.__name__}:** tile to {tileto}"
 
 
 class PatchScroller(PipelineBase):
@@ -275,9 +263,6 @@ class PatchScroller(PipelineBase):
 
     Returns the unchanged patch during evaluation steps.
     """
-
-    name = "PatchScroller"
-
     def __init__(self, logviz=True, keys=None):
         """
         :keys: optional; list of keys of patches to scroll for multi-patch case

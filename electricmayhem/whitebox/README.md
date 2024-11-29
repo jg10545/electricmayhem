@@ -83,7 +83,6 @@ Every pipeline step should subclass `electricmayhem._pipeline.PipelineBase`, whi
 
 ### Required steps
 
-* There's a `name` attribute that's a string.
 * There should be an `__init__()` method that calls `super().__init__()`. 
 * Any keyword arguments you need to re-initialize the step should be captured in a JSON/YAML-serializable dict in `self.params`.
 * There should be a `forward()` method that does a few things:
@@ -102,7 +101,6 @@ Every pipeline step should subclass `electricmayhem._pipeline.PipelineBase`, whi
 
 ```
 class MyPipelineStage(PipelineBase):
-    name = "MyPipelineStage"
 
     def __init__(self, foo, bar):
         super().__init__()

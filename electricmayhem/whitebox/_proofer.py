@@ -38,9 +38,6 @@ class SoftProofer(PipelineBase):
 
     This is mostly a light wrapper on tool's inside pillow's ImageCms module.
     """
-
-    name = "SoftProofer"
-
     def __init__(
         self, target_profile, screen_profile=None, rendering_intent=0, keys=None
     ):

@@ -48,8 +48,6 @@ class PerspectiveTilter(PipelineBase):
     """
     Pipeline compose stage for "tilting" a batch of images so they look like they're captured at an angle.
     """
-    name = "PerspectiveTilter"
-
     def __init__(self, max_relative_height=0.5, max_relative_width=0.2, min_distortion=0, logviz=True):
         """
         :max_relative_height: float on unit interval; how high up the image the "horizon" will be at max distortion

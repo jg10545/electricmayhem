@@ -336,9 +336,6 @@ class WarpPatchImplanter(RectanglePatchImplanter):
     effects (chromakey color leakage around borders of the patch) so this is the least-complicated version
     I've found without that problem.
     """
-
-    name = "WarpPatchImplanter"
-
     def __init__(
         self, df, patch_shapes, mask=1, scale_brightness=False, dataset_name=None
     ):
@@ -432,7 +429,7 @@ class WarpPatchImplanter(RectanglePatchImplanter):
                     assert isinstance(implanted, torch.Tensor)
             except:
                 logging.warning(
-                    f"{self.name}: error implanting patches in training target image {i}"
+                    f"{self.__class__.__name__}: error implanting patches in training target image {i}"
                 )
                 all_validated = False
 
@@ -444,7 +441,7 @@ class WarpPatchImplanter(RectanglePatchImplanter):
                     assert isinstance(implanted, torch.Tensor)
             except:
                 logging.warning(
-                    f"{self.name}: error implanting patches in eval target image {i}"
+                    f"{self.__class__.__name__}: error implanting patches in eval target image {i}"
                 )
                 all_validated = False
 
@@ -565,4 +562,4 @@ class WarpPatchImplanter(RectanglePatchImplanter):
         patches = ", ".join(self.patch_keys)
         num_targets = len(self.target_images)
         num_eval_targets = len(self.eval_target_images)
-        return f"**{self.name}:** {num_targets} training and {num_eval_targets} eval images; patches {patches}"
+        return f"**{self.__class__.__name__}:** {num_targets} training and {num_eval_targets} eval images; patches {patches}"

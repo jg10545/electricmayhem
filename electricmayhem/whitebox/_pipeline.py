@@ -32,9 +32,6 @@ class PipelineBase(torch.nn.Module):
         -a get_last_sample_as_dict() method that returns any stochastic parameters as a
             JSON-serializable dict
     """
-
-    name = "PipelineBase"
-
     def __init__(self, **kwargs):
         super(PipelineBase, self).__init__()
         self.params = kwargs
@@ -116,7 +113,7 @@ class PipelineBase(torch.nn.Module):
         Return a markdown-formatted one-line string describing the pipeline step. Used for
         auto-populating a description for MLFlow.
         """
-        return f"**{self.name}**"
+        return f"**{self.__class__.__name__}**"
 
     def log_vizualizations(self, x, x_control, writer, step, logging_to_mlflow=False):
         """ """
@@ -135,7 +132,7 @@ class PipelineBase(torch.nn.Module):
         of the pipeline, to catch common errors. Return True if it passes the
         checks and False otherwise. Use logging to explain what went wrong.
         """
-        logging.info(f"no validation checks for {self.name}")
+        logging.info(f"no validation checks for {self.__class__.__name__}")
         return True
 
 
@@ -143,9 +140,6 @@ class ModelWrapper(PipelineBase):
     """
     Lightweight wrapper class for torch models
     """
-
-    name = "ModelWrapper"
-
     def __init__(self, model, eval_model=None):
         """
         :model: pytorch model or list/dict of models, in eval mode
@@ -307,9 +301,6 @@ class Pipeline(PipelineBase):
     """
     Class to manage a sequence of pipeline steps
     """
-
-    name = "Pipeline"
-
     def __init__(self, *args, **kwargs):
         super().__init__(**kwargs)
         self.steps = torch.nn.ModuleList()  # []
@@ -322,7 +313,7 @@ class Pipeline(PipelineBase):
 
         self.params = {"version": __version__}
         for e, s in enumerate(self.steps):
-            self.params[f"{e}_{s.name}"] = s.params
+            self.params[f"{e}_{s.__class__.__name__}"] = s.params
 
         # These attributes will only be used when we're training in distributed
         # mode over multiple GPUs. In that case they'll be overwritten.
@@ -335,7 +326,7 @@ class Pipeline(PipelineBase):
         for e, s in enumerate(self.steps):
             # pull out a dictionary of keyword arguments for this
             # stage of the pipeline
-            key = f"{e}_{s.name}_"
+            key = f"{e}_{s.__class__.__name__}_"
             step_kwargs = {
                 k.split(key)[-1]: kwargs[k] for k in kwargs if k.startswith(key)
             }
@@ -353,7 +344,7 @@ class Pipeline(PipelineBase):
         # update parameter dict
         self.params = {"version": __version__}
         for e, s in enumerate(self.steps):
-            self.params[f"{e}_{s.name}"] = s.params
+            self.params[f"{e}_{s.__class__.__name__}"] = s.params
         return self
 
     def save_yaml(self):
@@ -382,7 +373,7 @@ class Pipeline(PipelineBase):
         for e, s in enumerate(self.steps):
             sampdict = s.get_last_sample_as_dict()
             for k in sampdict:
-                outdict[f"{e}_{s.name}_{k}"] = sampdict[k]
+                outdict[f"{e}_{s.__class__.__name__}_{k}"] = sampdict[k]
 
         return outdict
 

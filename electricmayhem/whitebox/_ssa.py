@@ -130,9 +130,6 @@ class SpectrumSimulationAttack(PipelineBase):
     Warning: Unlike other pipeline stages, this does NOT generate reproducible results
     when you pass the get_last_sample_as_dict() results as a kwarg to forward().
     """
-
-    name = "SpectrumSimulationAttack"
-
     def __init__(self, sigma=0.06, rho=0.5, clamp=(0, 1), keys=None):
         """
         :sigma: scale for spatial-domain additive noise
@@ -197,5 +194,5 @@ class SpectrumSimulationAttack(PipelineBase):
 
     def get_description(self):
         return (
-            f"**{self.name}:** sigma={self.params['sigma']}, rho={self.params['rho']}"
+            f"**{self.__class__.__name__}:** sigma={self.params['sigma']}, rho={self.params['rho']}"
         )

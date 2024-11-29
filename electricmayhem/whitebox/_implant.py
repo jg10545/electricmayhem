@@ -124,9 +124,6 @@ class RectanglePatchImplanter(PipelineBase):
     If eval_imagedict and eval_boxdict aren't passed, evaluation will be done
     one training images/boxes.
     """
-
-    name = "RectanglePatchImplanter"
-
     def __init__(
         self,
         df,
@@ -301,7 +298,7 @@ class RectanglePatchImplanter(PipelineBase):
                     dx = b[2] - b[0]
                     if (max_y >= dy) | (max_x >= dx):
                         logging.warning(
-                            f"{self.name}: box {j} of image {self.imgkeys[i]} is too small for patch {k} and scale {self.params['scale'][1]}"
+                            f"{self.__class__.__name__}: box {j} of image {self.imgkeys[i]} is too small for patch {k} and scale {self.params['scale'][1]}"
                         )
                         all_validated = False
 
@@ -312,7 +309,7 @@ class RectanglePatchImplanter(PipelineBase):
                     dx = b[2] - b[0]
                     if (max_y >= dy) | (max_x >= dx):
                         logging.warning(
-                            f"{self.name}: box {j} of eval image {self.imgkeys[i]} is too small for patch {k} and scale {self.params['scale'][1]}"
+                            f"{self.__class__.__name__}: box {j} of eval image {self.imgkeys[i]} is too small for patch {k} and scale {self.params['scale'][1]}"
                         )
                         all_validated = False
         return all_validated
@@ -513,7 +510,7 @@ class RectanglePatchImplanter(PipelineBase):
         return outdict
 
     def get_description(self):
-        return f"**{self.name}:** {len(self.imgkeys)} training and {len(self.eval_imgkeys)} eval images"  # , mask: {mask_desc}"
+        return f"**{self.__class__.__name__}:** {len(self.imgkeys)} training and {len(self.eval_imgkeys)} eval images"  # , mask: {mask_desc}"
 
     def log_params_to_mlflow(self):
         """
@@ -530,9 +527,6 @@ class FixedRatioRectanglePatchImplanter(RectanglePatchImplanter):
     size with respect to each target box.
 
     """
-
-    name = "FixedRatioRectanglePatchImplanter"
-
     def __init__(
         self,
         df,
@@ -714,9 +708,6 @@ class ScaleToBoxRectanglePatchImplanter(RectanglePatchImplanter):
     If eval_imagedict and eval_boxdict aren't passed, evaluation will be done
     one training images/boxes.
     """
-
-    name = "ScaleToBoxRectanglePatchImplanter"
-
     def __init__(self, df, mask=1, scale_brightness=False, dataset_name=None):
         """
         :df: dataframe containing an "image" column with paths to images, x and y coordinates for columns
