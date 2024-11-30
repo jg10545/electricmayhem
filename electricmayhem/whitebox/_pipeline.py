@@ -520,6 +520,10 @@ class Pipeline(PipelineBase):
         if patch is None:
             assert hasattr(self, "patch_params"), "help i can't find a patch"
             patchbatch = self.patch_params(1)
+        # multi patch case
+        elif isinstance(patch, dict):
+            patchbatch = {k:patch[k].unsqueeze(0) for k in patch}
+        # single patch case
         else:
             patchbatch = patch.unsqueeze(0)
 
