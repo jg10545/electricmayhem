@@ -40,19 +40,11 @@ class HighPassFilter(PipelineBase):
         if keys is not None:
             self.params["keys"] = keys
 
-    def forward(self, x, control=False, evaluate=False, params={}, **kwargs):
-        """
-        Run image through highpass filter; for evaluation steps do nothing
-        """
-        # multi-patch case
-        if isinstance(x, dict):
-            return self._apply_forward_to_dict(
-                x, control=control, evaluate=evaluate, params=params, **kwargs
-            )
+    
+    def _forward_single(self, x, control=False, evaluate=False, params={}, key=None, **kwargs):
         if evaluate:
             return x, kwargs
-        else:
-            return highpass(x, self.params["limit_x"], self.params["limit_y"]), kwargs
+        return highpass(x, self.params["limit_x"], self.params["limit_y"]), kwargs
 
     def get_last_sample_as_dict(self):
         """
