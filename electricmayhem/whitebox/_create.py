@@ -100,8 +100,8 @@ class PatchResizer(PatchSaver):
 
     
     def _forward_single(self, x, control=False, evaluate=False, params={}, key=None, **kwargs):
-        # single patch
-        if key is None:
+        # single patch or applying on all patches
+        if (key is None)|isinstance(self.size, tuple):
             size = self.size
         # multiple patches
         elif key in self.size:
