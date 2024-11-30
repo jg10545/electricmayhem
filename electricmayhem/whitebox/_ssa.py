@@ -145,19 +145,10 @@ class SpectrumSimulationAttack(PipelineBase):
         if keys is not None:
             self.params["keys"] = keys
 
-    def forward(self, x, control=False, evaluate=False, params={}, **kwargs):
-        """
-        Only apply noise during training steps
-        """
-        # multi patch case
-        if isinstance(x, dict):
-            return self._apply_forward_to_dict(
-                x, control=control, evaluate=evaluate, params=params, **kwargs
-            )
+    def _forward_single(self, x, control=False, evaluate=False, params={}, key=None, **kwargs):
         if evaluate:
             return x, kwargs
         else:
-            # generate noise
             with torch.no_grad():
                 rho = self.params["rho"]
                 sigma = self.params["sigma"]
