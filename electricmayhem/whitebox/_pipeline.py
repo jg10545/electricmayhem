@@ -50,17 +50,44 @@ class PipelineBase(torch.nn.Module):
         """
         pass
 
-    def forward(self, x, control=False, evaluate=False, **kwargs):
+    def _forward_single(self, x, control=False, evaluate=False, key=None, **kwargs):
         return x, kwargs
+
+
+    def forward(self, x, control=False, evaluate=False, params={}, **kwargs):
+        """
+        If not overwritten- this function will call self._forward_single(), either
+        routing a single image batch through or mapping across a ditionary of batches.
+        """
+        # single patch/image case
+        if isinstance(x, torch.Tensor):
+            return self._forward_single(x, control=control, evaluate=evaluate, params=params, 
+                                        **kwargs)
+        # multi patch/image case
+        else:
+            outdict = {}
+            # decide which elements of the dictionary to operate on
+            keys = self.params.get("keys", list(x.keys()))
+            for k in x:
+                if k in keys:
+                    output, kwargs = self._forward_single(x[k], control=control, evaluate=evaluate,
+                                                          params=params, key=k, **kwargs)
+                    outdict[k] = output
+                else:
+                    outdict[k] = x[k]
+
+            return outdict, kwargs
 
     def _apply_forward_to_dict(
         self, x, control=False, evaluate=False, params={}, **kwargs
     ):
         """
+        DEPRECATE
         For pipeline stages that might input and output a dictionary of tensors (for
         example, applying some transformation to several patches before implanting
         them)
         """
+        assert False, "DEPRECATE MEEEE"
         outdict = {}
         outkwargs = kwargs
         # are we using all the
@@ -103,6 +130,9 @@ class PipelineBase(torch.nn.Module):
         return Pipeline(self, y)
 
     def _log_image_to_mlflow(self, img, filename):
+        if isinstance(img, dict):
+            for k in img:
+                self._log_image_to_mlflow(img[i], f"{k}_{filename}")
         if len(img.shape) == 3:
             # convert from channel-first to channel-last
             img = img.permute(1, 2, 0).detach().cpu().numpy()
@@ -520,6 +550,10 @@ class Pipeline(PipelineBase):
         if patch is None:
             assert hasattr(self, "patch_params"), "help i can't find a patch"
             patchbatch = self.patch_params(1)
+        # multi patch case
+        elif isinstance(patch, dict):
+            patchbatch = {k:patch[k].unsqueeze(0) for k in patch}
+        # single patch case
         else:
             patchbatch = patch.unsqueeze(0)
 
