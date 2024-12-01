@@ -129,9 +129,9 @@ class KorniaAugmentationPipeline(PipelineBase):
                     # record each dimension separately
                     for i in range(data.shape[1]):
                         if data.shape[1] > 1:
-                            outdict[f"{s['name']}_{k}_{i}"] = data[:, i]
+                            outdict[f"{s['name']}_{k}_{i}"] = data[:, i].tolist()
                         else:
-                            outdict[f"{s['name']}_{k}"] = data[:, i]
+                            outdict[f"{s['name']}_{k}"] = data[:, i].tolist()
         return outdict
 
     def get_description(self):
