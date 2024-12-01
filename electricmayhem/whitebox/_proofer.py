@@ -56,7 +56,8 @@ class SoftProofer(PipelineBase):
         """
         super().__init__()
         self.params = {"rendering_intent": rendering_intent}
-        self.keys = keys
+        if keys is not None:
+            self.params["keys"] = keys
 
         # make sure both the source and target profiles are loaded as ImageCmsProfiles
         if isinstance(target_profile, str):
@@ -104,12 +105,7 @@ class SoftProofer(PipelineBase):
         newtensors = _imgs_to_tensor_batch(imgs_tfm)
         return newtensors
 
-    def forward(self, x, control=False, evaluate=False, params=None, **kwargs):
-        # multi-patch case
-        if isinstance(x, dict):
-            return self._apply_forward_to_dict(
-                x, control=control, evaluate=evaluate, params=params, **kwargs
-            )
+    def _forward_single(self, x, control=False, evaluate=False, params={}, key=None, **kwargs):
         if evaluate:
             device = x.device
             proofed = self.softproof(x).to(device)
@@ -128,10 +124,10 @@ class SoftProofer(PipelineBase):
         """
         # multi patch case
         if isinstance(x, dict):
-            if self.keys is None:
+            if "keys" not in self.params:
                 keys = list(x.keys())
             else:
-                keys = self.keys
+                keys = self.params["keys"]
             for k in x:
                 if k in keys:
                     self.log_vizualizations(
