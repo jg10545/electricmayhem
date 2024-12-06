@@ -130,9 +130,6 @@ class SpectrumSimulationAttack(PipelineBase):
     Warning: Unlike other pipeline stages, this does NOT generate reproducible results
     when you pass the get_last_sample_as_dict() results as a kwarg to forward().
     """
-
-    name = "SpectrumSimulationAttack"
-
     def __init__(self, sigma=0.06, rho=0.5, clamp=(0, 1), keys=None):
         """
         :sigma: scale for spatial-domain additive noise
@@ -148,19 +145,10 @@ class SpectrumSimulationAttack(PipelineBase):
         if keys is not None:
             self.params["keys"] = keys
 
-    def forward(self, x, control=False, evaluate=False, params={}, **kwargs):
-        """
-        Only apply noise during training steps
-        """
-        # multi patch case
-        if isinstance(x, dict):
-            return self._apply_forward_to_dict(
-                x, control=control, evaluate=evaluate, params=params, **kwargs
-            )
+    def _forward_single(self, x, control=False, evaluate=False, params={}, key=None, **kwargs):
         if evaluate:
             return x, kwargs
         else:
-            # generate noise
             with torch.no_grad():
                 rho = self.params["rho"]
                 sigma = self.params["sigma"]
@@ -197,5 +185,5 @@ class SpectrumSimulationAttack(PipelineBase):
 
     def get_description(self):
         return (
-            f"**{self.name}:** sigma={self.params['sigma']}, rho={self.params['rho']}"
+            f"**{self.__class__.__name__}:** sigma={self.params['sigma']}, rho={self.params['rho']}"
         )

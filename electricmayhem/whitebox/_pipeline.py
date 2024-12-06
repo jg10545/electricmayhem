@@ -32,9 +32,6 @@ class PipelineBase(torch.nn.Module):
         -a get_last_sample_as_dict() method that returns any stochastic parameters as a
             JSON-serializable dict
     """
-
-    name = "PipelineBase"
-
     def __init__(self, **kwargs):
         super(PipelineBase, self).__init__()
         self.params = kwargs
@@ -53,17 +50,44 @@ class PipelineBase(torch.nn.Module):
         """
         pass
 
-    def forward(self, x, control=False, evaluate=False, **kwargs):
+    def _forward_single(self, x, control=False, evaluate=False, key=None, **kwargs):
         return x, kwargs
+
+
+    def forward(self, x, control=False, evaluate=False, params={}, **kwargs):
+        """
+        If not overwritten- this function will call self._forward_single(), either
+        routing a single image batch through or mapping across a ditionary of batches.
+        """
+        # single patch/image case
+        if isinstance(x, torch.Tensor):
+            return self._forward_single(x, control=control, evaluate=evaluate, params=params, 
+                                        **kwargs)
+        # multi patch/image case
+        else:
+            outdict = {}
+            # decide which elements of the dictionary to operate on
+            keys = self.params.get("keys", list(x.keys()))
+            for k in x:
+                if k in keys:
+                    output, kwargs = self._forward_single(x[k], control=control, evaluate=evaluate,
+                                                          params=params, key=k, **kwargs)
+                    outdict[k] = output
+                else:
+                    outdict[k] = x[k]
+
+            return outdict, kwargs
 
     def _apply_forward_to_dict(
         self, x, control=False, evaluate=False, params={}, **kwargs
     ):
         """
+        DEPRECATE
         For pipeline stages that might input and output a dictionary of tensors (for
         example, applying some transformation to several patches before implanting
         them)
         """
+        assert False, "DEPRECATE MEEEE"
         outdict = {}
         outkwargs = kwargs
         # are we using all the
@@ -106,6 +130,9 @@ class PipelineBase(torch.nn.Module):
         return Pipeline(self, y)
 
     def _log_image_to_mlflow(self, img, filename):
+        if isinstance(img, dict):
+            for k in img:
+                self._log_image_to_mlflow(img[i], f"{k}_{filename}")
         if len(img.shape) == 3:
             # convert from channel-first to channel-last
             img = img.permute(1, 2, 0).detach().cpu().numpy()
@@ -116,7 +143,7 @@ class PipelineBase(torch.nn.Module):
         Return a markdown-formatted one-line string describing the pipeline step. Used for
         auto-populating a description for MLFlow.
         """
-        return f"**{self.name}**"
+        return f"**{self.__class__.__name__}**"
 
     def log_vizualizations(self, x, x_control, writer, step, logging_to_mlflow=False):
         """ """
@@ -135,7 +162,7 @@ class PipelineBase(torch.nn.Module):
         of the pipeline, to catch common errors. Return True if it passes the
         checks and False otherwise. Use logging to explain what went wrong.
         """
-        logging.info(f"no validation checks for {self.name}")
+        logging.info(f"no validation checks for {self.__class__.__name__}")
         return True
 
 
@@ -143,9 +170,6 @@ class ModelWrapper(PipelineBase):
     """
     Lightweight wrapper class for torch models
     """
-
-    name = "ModelWrapper"
-
     def __init__(self, model, eval_model=None):
         """
         :model: pytorch model or list/dict of models, in eval mode
@@ -307,9 +331,6 @@ class Pipeline(PipelineBase):
     """
     Class to manage a sequence of pipeline steps
     """
-
-    name = "Pipeline"
-
     def __init__(self, *args, **kwargs):
         super().__init__(**kwargs)
         self.steps = torch.nn.ModuleList()  # []
@@ -322,7 +343,7 @@ class Pipeline(PipelineBase):
 
         self.params = {"version": __version__}
         for e, s in enumerate(self.steps):
-            self.params[f"{e}_{s.name}"] = s.params
+            self.params[f"{e}_{s.__class__.__name__}"] = s.params
 
         # These attributes will only be used when we're training in distributed
         # mode over multiple GPUs. In that case they'll be overwritten.
@@ -335,7 +356,7 @@ class Pipeline(PipelineBase):
         for e, s in enumerate(self.steps):
             # pull out a dictionary of keyword arguments for this
             # stage of the pipeline
-            key = f"{e}_{s.name}_"
+            key = f"{e}_{s.__class__.__name__}_"
             step_kwargs = {
                 k.split(key)[-1]: kwargs[k] for k in kwargs if k.startswith(key)
             }
@@ -353,7 +374,7 @@ class Pipeline(PipelineBase):
         # update parameter dict
         self.params = {"version": __version__}
         for e, s in enumerate(self.steps):
-            self.params[f"{e}_{s.name}"] = s.params
+            self.params[f"{e}_{s.__class__.__name__}"] = s.params
         return self
 
     def save_yaml(self):
@@ -382,7 +403,7 @@ class Pipeline(PipelineBase):
         for e, s in enumerate(self.steps):
             sampdict = s.get_last_sample_as_dict()
             for k in sampdict:
-                outdict[f"{e}_{s.name}_{k}"] = sampdict[k]
+                outdict[f"{e}_{s.__class__.__name__}_{k}"] = sampdict[k]
 
         return outdict
 
@@ -529,6 +550,10 @@ class Pipeline(PipelineBase):
         if patch is None:
             assert hasattr(self, "patch_params"), "help i can't find a patch"
             patchbatch = self.patch_params(1)
+        # multi patch case
+        elif isinstance(patch, dict):
+            patchbatch = {k:patch[k].unsqueeze(0) for k in patch}
+        # single patch case
         else:
             patchbatch = patch.unsqueeze(0)
 
