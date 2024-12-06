@@ -132,7 +132,7 @@ class PipelineBase(torch.nn.Module):
     def _log_image_to_mlflow(self, img, filename):
         if isinstance(img, dict):
             for k in img:
-                self._log_image_to_mlflow(img[i], f"{k}_{filename}")
+                self._log_image_to_mlflow(img[k], f"{k}_{filename}")
         if len(img.shape) == 3:
             # convert from channel-first to channel-last
             img = img.permute(1, 2, 0).detach().cpu().numpy()
