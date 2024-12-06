@@ -18,9 +18,6 @@ class HighPassFilter(PipelineBase):
     """
     Apply a 2D high pass filter DURING TRAINING STEPS ONLY
     """
-
-    name = "HighPassFilter"
-
     def __init__(self, limit=None, limit_x=None, limit_y=None, keys=None):
         """
         :limit: int; frequency limit in pixels
@@ -43,19 +40,11 @@ class HighPassFilter(PipelineBase):
         if keys is not None:
             self.params["keys"] = keys
 
-    def forward(self, x, control=False, evaluate=False, params={}, **kwargs):
-        """
-        Run image through highpass filter; for evaluation steps do nothing
-        """
-        # multi-patch case
-        if isinstance(x, dict):
-            return self._apply_forward_to_dict(
-                x, control=control, evaluate=evaluate, params=params, **kwargs
-            )
+    
+    def _forward_single(self, x, control=False, evaluate=False, params={}, key=None, **kwargs):
         if evaluate:
             return x, kwargs
-        else:
-            return highpass(x, self.params["limit_x"], self.params["limit_y"]), kwargs
+        return highpass(x, self.params["limit_x"], self.params["limit_y"]), kwargs
 
     def get_last_sample_as_dict(self):
         """
@@ -64,4 +53,4 @@ class HighPassFilter(PipelineBase):
         return {}
 
     def get_description(self):
-        return f"**{self.name}:** cutoffs at x={self.params['limit_x']}, y={self.params['limit_y']}"
+        return f"**{self.__class__.__name__}:** cutoffs at x={self.params['limit_x']}, y={self.params['limit_y']}"

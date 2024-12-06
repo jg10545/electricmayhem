@@ -152,6 +152,18 @@ def test_patchscroller():
     for i in range(B):
         assert (scrolled_batch[i].detach().numpy().sum() - test_img.numpy().sum())**2 < 1e-5
 
+
+def test_patchscroller_evaluate():
+    B = 5
+    scroll = _create.PatchScroller()
+    test_img = torch.tensor(np.random.uniform(0, 1, size=(3,23,31)).astype(np.float32))
+    test_batch = torch.stack([test_img for _ in range(B)], 0)
+    scrolled_batch, _ = scroll(test_batch, evaluate=True)
+    
+    assert scrolled_batch.shape == test_batch.shape
+    for i in range(B):
+        assert np.max((scrolled_batch[i].detach().numpy() - test_img.numpy())**2) < 1e-5
+
 def test_patchscroller_multiple_patches():
     patch_params = {"foo":torch.zeros((1,1,11,13)).type(torch.float32),
                         "bar":torch.zeros((1,3,15,23)).type(torch.float32)}
@@ -161,7 +173,19 @@ def test_patchscroller_multiple_patches():
     assert isinstance(scrolled_batch, dict)
     assert scrolled_batch["foo"].shape == (1,1,11,13)
     assert scrolled_batch["bar"].shape == (1,3,15,23)
-    
+
+
+def test_patchscroller_multiple_patches_evaluate():
+    patch_params = {"foo":torch.zeros((1,1,11,13)).type(torch.float32),
+                        "bar":torch.zeros((1,3,15,23)).type(torch.float32)}
+    scroll = _create.PatchScroller()
+    scrolled_batch, _ = scroll(patch_params, evaluate=True)
+
+    assert isinstance(scrolled_batch, dict)
+    assert scrolled_batch["foo"].shape == (1,1,11,13)
+    assert scrolled_batch["bar"].shape == (1,3,15,23)
+    for k in ["foo", "bar"]:
+        assert np.max((scrolled_batch[k].numpy() - patch_params[k].numpy())**2) < 1e-5
 
 def test_patchscroller_multiple_patches_but_leave_one_out():
     patch_params = {"foo":torch.zeros((1,1,11,13)).type(torch.float32),

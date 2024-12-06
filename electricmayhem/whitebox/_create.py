@@ -25,9 +25,6 @@ class PatchSaver(PipelineBase):
     """
     Pipeline stage that does nothing except log the patch to tensorboard
     """
-
-    name = "PatchSaver"
-
     def __init__(self, logviz=True):
         """
         :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
@@ -39,7 +36,7 @@ class PatchSaver(PipelineBase):
         self.lastsample = {}
         self._logviz = logviz
 
-    def forward(self, patches, control=False, evaluate=False, **kwargs):
+    def _forward_single(self, patches, control=False, evaluate=False, params={}, key=None, **kwargs):
         """
         Implant a batch of patches in a batch of images
 
@@ -68,9 +65,9 @@ class PatchSaver(PipelineBase):
         if self._logviz:
             if isinstance(x, dict):
                 for k in x:
-                    self._log_single_image(x[k], f"{self.name}_patch_{k}", writer, step)
+                    self._log_single_image(x[k], f"{self.__class__.__name__}_patch_{k}", writer, step)
             else:
-                self._log_single_image(x, f"{self.name}_patch", writer, step)
+                self._log_single_image(x, f"{self.__class__.__name__}_patch", writer, step)
 
 
 class PatchResizer(PatchSaver):
@@ -78,9 +75,6 @@ class PatchResizer(PatchSaver):
     Class for resizing a batch of patches to a fixed size. Wraps
     kornia.geometry.
     """
-
-    name = "PatchResizer"
-
     def __init__(self, size, interpolation="bilinear", logviz=True):
         """
         :size: length-2 tuple giving target size (H,W). for resizing multiple patches use
@@ -104,34 +98,21 @@ class PatchResizer(PatchSaver):
         self.lastsample = {}
         self._logviz = logviz
 
-    def forward(self, patches, control=False, evaluate=False, **kwargs):
-        """
-        Implant a batch of patches in a batch of images
-
-        :patches: torch Tensor; stack of patches
-        :control: no effect on this function
-        :kwargs: no effect on this function
-        """
-        # multiple patch case
-        if isinstance(patches, dict):
-            resized = {}
-            # resize the patch if the user specified a new size
-            for k in patches:
-                if k in self.size:
-                    resized[k] = kornia.geometry.resize(
-                        patches[k],
-                        self.size[k],
-                        interpolation=self.params["interpolation"],
-                    )
-                # otherwise do nothing
-                else:
-                    resized[k] = patches[k]
-        # single patch case
+    
+    def _forward_single(self, x, control=False, evaluate=False, params={}, key=None, **kwargs):
+        # single patch or applying on all patches
+        if (key is None)|isinstance(self.size, tuple):
+            size = self.size
+        # multiple patches
+        elif key in self.size:
+            size = self.size[key]
         else:
-            resized = kornia.geometry.resize(
-                patches, self.size, interpolation=self.params["interpolation"]
+            return x, kwargs
+        resized = kornia.geometry.resize(
+                x, size, interpolation=self.params["interpolation"]
             )
         return resized, kwargs
+
 
     def get_description(self):
         """
@@ -142,16 +123,13 @@ class PatchResizer(PatchSaver):
             newsize = ", ".join([f"{k}: {str(self.size[k])}" for k in self.size])
         else:
             newsize = self.size
-        return f"**{self.name}:** resize to {newsize}"
+        return f"**{self.__class__.__name__}:** resize to {newsize}"
 
 
 class PatchStacker(PatchSaver):
     """
     Turn a 1-channel patch into a 3-channel patch
     """
-
-    name = "PatchStacker"
-
     def __init__(self, num_channels=3, logviz=True, keys=None):
         """
         :size: length-2 tuple giving target size (H,W)
@@ -170,40 +148,21 @@ class PatchStacker(PatchSaver):
         if keys is not None:
             self.params["keys"] = keys
 
-    def forward(self, patches, control=False, evaluate=False, **kwargs):
-        """
-        Implant a batch of patches in a batch of images
-
-        :patches: torch Tensor; stack of patches
-        :control: no effect on this function
-        :kwargs: no effect on this function
-        """
-        # multiple patch case
-        if isinstance(patches, dict):
-            return self._apply_forward_to_dict(
-                patches, control=control, evaluate=evaluate, **kwargs
-            )
-        # dimension 0 is batch dimension; dimension 1 is channels
-        return (
-            torch.concat([patches for _ in range(self.params["num_channels"])], 1),
-            kwargs,
-        )
+    def _forward_single(self, x, control=False, evaluate=False, params={}, key=None, **kwargs):
+        return torch.concat([x for _ in range(self.params["num_channels"])], 1), kwargs
 
     def get_description(self):
         """
         Return a markdown-formatted one-line string describing the pipeline step. Used for
         auto-populating a description for MLFlow.
         """
-        return f"**{self.name}:** stack to {self.params['num_channels']} channels"
+        return f"**{self.__class__.__name__}:** stack to {self.params['num_channels']} channels"
 
 
 class PatchTiler(PatchSaver):
     """
     Class for tiling a batch of tiny patches to a fixed size.
     """
-
-    name = "PatchTiler"
-
     def __init__(self, size, logviz=True):
         """
         :size: length-2 tuple giving target size (H,W) or dictionary of tuples if using
@@ -233,29 +192,16 @@ class PatchTiler(PatchSaver):
         numtiles_W = W // patches.shape[3] + 1
         output = torch.concat([patchcolumn for _ in range(numtiles_W)], 3)[:, :, :, :W]
         return output
-
-    def forward(self, patches, control=False, evaluate=False, **kwargs):
-        """
-        Implant a batch of patches in a batch of images
-
-        :patches: torch Tensor; stack of patches or a dictionary of patches.
-        :control: no effect on this function
-        :kwargs: no effect on this function
-        """
-        # multi-patch case: tile the patches that were specified in the size dict;
-        # pass the others through
-        if isinstance(patches, dict):
-            output = {}
-            for k in patches:
-                if k in self.size:
-                    output[k] = self._tile_single_patch(patches[k], self.size[k])
-                else:
-                    output[k] = patches[k]
-        # single-patch case: just tile it
+    
+    def _forward_single(self, x, control=False, evaluate=False, params={}, key=None, **kwargs):
+        if key is None:
+            size = self.size
+        elif key in self.size:
+            size = self.size[key]
         else:
-            output = self._tile_single_patch(patches, self.size)
-        return output, kwargs
-
+            return x, kwargs
+        return self._tile_single_patch(x, size), kwargs
+    
     def get_description(self):
         """
         Return a markdown-formatted one-line string describing the pipeline step. Used for
@@ -266,7 +212,7 @@ class PatchTiler(PatchSaver):
 
         else:
             tileto = self.size
-        return f"**{self.name}:** tile to {tileto}"
+        return f"**{self.__class__.__name__}:** tile to {tileto}"
 
 
 class PatchScroller(PipelineBase):
@@ -275,9 +221,6 @@ class PatchScroller(PipelineBase):
 
     Returns the unchanged patch during evaluation steps.
     """
-
-    name = "PatchScroller"
-
     def __init__(self, logviz=True, keys=None):
         """
         :keys: optional; list of keys of patches to scroll for multi-patch case
@@ -286,45 +229,39 @@ class PatchScroller(PipelineBase):
         self.params = {}
         self.lastsample = {}
         self._logviz = logviz
-        self.keys = keys
+        if keys is not None:
+            self.params["keys"] = keys
 
-    def sample(self, patchbatch, params={}):
-        N, C, H, W = patchbatch.shape
-
-        sampdict = {k: params[k] for k in params}
-        if "offset_x" not in sampdict:
-            sampdict["offset_x"] = torch.randint(low=0, high=W, size=[N])
-        if "offset_y" not in sampdict:
-            sampdict["offset_y"] = torch.randint(low=0, high=H, size=[N])
-
-        self.lastsample = sampdict
-
-    def forward(self, x, control=False, evaluate=False, params={}, **kwargs):
-        if isinstance(x, dict):
-            return self._apply_forward_to_dict(
-                x, control=control, evaluate=evaluate, params=params, **kwargs
-            )
-        # eval case:
+    def _forward_single(self, x, control=False, evaluate=False, params={}, key=None, **kwargs):
+        # don't scroll patch during evaluate steps
         if evaluate:
-            return x
-        # if this isn't a control step, sample new offsets for each
-        # image in the batch
-        if not control:
-            self.sample(x, params)
+            return x, kwargs
+        if key is not None:
+            offsetx = f"offset_x_{key}"
+            offsety = f"offset_y_{key}"
+        else:
+            offsetx = "offset_x"
+            offsety = "offset_y"
 
+        if not control:
+            N, C, H, W = x.shape
+            self.lastsample[offsetx] = params.get(offsetx, torch.randint(low=0, high=H, size=[N]))
+            self.lastsample[offsety] = params.get(offsety, torch.randint(low=0, high=H, size=[N]))
+            
         s = self.lastsample
         shifted = torch.stack(
             [
-                scroll_single_image(x[i], s["offset_x"][i], s["offset_y"][i])
+                scroll_single_image(x[i], s[offsetx][i], s[offsety][i])
                 for i in range(x.shape[0])
             ],
             0,
         )
-
         return shifted, kwargs
+       
 
     def get_last_sample_as_dict(self):
         """
         Return last sample as a JSON-serializable dict
         """
-        return {k: self.lastsample[k].cpu().detach().numpy() for k in self.lastsample}
+        return {k: [i for i in self.lastsample[k].cpu().detach().numpy()] 
+                for k in self.lastsample}
