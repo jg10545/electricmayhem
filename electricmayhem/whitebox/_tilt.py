@@ -85,14 +85,14 @@ class PerspectiveTilter(PipelineBase):
         # save scales as lastsample
         self.lastsample = scales
 
-        warped = kornia.geometry.warp_perspective(x, warps, (H,W))
+        warped = kornia.geometry.warp_perspective(x, warps.to(x.device), (H,W))
 
         return warped, kwargs
         
     def get_last_sample_as_dict(self):
         return {"scale":list(self.lastsample)}
         
-    def log_vizualizations(self, x, x_control, writer, step):
+    def log_vizualizations(self, x, x_control, writer, step, **kwargs):
         """
         If self._logviz is True, record the first tilted image in the batch to TensorBoard
         """
