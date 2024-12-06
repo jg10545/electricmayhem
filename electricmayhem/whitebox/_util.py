@@ -87,14 +87,14 @@ def from_paramitem(x):
             outdict["data"] = {}
             for k in x.data:
                 shape = list(x.data[k].shape)
-                data = [y for y in x.data[k].detach().cpu().numpy().ravel()]
+                data = [float(y) for y in x.data[k].detach().cpu().numpy().ravel()]
                 dtype = str(x.data[k].dtype)
                 outdict["data"][k] = (shape, data, dtype)
         elif isinstance(x.data, list):
             outdict["data"] = []
             for k in x.data:
                 shape = list(k.shape)
-                data = [y for y in k.detach().cpu().numpy().ravel()]
+                data = [float(y) for y in k.detach().cpu().numpy().ravel()]
                 dtype = str(k.dtype)
                 outdict["data"].append((shape, data, dtype))
         elif x.data is None:
