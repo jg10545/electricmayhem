@@ -9,5 +9,6 @@ from ._warp_implant import WarpPatchImplanter
 from ._filter import HighPassFilter
 from ._ssa import SpectrumSimulationAttack
 from ._tilt import PerspectiveTilter
+from ._reflect import PatchReflector
 from electricmayhem.whitebox import loss, viz
 from electricmayhem._convenience import load_to_tensor, plot, save
