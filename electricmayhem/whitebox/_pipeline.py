@@ -253,7 +253,7 @@ def _update_patch_gradients(
     """
 
     def _getloss(outputs, extra_kwargs):
-        lossdict = pipeline.loss(outputs, **extra_kwargs)
+        lossdict = pipeline.loss(outputs, evaluate=False, control=False, **extra_kwargs)
         loss = 0
         record = {}
         for k in lossdict:
@@ -351,7 +351,7 @@ class Pipeline(PipelineBase):
 
     def forward(self, x, control=False, evaluate=False, **kwargs):
         # initialize a dictionary to propagate additional useful information through the pipeline
-        extra_kwargs = {"input": x}
+        extra_kwargs = {"input": x, "global_step":self.global_step}
         # run through each pipeline stage sequentially
         for e, s in enumerate(self.steps):
             # pull out a dictionary of keyword arguments for this
@@ -626,7 +626,7 @@ class Pipeline(PipelineBase):
                 )
                 batch_size = test_patch_shape[0]
             model_output, kwargs = self(test_patch)
-            lossdict = lossfunc(model_output, **kwargs)
+            lossdict = lossfunc(model_output, evaluate=False, control=False, **kwargs)
             assert isinstance(
                 lossdict, dict
             ), "this loss function doesn't appear to generate a dictionary"
@@ -693,12 +693,12 @@ class Pipeline(PipelineBase):
             # run a batch through with the patch included
             output, kwargs = self(patchbatch, evaluate=True)
             result_patch = _dict_of_tensors_to_dict_of_arrays(
-                self.loss(output, **kwargs)
+                self.loss(output, evaluate=True, control=False,  **kwargs)
             )
             # then a control batch; no patch but same parameters
             output, kwargs = self(patchbatch, evaluate=True, control=True)
             result_control = _dict_of_tensors_to_dict_of_arrays(
-                self.loss(output, **kwargs)
+                self.loss(output, evalute=True, control=False, **kwargs)
             )
 
             for k in result_patch:
