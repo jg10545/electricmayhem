@@ -698,7 +698,7 @@ class Pipeline(PipelineBase):
             # then a control batch; no patch but same parameters
             output, kwargs = self(patchbatch, evaluate=True, control=True)
             result_control = _dict_of_tensors_to_dict_of_arrays(
-                self.loss(output, evalute=True, control=False, **kwargs)
+                self.loss(output, evaluate=True, control=False, **kwargs)
             )
 
             for k in result_patch:
