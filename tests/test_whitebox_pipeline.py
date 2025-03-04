@@ -469,6 +469,8 @@ def test_update_patch_gradients():
         outdict = {}
         outputs = outputs.reshape(outputs.shape[0], -1)
         outdict["mainloss"] = torch.mean(outputs, 1)
+        for key in ["input", "global_step", "evaluate", "control"]:
+            assert key in kwargs
         return outdict    
     
 
@@ -492,6 +494,8 @@ def test_update_patch_gradients_with_sharpness_aware_minimization():
         outdict = {}
         outputs = outputs.reshape(outputs.shape[0], -1)
         outdict["mainloss"] = torch.mean(outputs, 1)
+        for key in ["input", "global_step", "evaluate", "control"]:
+            assert key in kwargs
         return outdict    
     
 
