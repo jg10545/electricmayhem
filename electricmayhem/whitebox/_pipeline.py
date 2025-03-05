@@ -17,7 +17,7 @@ import multiprocessing
 from electricmayhem import __version__
 from ._util import _dict_of_tensors_to_dict_of_arrays, _concat_dicts_of_arrays
 from ._util import _flatten_dict, _mlflow_description, _bootstrap_std
-from ._opt import _create_ax_client
+from ._opt import _create_or_load_ax_client
 from ._multi import PatchWrapper, _run_worker_training_loop
 from .optim import _get_optimizer_and_scheduler
 
@@ -988,8 +988,9 @@ class Pipeline(PipelineBase):
                 }
 
         """
+        json_logpath = os.path.join(logdir, "log.json")
         ob = objective + "_delta"
-        self.client = _create_ax_client(ob, minimize=minimize, **params)
+        self.client, startval = _create_or_load_ax_client(logdir, ob, minimize=minimize, **params)
 
         def _evaluate_trial(p):
             self.train_patch(
@@ -1006,7 +1007,7 @@ class Pipeline(PipelineBase):
             return {ob: (result_mean, sem)}
 
         # for each trial
-        for i in tqdm(range(N)):
+        for i in tqdm(range(startval, N)):
             self.global_step = 0
             # point the logger to a new subdirectory
             ld = os.path.join(logdir, str(i))
@@ -1024,7 +1025,7 @@ class Pipeline(PipelineBase):
                 trial_index=trial_index, raw_data=_evaluate_trial(parameters)
             )
             j = self.client.to_json_snapshot()
-            json.dump(j, open(os.path.join(logdir, "log.json"), "w"))
+            json.dump(j, open(json_logpath, "w"))
             if self._logging_to_mlflow:
                 mlflow.end_run()
 

@@ -15,6 +15,31 @@ import ax.modelbridge.registry
 
 from ._util import _bootstrap_std
 
+def _create_or_load_ax_client(logdir, objective, minimize=True, **params):
+    """
+    Check and see if there's already a client from a previous call to Pipeline.optimize();
+    either load it or create a new one
+    """
+    json_logpath = os.path.join(logdir, "log.json")
+    if os.path.exists(json_logpath):
+            return _load_ax_client(logdir)
+    else:
+        client = _create_ax_client(objective, minimize=minimize, **params)
+        return client, 0
+
+def _load_ax_client(logdir):
+    """
+    Load details of an existing run to continue where we left off
+    """
+    json_logpath = os.path.join(logdir, "log.json")
+    ax_client = AxClient.load_from_json_file(json_logpath)
+    ax_client.fit_model() # not 100% sure this is needed; ax doesn't fit the actual model when you load
+    # how many trials run so far?
+    startval = len([x for x in os.listdir(logdir) if os.path.isdir(os.path.join(logdir,x))])
+    return ax_client, startval
+
+                                
+
 
 def _create_ax_client(objective, minimize=True, **params):
     """

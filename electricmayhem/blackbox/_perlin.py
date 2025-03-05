@@ -91,7 +91,6 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         aug_params={},
         eval_augments=1000,
         tune_lacunarity=True,
-        num_sobol=5,
         gpkg=False,
         max_freq=1,
         include_error_as_positive=False,
@@ -114,10 +113,6 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         :eval_augments: int or list of aug params. Augmentations to use at the end of every epoch to evaluate performance
         :tune_lacunarity: bool; if True include lacunarity in optimization. If False,
             fix lacunarity=2
-        :num_sobol: int; number of Sobol sampling steps before switching to Gaussian
-            process
-        :gpkg: bool; if True, use Knowledge Gradient instead of Expected Improvement
-            for acquisition function
         :max_freq: float; maximum value for freq_sine parameter
         :include_error_as_positive: bool; whether to count -1s from the detect function as a positive detection ONLY for boosting, not for mask reduction
         :use_scores: incorporate scores instead of hard labels (training only)
@@ -171,27 +166,7 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
         if load_from_json_file is not None:
             self.client = AxClient.load_from_json_file(load_from_json_file)
         else:
-            if gpkg:
-                model = ax.modelbridge.registry.Models.GPKG
-            else:
-                model = ax.modelbridge.registry.Models.GPEI
-            gs = ax.modelbridge.generation_strategy.GenerationStrategy(
-                steps=[
-                    # Quasi-random initialization step
-                    ax.modelbridge.generation_strategy.GenerationStep(
-                        model=ax.modelbridge.registry.Models.SOBOL,
-                        num_trials=num_sobol,
-                    ),
-                    # Bayesian optimization step using the custom acquisition function
-                    ax.modelbridge.generation_strategy.GenerationStep(
-                        model=model,
-                        num_trials=-1,
-                        # model_kwargs={"surrogate": Surrogate(SimpleCustomGP)},
-                    ),
-                ]
-            )
-
-            self.client = AxClient(generation_strategy=gs, verbose_logging=False)
+            self.client = AxClient(verbose_logging=False)
             self.params = self._build_params(tune_lacunarity)
             self.client.create_experiment(
                 name=experiment_name,
@@ -206,8 +181,6 @@ class BayesianPerlinNoisePatchTrainer(BlackBoxPatchTrainer):
             "num_augments": num_augments,
             "include_error_as_positive": include_error_as_positive,
             "tune_lacunarity": tune_lacunarity,
-            "num_sobol": num_sobol,
-            "gpkg": gpkg,
             "max_freq": max_freq,
             "use_scores": use_scores,
         }

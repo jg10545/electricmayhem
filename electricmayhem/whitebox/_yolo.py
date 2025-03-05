@@ -256,41 +256,31 @@ class YOLOWrapper(ModelWrapper):
         """
         super().__init__(model, eval_model)
         if isinstance(yolo_version, dict):
-            if 10 in yolo_version:
+            if (10 in yolo_version)&logviz:
                 assert (
                     False
-                ), "YOLOv10 has a different output format- not yet implemented"
+                ), "YOLOv10 has a different output format; visualizations not yet implemented. set logviz=False."
             self.params = yolo_version
         else:
             self.params = {"yolo_version": yolo_version}
-            if yolo_version == 10:
+            if (yolo_version == 10)&logviz:
                 assert (
                     False
-                ), "YOLOv10 has a different output format- not yet implemented"
+                ), "YOLOv10 has a different output format; visualizations not yet implemented. set logviz=False."
 
         self._logviz = logviz
         self.classnames = classnames
         self.thresh = thresh
         self.iouthresh = iouthresh
 
-    def _convert_v4_to_v5_if_you_can(self, x, H, W):
-        """
-        DEPRECATED
-        only convert format from the non-official v4 codebase outputs if
-        necessary
-        """
-        if len(x) == 2:
-            if len(x[0].shape) == 4:
-                if x[0].shape[2] == 1:
-                    if x[0].shape[3] == 4:
-                        return convert_v4_to_v5_format(x, H, W)
-        return x
 
     def _convert_outputs(self, outputs, yolotype, H=640, W=640):
         if yolotype == 5:
             return outputs
         elif yolotype == 4:
             return convert_v4_to_v5_format(outputs, H, W)
+        elif yolotype == 10:
+            return outputs
         else:
             return convert_ultralytics_to_v5_format(outputs[0])
 

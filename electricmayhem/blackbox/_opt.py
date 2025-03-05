@@ -42,7 +42,6 @@ class BlackBoxOptimizer:
         perturbation=None,
         tr_thresh=0.25,
         reduce_mask=True,
-        num_sobol=10,
         include_error_as_positive=False,
         eval_func=None,
         fixed_augs=None,
@@ -73,8 +72,6 @@ class BlackBoxOptimizer:
         :tr_thresh:  float; transform robustness threshold to aim for
             during mask reudction step
         :reduce_mask: whether to include GRAPHITE mask reduction step
-        :num_sobol: how many Sobol-sampled steps to take before starting to fit
-            a Gaussian process
         :fixed_augs:
         :mflow_uri: string; URI of MLflow server
         :experiment_name: string; name of experiment. Will be used both for AX
@@ -102,23 +99,7 @@ class BlackBoxOptimizer:
         if load_from_json_file is not None:
             self.client = AxClient.load_from_json_file(load_from_json_file)
         else:
-            gs = ax.modelbridge.generation_strategy.GenerationStrategy(
-                steps=[
-                    # Quasi-random initialization step
-                    ax.modelbridge.generation_strategy.GenerationStep(
-                        model=ax.modelbridge.registry.Models.SOBOL,
-                        num_trials=num_sobol,
-                    ),
-                    # Bayesian optimization step using the custom acquisition function
-                    ax.modelbridge.generation_strategy.GenerationStep(
-                        model=ax.modelbridge.registry.Models.GPEI,
-                        num_trials=-1,
-                    ),
-                ]
-            )
-
-            self.client = AxClient(generation_strategy=gs)
-            # self.client = AxClient()
+            self.client = AxClient()
             # set up the experiment!
             self.params = self._build_params(num_augments, q, beta, downsample)
             self.client.create_experiment(
@@ -254,7 +235,6 @@ class PerlinOptimizer:
         logdir,
         budget=20000,
         num_augments=[10, 200],
-        num_sobol=[5, 25],
         max_freq=[0.01, 1],
         aug_params={},
         eval_augments=1000,
@@ -275,7 +255,6 @@ class PerlinOptimizer:
             already exist. individual runs will be saved in subdirectories
         :budget: int; query budget for each run
         :num_augments: list of two integers; range of values for num_augments
-        :num_sobol: number of Sobol steps for each trainer to take before switching to GPEI
         :max_freq: maximum value for the sine frequency for each trainer to optimize. I've found some cases where large values cause the objective to be
             highly nonmonotic and the GP has trouble fitting it
         :aug_params: dictionary of augmentation paramaters
@@ -311,7 +290,7 @@ class PerlinOptimizer:
         else:
             self.client = AxClient()
             # set up the experiment!
-            self.params = self._build_params(num_augments, num_sobol, max_freq)
+            self.params = self._build_params(num_augments, max_freq)
             self.client.create_experiment(
                 name=experiment_name,
                 parameters=self.params,
@@ -320,7 +299,7 @@ class PerlinOptimizer:
                 },
             )
 
-    def _build_params(self, num_augments, num_sobol, max_freq):
+    def _build_params(self, num_augments,  max_freq):
         """
         Format parameter ranges for AX
         """
@@ -331,13 +310,6 @@ class PerlinOptimizer:
                 "bounds": num_augments,
                 "value_type": "int",
                 "log_scale": False,
-            },
-            {
-                "name": "num_sobol",
-                "type": "range",
-                "bounds": num_sobol,
-                "value_type": "int",
-                "log_scale": True,
             },
             {
                 "name": "max_freq",
