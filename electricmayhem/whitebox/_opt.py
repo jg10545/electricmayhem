@@ -32,7 +32,7 @@ def _load_ax_client(logdir):
     Load details of an existing run to continue where we left off
     """
     json_logpath = os.path.join(logdir, "log.json")
-    ax_client = AxClient.load_from_json_file()
+    ax_client = AxClient.load_from_json_file(json_logpath)
     ax_client.fit_model() # not 100% sure this is needed; ax doesn't fit the actual model when you load
     # how many trials run so far?
     startval = len([x for x in os.listdir(logdir) if os.path.isdir(os.path.join(logdir,x))])

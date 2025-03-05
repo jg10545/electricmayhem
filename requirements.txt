@@ -9,6 +9,6 @@ tqdm
 tensorboard
 mlflow
 pyaml
-ax-platform<0.5
+ax-platform#<0.5
 noise 
 dill
