@@ -88,7 +88,6 @@ def test_PerlinOptimizer(tmp_path_factory):
                             detect_func, logdir,
                             budget=10, 
                             num_augments=[5,7],
-                            num_sobol=[5,10],
                             max_freq=[0.01,1],
                             eval_augments=5,
                             eval_func=eval_func)
