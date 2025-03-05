@@ -59,7 +59,7 @@ def _bootstrap_std(measure, num_samples=100):
             [
                 torch.mean(
                     measure[np.random.choice(np.arange(N), size=N, replace=True)]
-                ).item()
+                ).item()/np.sqrt(num_samples)
                 for _ in range(num_samples)
             ]
         )
@@ -69,7 +69,7 @@ def _bootstrap_std(measure, num_samples=100):
             [
                 np.mean(
                     measure[np.random.choice(np.arange(N), size=N, replace=True)]
-                ).item()
+                ).item()/np.sqrt(num_samples)
                 for _ in range(num_samples)
             ]
         )
