@@ -177,7 +177,7 @@ def plot_detections(image, detections, k, classnames=None, thresh=0.1, iouthresh
             else:
                 c = classnames[int(classes[i])]
             label = f"({scores[i]:.2f}) {c}"
-            ax.text(boxes[i, 0], boxes[i, 1], label, color=color)
+            ax.text(boxes[i, 0], boxes[i, 1], label, color=color, clip_on=False)
             indices_plotted.append(i)
 
     return fig
