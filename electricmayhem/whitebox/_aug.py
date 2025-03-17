@@ -24,7 +24,8 @@ class KorniaAugmentationPipeline(PipelineBase):
     DO NOT USE p < 1.0 FOR ANY AUGMENTATIONS. Tracking parameters is more complicated in this
     case and not currently implemented.
     """
-    def __init__(self, augmentations, ordering=None, logviz=True):
+    def __init__(self, augmentations, ordering=None, logviz=True, 
+                 apply_on_train=True, apply_on_eval=True):
         """
         :augmentations: dict mapping augmentation names (as they appear in the
             kornia API) to dictionaries of keyword arguments for that augmentation
@@ -32,6 +33,8 @@ class KorniaAugmentationPipeline(PipelineBase):
             should be applied.
         :logviz: if True, log the patch to TensorBoard every time pipeline.evaluate()
             is called.
+        :apply_on_train: if True, apply augmentations during training steps
+        :apply_on_eval: if True, apply augmentations during evaluation steps
         """
         super(KorniaAugmentationPipeline, self).__init__()
         # initialize the kornia augmentations
@@ -54,6 +57,8 @@ class KorniaAugmentationPipeline(PipelineBase):
         # and record parameters
         self.params = augmentations
         self.params["ordering"] = ordering
+        self.params["apply_on_train"] = apply_on_train
+        self.params["apply_on_eval"] = apply_on_eval
         self._logviz = logviz
 
     def forward(self, x, control=False, evaluate=False, params=None, **kwargs):
@@ -63,6 +68,19 @@ class KorniaAugmentationPipeline(PipelineBase):
         :x: torch.Tensor batch of images in channelfirst format
         :control: boolean; if True use augmentation values from previous batch
         """
+        # check to see if we should pass through without augmenting
+        skip_eval =  evaluate and (not self.params["apply_on_eval"])
+        skip_train = (not evaluate) and (not self.params["apply_on_train"])
+        if skip_train|skip_eval:
+            return x, kwargs
+        # if x is a dictionary (e.g. applying augmentations to a patch), check to make
+        # sure it's just one. at the moment I don't have anything implemented to track
+        # kornia sampled parameters for multiple keys
+        if isinstance(x, dict):
+            assert len(x) == 1, "not yet implemented for multiple patches"
+            key = list(x.keys())[0]
+            y, kwargs = self.forward(x[key], control=control, evaluate=evaluate, params=params, **kwargs)
+            return {key:y}, kwargs
 
         if control:
             params = self.lastsample
