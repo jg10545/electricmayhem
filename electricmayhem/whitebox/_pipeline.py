@@ -78,41 +78,6 @@ class PipelineBase(torch.nn.Module):
 
             return outdict, kwargs
 
-    def _apply_forward_to_dict(
-        self, x, control=False, evaluate=False, params={}, **kwargs
-    ):
-        """
-        DEPRECATE
-        For pipeline stages that might input and output a dictionary of tensors (for
-        example, applying some transformation to several patches before implanting
-        them)
-        """
-        assert False, "DEPRECATE MEEEE"
-        outdict = {}
-        outkwargs = kwargs
-        # are we using all the
-        keys = list(x.keys())
-        if hasattr(self, "keys"):
-            if self.keys is not None:
-                keys = self.keys
-        # run all the tensors we're updating through the pipeline stage
-        for k in keys:
-            outdict[k], kw = self.forward(
-                x[k], control=control, evaluate=evaluate, **kwargs
-            )
-            # add any new kwargs to the dictionary, adding the key for this tensor to
-            # the label
-            for j in kw:
-                if j not in outkwargs:
-                    outkwargs[f"{k}_{j}"] = kw[j]
-        # any other tensors in the input dict that we're not operating on just get copied
-        # into the new dict
-        for k in x:
-            if k not in keys:
-                outdict[k] = x[k]
-
-        return outdict, outkwargs
-
     def get_last_sample_as_dict(self):
         """
         Return last sample as a JSON-serializable dict
@@ -311,8 +276,9 @@ def _update_patch_gradients(
         # now run x_adv through the pipeline and get loss
         patchbatch_adv = torch.stack([x_adv for _ in range(batch_size)], 0)
         # get sampled parameters from the pipeline to run through under the same conditions
-        sampdict = pipeline.get_last_sample_as_dict()
-        outputs_adv, k = pipeline(patchbatch_adv, **sampdict)
+        #sampdict = pipeline.get_last_sample_as_dict()
+        #outputs_adv, k = pipeline(patchbatch_adv, params=sampdict)
+        outputs_adv, k = pipeline(patchbatch_adv, control=True)
         lossdict_adv, loss = _getloss(outputs_adv, k)
         # compute gradients
         loss.backward()
@@ -349,21 +315,25 @@ class Pipeline(PipelineBase):
         # mode over multiple GPUs. In that case they'll be overwritten.
         self.rank = 0
 
-    def forward(self, x, control=False, evaluate=False, **kwargs):
+    def forward(self, x, control=False, evaluate=False, params=None, **kwargs):
         # initialize a dictionary to propagate additional useful information through the pipeline
-        extra_kwargs = {"input": x, "global_step":self.global_step}
+        if params is None:
+            params = {}
+        kwargs["input"] = x
+        kwargs["global_step"] = self.global_step
+        
         # run through each pipeline stage sequentially
         for e, s in enumerate(self.steps):
             # pull out a dictionary of keyword arguments for this
             # stage of the pipeline
             key = f"{e}_{s.__class__.__name__}_"
-            step_kwargs = {
-                k.split(key)[-1]: kwargs[k] for k in kwargs if k.startswith(key)
+            step_params = {
+                k.split(key)[-1]: params[k] for k in params if k.startswith(key)
             }
-            x, extra_kwargs = s(
-                x, control=control, evaluate=evaluate, **step_kwargs, **extra_kwargs
+            x, kwargs = s(
+                x, control=control, evaluate=evaluate, params=step_params, **kwargs
             )
-        return x, extra_kwargs
+        return x, kwargs
 
     def __add__(self, y):
         # check to see if it's an electricmayhem object. if not assume it's

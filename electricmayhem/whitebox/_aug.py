@@ -86,6 +86,8 @@ class KorniaAugmentationPipeline(PipelineBase):
             params = self.lastsample
         if params is None:
             y = self.aug(x)
+        elif len(params) == 0:
+            y = self.aug(x)
         else:
             y = self.aug(x, params=to_paramitem(params))
         self.lastsample = from_paramitem(self.aug._params)
