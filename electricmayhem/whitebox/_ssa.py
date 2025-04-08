@@ -150,18 +150,22 @@ class SpectrumSimulationAttack(PipelineBase):
             return x, kwargs
         else:
             with torch.no_grad():
-                rho = self.params["rho"]
-                sigma = self.params["sigma"]
-                if "epsilon" in kwargs:
-                    epsilon = torch.tensor(kwargs["epsilon"]).to(x.device)
+                if control:
+                    epsilon = self.epsilon
+                    mask = self.mask
                 else:
-                    epsilon = (torch.randn(x.shape) * sigma).to(x.device)
-                if "mask" in kwargs:
-                    mask = torch.tensor(kwargs["mask"]).to(x.device)
-                else:
-                    mask = (1 + 2 * torch.rand_like(x) * rho - rho).to(x.device)
-                self.epsilon = epsilon
-                self.mask = mask
+                    rho = self.params["rho"]
+                    sigma = self.params["sigma"]
+                    if "epsilon" in kwargs:
+                        epsilon = torch.tensor(kwargs["epsilon"]).to(x.device)
+                    else:
+                        epsilon = (torch.randn(x.shape) * sigma).to(x.device)
+                    if "mask" in kwargs:
+                        mask = torch.tensor(kwargs["mask"]).to(x.device)
+                    else:
+                        mask = (1 + 2 * torch.rand_like(x) * rho - rho).to(x.device)
+                    self.epsilon = epsilon
+                    self.mask = mask
 
             # first map to frequency domain
             x_with_noise = x + epsilon
