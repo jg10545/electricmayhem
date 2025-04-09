@@ -430,7 +430,7 @@ class RectanglePatchImplanter(PipelineBase):
             }
 
         images = [images[i] for i in s["image"]]
-        if control:
+        if control&evaluate:
             return torch.stack(images, 0), kwargs
 
         # iterate over patches, implanting one at a time
